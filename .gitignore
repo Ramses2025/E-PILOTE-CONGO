@@ -21,6 +21,11 @@ local.properties
 epilote-infra/.env
 epilote-infra/ssl/
 
+# Fichiers Capella contenant des secrets (mots de passe, tokens)
+epilote-infra/create-admin.json
+epilote-infra/create-appuser.json
+epilote-infra/update-endpoint.json
+
 # OS
 .DS_Store
 Thumbs.db

@@ -19,7 +19,7 @@ class SyncManager(
     private val _pendingCount = MutableStateFlow(0L)
     val pendingCount: StateFlow<Long> = _pendingCount.asStateFlow()
 
-    fun start(sessionToken: String) {
+    fun start(username: String, password: String) {
         if (replicator != null) return
 
         val endpoint = URLEndpoint(URI(syncGatewayUrl))
@@ -28,7 +28,7 @@ class SyncManager(
             collections = mapOf(database.collections to null),
             type = ReplicatorType.PUSH_AND_PULL,
             continuous = true,
-            authenticator = SessionAuthenticator(sessionToken),
+            authenticator = BasicAuthenticator(username, password.toCharArray()),
             conflictResolver = EpiloteConflictResolver(),
             maxAttempts = Int.MAX_VALUE,
             maxAttemptWaitTime = 600u
@@ -60,7 +60,7 @@ class SyncManager(
 
     private fun updateStatus(status: ReplicatorStatus) {
         val pending = replicator?.getPendingDocumentIds(
-            database.getCollection("notes")!!
+            database.getCollection("grades")!!
         )?.size?.toLong() ?: 0L
 
         _pendingCount.value = pending

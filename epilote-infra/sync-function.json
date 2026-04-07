@@ -1,0 +1,3 @@
+{
+  "accessControlFunction": "function(doc, oldDoc, meta) {\n  if (doc._deleted) {\n    if (oldDoc && oldDoc.schoolId) channel('sch::' + oldDoc.schoolId);\n    return;\n  }\n  if (!doc.schoolId) throw({ forbidden: 'schoolId requis' });\n  channel('sch::' + doc.schoolId);\n  if (doc.groupId) channel('grp::' + doc.groupId);\n}"
+}

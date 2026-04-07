@@ -13,7 +13,8 @@ import org.springframework.security.crypto.password.PasswordEncoder
 @RestController
 class AdminController(
     private val repo: AdminRepository,
-    private val passwordEncoder: PasswordEncoder
+    private val passwordEncoder: PasswordEncoder,
+    private val sgClient: SyncGatewayAdminClient
 ) {
 
     private fun Authentication.userId() = principal as String
@@ -104,9 +105,9 @@ class AdminController(
         val profil = repo.getProfilById(req.profilId)
             ?: return@runBlocking ResponseEntity.badRequest().build<UserResponse>()
         val hash = passwordEncoder.encode(req.password)
-        ResponseEntity.status(HttpStatus.CREATED).body(
-            repo.createUser(groupeId, req, hash, profil.modulesAccess)
-        )
+        val user = repo.createUser(groupeId, req, hash, profil.modulesAccess)
+        runCatching { sgClient.createOrUpdateUser(user.id, req.password, req.ecoleId, groupeId) }
+        ResponseEntity.status(HttpStatus.CREATED).body(user)
     }
 
     @GetMapping("/api/ecoles/{ecoleId}/users")
@@ -114,10 +115,4 @@ class AdminController(
     fun listUsers(@PathVariable ecoleId: String): ResponseEntity<List<UserResponse>> =
         runBlocking { ResponseEntity.ok(repo.listUsersByEcole(ecoleId)) }
 
-    // ── Erreur générique ─────────────────────────────────────────
-
-    @ExceptionHandler(Exception::class)
-    fun handleException(ex: Exception): ResponseEntity<Map<String, String>> =
-        ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body(mapOf("error" to (ex.message ?: "Erreur interne")))
 }

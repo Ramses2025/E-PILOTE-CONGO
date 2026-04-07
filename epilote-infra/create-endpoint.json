@@ -1,0 +1,26 @@
+{
+  "name": "epilote",
+  "bucket": "epilote_prod",
+  "scopes": {
+    "_default": {
+      "collections": {
+        "students": {},
+        "grades": {},
+        "attendances": {},
+        "inscriptions": {},
+        "report_cards": {},
+        "timetable": {},
+        "disciplines": {},
+        "academic_config": {},
+        "users": {},
+        "staff": {},
+        "staff_attendances": {},
+        "announcements": {},
+        "messages": {},
+        "notifications": {},
+        "sync_mutations": {},
+        "sync_conflicts": {}
+      }
+    }
+  }
+}

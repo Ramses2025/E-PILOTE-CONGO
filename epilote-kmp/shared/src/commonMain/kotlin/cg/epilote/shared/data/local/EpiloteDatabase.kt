@@ -1,5 +1,7 @@
 package cg.epilote.shared.data.local
 
+import cg.epilote.shared.platform.deriveEncryptionKey
+import cg.epilote.shared.platform.initCouchbaseLite
 import com.couchbase.lite.*
 
 object EpiloteDatabase {
@@ -12,11 +14,11 @@ object EpiloteDatabase {
     fun init(context: Any?, userId: String, pin: String) {
         if (_database != null) return
 
-        CouchbaseLite.init(context)
+        initCouchbaseLite(context)
 
-        val key = deriveKey(pin, userId)
+        val keyBytes = deriveEncryptionKey(pin, userId)
         val config = DatabaseConfigurationFactory.newConfig(
-            encryptionKey = DatabaseEncryptionKey(key)
+            encryptionKey = DatabaseEncryptionKey(keyBytes)
         )
         _database = Database("epilote_local", config)
         ensureCollections(_database!!)
@@ -27,15 +29,18 @@ object EpiloteDatabase {
         _database = null
     }
 
+    fun isOpen(): Boolean = _database != null
+
     private fun ensureCollections(db: Database) {
-        listOf("notes", "absences", "eleves", "classes", "matieres",
-               "users", "modules_config", "schools").forEach { name ->
+        listOf(
+            "grades", "attendances", "students", "inscriptions",
+            "timetable", "report_cards", "disciplines",
+            "academic_config", "users", "config",
+            "school_groups", "schools", "staff",
+            "announcements", "messages", "notifications",
+            "sync_mutations", "sync_conflicts", "sessions"
+        ).forEach { name ->
             db.createCollection(name)
         }
-    }
-
-    private fun deriveKey(pin: String, userId: String): String {
-        val combined = "$pin:$userId:epilote_salt_v1"
-        return combined.hashCode().toString(16).padStart(32, '0').take(32)
     }
 }

@@ -9,16 +9,19 @@ import kotlinx.coroutines.flow.callbackFlow
 class AbsenceRepository(private val db: Database) {
 
     private val collection: Collection
-        get() = db.getCollection("absences") ?: db.createCollection("absences")
+        get() = db.getCollection("attendances") ?: db.createCollection("attendances")
 
     fun save(absence: Absence) {
         val doc = MutableDocument(absence.id).apply {
-            setString("type",        "absence")
+            setString("type",        "attendance")
             setString("ecoleId",     absence.ecoleId)
+            setString("anneeId",     absence.anneeId)
+            setString("classeId",    absence.classeId)
             setString("eleveId",     absence.eleveId)
+            setString("eleveName",   absence.eleveName)
             setString("date",        absence.date)
             setBoolean("justifiee",  absence.justifiee)
-            setString("motif",       absence.motif)
+            setString("motif",       absence.motif ?: "")
             setString("saisieParId", absence.saisieParId)
             setLong("updatedAt",     absence.updatedAt)
         }
@@ -55,15 +58,18 @@ class AbsenceRepository(private val db: Database) {
         }
 
     private fun Result.toAbsence(): Absence? {
-        val dict = getDictionary("absences") ?: return null
+        val dict = getDictionary("attendances") ?: return null
         val id   = getString("id") ?: return null
         return Absence(
             id          = id,
-            ecoleId     = dict.getString("ecoleId") ?: return null,
-            eleveId     = dict.getString("eleveId") ?: return null,
-            date        = dict.getString("date") ?: return null,
+            ecoleId     = dict.getString("ecoleId")   ?: return null,
+            anneeId     = dict.getString("anneeId")   ?: "",
+            classeId    = dict.getString("classeId")  ?: "",
+            eleveId     = dict.getString("eleveId")   ?: return null,
+            eleveName   = dict.getString("eleveName") ?: "",
+            date        = dict.getString("date")       ?: return null,
             justifiee   = dict.getBoolean("justifiee"),
-            motif       = dict.getString("motif"),
+            motif       = dict.getString("motif").takeIf { it?.isNotBlank() == true },
             saisieParId = dict.getString("saisieParId") ?: "",
             updatedAt   = dict.getLong("updatedAt")
         )

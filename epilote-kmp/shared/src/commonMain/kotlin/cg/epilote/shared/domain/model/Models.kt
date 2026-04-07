@@ -1,15 +1,77 @@
 package cg.epilote.shared.domain.model
 
+// ─── Auth / Session ───────────────────────────────────────────────────────────
+
+data class ModulePermission(
+    val moduleSlug: String,
+    val canRead: Boolean = true,
+    val canWrite: Boolean = false,
+    val canDelete: Boolean = false,
+    val canExport: Boolean = false
+)
+
 data class UserSession(
     val userId: String,
     val username: String,
     val ecoleId: String?,
     val groupeId: String?,
     val role: String,
-    val modulesAccess: List<String>,
+    val firstName: String = "",
+    val lastName: String = "",
+    val permissions: List<ModulePermission> = emptyList(),
     val accessToken: String,
     val refreshToken: String,
-    val offlineToken: String
+    val offlineToken: String,
+    val offlineTokenExpiresAt: Long = 0L
+) {
+    fun hasModule(slug: String): Boolean =
+        permissions.any { it.moduleSlug == slug && it.canRead }
+}
+
+// ─── Structure scolaire ───────────────────────────────────────────────────────
+
+data class Niveau(
+    val id: String,
+    val nom: String,
+    val shortName: String,
+    val orderIndex: Int
+)
+
+data class Filiere(
+    val id: String,
+    val nom: String,
+    val code: String
+)
+
+data class AcademicConfig(
+    val id: String,
+    val ecoleId: String,
+    val anneeId: String,
+    val anneeNom: String,
+    val isCurrent: Boolean,
+    val niveaux: List<Niveau>,
+    val filieres: List<Filiere>,
+    val periodes: List<String>
+) {
+    companion object {
+        fun buildId(ecoleId: String, annee: String) = "acfg::$ecoleId::$annee"
+    }
+}
+
+// ─── Élève ────────────────────────────────────────────────────────────────────
+
+data class MedicalSummary(
+    val bloodType: String? = null,
+    val allergies: List<String> = emptyList(),
+    val chronicConditions: List<String> = emptyList()
+)
+
+data class Parent(
+    val relation: String,
+    val nom: String,
+    val phone: String?,
+    val email: String?,
+    val profession: String? = null
 )
 
 data class Eleve(
@@ -19,33 +81,58 @@ data class Eleve(
     val nom: String,
     val prenom: String,
     val classeId: String,
-    val dateNaissance: String,
+    val anneeId: String,
+    val dateNaissance: String? = null,
+    val genre: String? = null,
+    val photo: String? = null,
+    val parents: List<Parent> = emptyList(),
+    val medicalSummary: MedicalSummary = MedicalSummary(),
+    val isActive: Boolean = true,
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    companion object {
+        fun buildId(ecoleId: String, matricule: String) = "stu::${ecoleId}_$matricule"
+    }
+}
+
+// ─── Note (Grade) ─────────────────────────────────────────────────────────────
 
 data class Note(
     val id: String,
     val ecoleId: String,
-    val eleveId: String,
+    val anneeId: String,
     val classeId: String,
+    val eleveId: String,
+    val eleveName: String = "",
     val matiereId: String,
+    val matiereNom: String = "",
+    val enseignantId: String,
+    val evaluationId: String? = null,
+    val typeEval: String = "devoir",
     val periode: String,
     val valeur: Double,
-    val auteurId: String,
+    val valeurMax: Double = 20.0,
+    val coefficient: Int = 1,
+    val commentaire: String? = null,
     val locked: Boolean = false,
     val requiresReview: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     companion object {
-        fun buildId(ecoleId: String, classeId: String, matiereId: String, eleveId: String, periode: String) =
-            "note::$ecoleId::$classeId::$matiereId::$eleveId::$periode"
+        fun buildId(ecoleId: String, classeId: String, matiereId: String, eleveId: String, periode: String, typeEval: String = "DS") =
+            "grd::$ecoleId::$classeId::$matiereId::$eleveId::$periode::$typeEval"
     }
 }
+
+// ─── Absence ──────────────────────────────────────────────────────────────────
 
 data class Absence(
     val id: String,
     val ecoleId: String,
+    val anneeId: String = "",
+    val classeId: String = "",
     val eleveId: String,
+    val eleveName: String = "",
     val date: String,
     val justifiee: Boolean = false,
     val motif: String? = null,
@@ -54,39 +141,90 @@ data class Absence(
 ) {
     companion object {
         fun buildId(ecoleId: String, eleveId: String, date: String) =
-            "absence::$ecoleId::$eleveId::$date"
+            "att::$ecoleId::$eleveId::$date"
     }
 }
+
+// ─── Classe ───────────────────────────────────────────────────────────────────
 
 data class Classe(
     val id: String,
     val ecoleId: String,
+    val anneeId: String,
     val nom: String,
-    val niveau: String,
-    val annee: String,
+    val section: String? = null,
+    val niveauId: String,
+    val niveauNom: String = "",
+    val filiereId: String? = null,
+    val enseignantPrincipalId: String? = null,
+    val capacite: Int = 50,
+    val isActive: Boolean = true,
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    companion object {
+        fun buildId(ecoleId: String, anneeId: String, nom: String) =
+            "cls::$ecoleId::$anneeId::${nom.replace(" ", "_").lowercase()}"
+    }
+}
+
+// ─── Matière (Subject) ────────────────────────────────────────────────────────
 
 data class Matiere(
     val id: String,
     val ecoleId: String,
     val classeId: String,
     val nom: String,
+    val code: String = "",
     val coefficient: Int = 1,
+    val heuresParSemaine: Double = 0.0,
     val enseignantId: String,
+    val enseignantNom: String = "",
+    val isActive: Boolean = true,
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    companion object {
+        fun buildId(ecoleId: String, classeId: String, code: String) =
+            "sub::$ecoleId::$classeId::${code.lowercase()}"
+    }
+}
 
-data class Module(
+// ─── Module applicatif ────────────────────────────────────────────────────────
+
+data class ModuleApp(
     val id: String,
-    val code: String,
+    val slug: String,
     val nom: String,
-    val categorieCode: String,
+    val isCore: Boolean = true,
+    val requiredPlan: String = "gratuit",
     val isActive: Boolean = true
 )
+
+// ─── Sync ─────────────────────────────────────────────────────────────────────
 
 enum class SyncStatus {
     SYNCED,
     PENDING,
-    OFFLINE
+    OFFLINE,
+    ERROR,
+    CONFLICT
+}
+
+data class SyncMutation(
+    val id: String,
+    val ecoleId: String,
+    val clientMutationId: String,
+    val deviceId: String,
+    val entityType: String,
+    val entityId: String,
+    val operation: String,
+    val payload: String,
+    val status: String = "pending",
+    val userId: String,
+    val idempotencyKey: String,
+    val clientCreatedAt: Long = System.currentTimeMillis()
+) {
+    companion object {
+        fun buildId(deviceId: String, timestamp: Long, entityType: String) =
+            "mut::${deviceId}::${timestamp}::$entityType"
+    }
 }
