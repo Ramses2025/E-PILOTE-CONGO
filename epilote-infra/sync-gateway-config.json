@@ -1,0 +1,24 @@
+{
+  "logging": {
+    "log_file_path": "/var/tmp/sglogs",
+    "console": { "log_level": "info", "log_keys": ["*"] },
+    "error":   { "enabled": true, "rotation": { "max_size": 20 } },
+    "warn":    { "enabled": true, "rotation": { "max_size": 20 } },
+    "info":    { "enabled": false },
+    "debug":   { "enabled": false }
+  },
+  "databases": {
+    "epilote_prod": {
+      "server":   "${COUCHBASE_CONNECTION_STRING}",
+      "username": "${COUCHBASE_USERNAME}",
+      "password": "${COUCHBASE_PASSWORD}",
+      "bucket":   "epilote_prod",
+      "delta_sync": { "enabled": true },
+      "num_index_replicas": 0,
+      "sync": "function sync(doc, oldDoc) { if (doc.type === 'module' || doc.type === 'plan' || doc.type === 'categorie') { channel('global'); return; } if (doc.ecoleId) { var ecoleChannel = 'ecole_' + doc.ecoleId; channel(ecoleChannel); requireAccess(ecoleChannel); } if (doc.groupeId && !doc.ecoleId) { var groupeChannel = 'groupe_' + doc.groupeId; channel(groupeChannel); requireAccess(groupeChannel); } if (oldDoc && oldDoc._locked === true) { throw({ forbidden: 'Document verrouille, modification interdite' }); } }",
+      "users": {
+        "GUEST": { "disabled": true }
+      }
+    }
+  }
+}

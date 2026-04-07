@@ -1,0 +1,33 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Kotlin / JVM
+*.class
+*.jar
+!gradlew.bat
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+*.iws
+local.properties
+
+# Couchbase Lite
+*.cblite2/
+
+# Environment (ne jamais commiter)
+epilote-infra/.env
+epilote-infra/ssl/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# KMP build outputs
+epilote-kmp/*/build/
+epilote-kmp/**/build/
+
+# Spring Boot
+epilote-backend/build/

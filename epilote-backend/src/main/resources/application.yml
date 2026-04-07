@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: epilote-backend
+
+server:
+  port: 8080
+
+couchbase:
+  connection-string: ${CB_CONNECTION_STRING:couchbases://cb.qfnlqsnztvyhsxs.cloud.couchbase.com}
+  username: ${CB_USERNAME:PILOTE}
+  password: ${CB_PASSWORD:@69698620Libe}
+  bucket: ${CB_BUCKET:epilote_prod}
+
+jwt:
+  secret: ${JWT_SECRET:epilote-secret-key-change-in-production-min-256-bits}
+  expiration-ms: 3600000        # 1 heure
+  refresh-expiration-ms: 2592000000  # 30 jours
+  offline-expiration-ms: 2592000000  # 30 jours offline token
+
+sync-gateway:
+  admin-url: ${SG_ADMIN_URL:http://sync-gateway:4985}
+  public-url: ${SG_PUBLIC_URL:http://sync-gateway:4984}
+
+logging:
+  level:
+    cg.epilote: DEBUG
+    com.couchbase: WARN
