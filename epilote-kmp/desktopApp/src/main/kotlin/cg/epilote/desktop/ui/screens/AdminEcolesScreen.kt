@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cg.epilote.desktop.ui.theme.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -31,6 +32,7 @@ data class EcoleDto(
     val createdAt: Long = 0
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AdminEcolesScreen(
     ecoles: List<EcoleDto>,

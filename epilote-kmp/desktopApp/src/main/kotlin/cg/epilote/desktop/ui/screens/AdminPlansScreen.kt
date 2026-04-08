@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cg.epilote.desktop.ui.theme.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -29,6 +30,7 @@ data class PlanDto(
     val dureeJours: Int = 365
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AdminPlansScreen(
     plans: List<PlanDto>,
