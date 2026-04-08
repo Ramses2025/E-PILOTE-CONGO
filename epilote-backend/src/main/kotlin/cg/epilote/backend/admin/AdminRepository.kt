@@ -100,17 +100,24 @@ class AdminRepository(private val bucket: Bucket) {
     suspend fun createProfil(groupeId: String, req: CreateProfilRequest, createdBy: String): ProfilResponse {
         val id = newId("profil")
         val doc = mapOf(
-            "type"          to "profil",
-            "groupeId"      to groupeId,
-            "nom"           to req.nom,
-            "permissions"   to req.permissions,
-            "modulesAccess" to req.modulesAccess,
-            "createdBy"     to createdBy,
-            "createdAt"     to now(),
-            "updatedAt"     to now()
+            "type"        to "profil",
+            "groupeId"    to groupeId,
+            "nom"         to req.nom,
+            "permissions" to req.permissions.map { p ->
+                mapOf(
+                    "moduleSlug" to p.moduleSlug,
+                    "canRead"    to p.canRead,
+                    "canWrite"   to p.canWrite,
+                    "canDelete"  to p.canDelete,
+                    "canExport"  to p.canExport
+                )
+            },
+            "createdBy"   to createdBy,
+            "createdAt"   to now(),
+            "updatedAt"   to now()
         )
         col("profils").upsert(id, doc)
-        return ProfilResponse(id, groupeId, req.nom, req.permissions, req.modulesAccess, now())
+        return ProfilResponse(id, groupeId, req.nom, req.permissions, now())
     }
 
     suspend fun listProfilsByGroupe(groupeId: String): List<ProfilResponse> {
@@ -122,39 +129,46 @@ class AdminRepository(private val bucket: Bucket) {
             val d = row.contentAs<Map<String, Any>>()
             val inner = d["profils"] as? Map<*, *> ?: d
             ProfilResponse(
-                id            = d["id"] as? String ?: "",
-                groupeId      = inner["groupeId"] as? String ?: "",
-                nom           = inner["nom"] as? String ?: "",
-                permissions   = @Suppress("UNCHECKED_CAST") (inner["permissions"] as? List<String> ?: emptyList()),
-                modulesAccess = @Suppress("UNCHECKED_CAST") (inner["modulesAccess"] as? List<String> ?: emptyList()),
-                createdAt     = (inner["createdAt"] as? Number)?.toLong() ?: 0L
+                id          = d["id"] as? String ?: "",
+                groupeId    = inner["groupeId"] as? String ?: "",
+                nom         = inner["nom"] as? String ?: "",
+                permissions = parseProfilPermissions(inner),
+                createdAt   = (inner["createdAt"] as? Number)?.toLong() ?: 0L
             )
         }
     }
 
     // ── Utilisateurs ─────────────────────────────────────────────
 
-    suspend fun createUser(groupeId: String, req: CreateUserRequest, passwordHash: String, profilModules: List<String>): UserResponse {
+    suspend fun createUser(groupeId: String, req: CreateUserRequest, passwordHash: String, profilPermissions: List<ProfilPermission>): UserResponse {
         val id = newId("user")
         val doc = mapOf(
-            "type"          to "user",
-            "username"      to req.username,
-            "passwordHash"  to passwordHash,
-            "nom"           to req.nom,
-            "prenom"        to req.prenom,
-            "email"         to req.email,
-            "ecoleId"       to req.ecoleId,
-            "groupeId"      to groupeId,
-            "profilId"      to req.profilId,
-            "role"          to "USER",
-            "modulesAccess" to profilModules,
-            "isActive"      to true,
-            "createdAt"     to now(),
-            "updatedAt"     to now()
+            "type"         to "user",
+            "username"     to req.username,
+            "passwordHash" to passwordHash,
+            "nom"          to req.nom,
+            "prenom"       to req.prenom,
+            "email"        to req.email,
+            "ecoleId"      to req.ecoleId,
+            "groupeId"     to groupeId,
+            "profilId"     to req.profilId,
+            "role"         to "USER",
+            "permissions"  to profilPermissions.map { p ->
+                mapOf(
+                    "moduleSlug" to p.moduleSlug,
+                    "canRead"    to p.canRead,
+                    "canWrite"   to p.canWrite,
+                    "canDelete"  to p.canDelete,
+                    "canExport"  to p.canExport
+                )
+            },
+            "isActive"     to true,
+            "createdAt"    to now(),
+            "updatedAt"    to now()
         )
         col("users").upsert(id, doc)
-        return UserResponse(id, req.username, req.nom, req.prenom, req.email,
-            req.ecoleId, groupeId, req.profilId, "USER", profilModules, true, now())
+        return UserResponse(id, req.username, req.prenom, req.nom, req.email,
+            req.ecoleId, groupeId, req.profilId, "USER", true, now())
     }
 
     suspend fun listUsersByEcole(ecoleId: String): List<UserResponse> {
@@ -166,18 +180,17 @@ class AdminRepository(private val bucket: Bucket) {
             val d = row.contentAs<Map<String, Any>>()
             val inner = d["users"] as? Map<*, *> ?: d
             UserResponse(
-                id            = d["id"] as? String ?: "",
-                username      = inner["username"] as? String ?: "",
-                nom           = inner["nom"] as? String ?: "",
-                prenom        = inner["prenom"] as? String ?: "",
-                email         = inner["email"] as? String ?: "",
-                ecoleId       = inner["ecoleId"] as? String ?: "",
-                groupeId      = inner["groupeId"] as? String ?: "",
-                profilId      = inner["profilId"] as? String ?: "",
-                role          = inner["role"] as? String ?: "USER",
-                modulesAccess = @Suppress("UNCHECKED_CAST") (inner["modulesAccess"] as? List<String> ?: emptyList()),
-                isActive      = inner["isActive"] as? Boolean ?: true,
-                createdAt     = (inner["createdAt"] as? Number)?.toLong() ?: 0L
+                id        = d["id"] as? String ?: "",
+                username  = inner["username"] as? String ?: "",
+                firstName = inner["prenom"] as? String ?: "",
+                lastName  = inner["nom"] as? String ?: "",
+                email     = inner["email"] as? String ?: "",
+                ecoleId   = inner["ecoleId"] as? String ?: "",
+                groupeId  = inner["groupeId"] as? String ?: "",
+                profilId  = inner["profilId"] as? String ?: "",
+                role      = inner["role"] as? String ?: "USER",
+                isActive  = inner["isActive"] as? Boolean ?: true,
+                createdAt = (inner["createdAt"] as? Number)?.toLong() ?: 0L
             )
         }
     }
@@ -186,14 +199,27 @@ class AdminRepository(private val bucket: Bucket) {
         val result = col("profils").get(profilId)
         val doc = result.contentAs<Map<String, Any>>()
         ProfilResponse(
-            id            = profilId,
-            groupeId      = doc["groupeId"] as? String ?: "",
-            nom           = doc["nom"] as? String ?: "",
-            permissions   = @Suppress("UNCHECKED_CAST") (doc["permissions"] as? List<String> ?: emptyList()),
-            modulesAccess = @Suppress("UNCHECKED_CAST") (doc["modulesAccess"] as? List<String> ?: emptyList()),
-            createdAt     = (doc["createdAt"] as? Number)?.toLong() ?: 0L
+            id          = profilId,
+            groupeId    = doc["groupeId"] as? String ?: "",
+            nom         = doc["nom"] as? String ?: "",
+            permissions = parseProfilPermissions(doc),
+            createdAt   = (doc["createdAt"] as? Number)?.toLong() ?: 0L
         )
     }.getOrNull()
+
+    @Suppress("UNCHECKED_CAST")
+    private fun parseProfilPermissions(doc: Map<*, *>): List<ProfilPermission> {
+        val raw = doc["permissions"] as? List<*> ?: return emptyList()
+        return raw.filterIsInstance<Map<String, Any>>().map { p ->
+            ProfilPermission(
+                moduleSlug = p["moduleSlug"] as? String ?: "",
+                canRead    = p["canRead"] as? Boolean ?: true,
+                canWrite   = p["canWrite"] as? Boolean ?: false,
+                canDelete  = p["canDelete"] as? Boolean ?: false,
+                canExport  = p["canExport"] as? Boolean ?: false
+            )
+        }
+    }
 
     // ── Modules ──────────────────────────────────────────────────
 

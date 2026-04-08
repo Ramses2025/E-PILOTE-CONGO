@@ -27,10 +27,16 @@ class JwtAuthFilter(private val jwtService: JwtService) : OncePerRequestFilter()
                 val role = claims["role"] as? String ?: "USER"
 
                 @Suppress("UNCHECKED_CAST")
-                val modules = claims["modulesAccess"] as? List<String> ?: emptyList()
+                val permissions = claims["permissions"] as? List<Map<String, Any>> ?: emptyList()
 
                 val authorities = mutableListOf(SimpleGrantedAuthority("ROLE_$role"))
-                modules.forEach { authorities.add(SimpleGrantedAuthority("MODULE_$it")) }
+                permissions.forEach { p ->
+                    val slug = p["moduleSlug"] as? String ?: return@forEach
+                    authorities.add(SimpleGrantedAuthority("READ_$slug"))
+                    if (p["canWrite"] == true)  authorities.add(SimpleGrantedAuthority("WRITE_$slug"))
+                    if (p["canDelete"] == true) authorities.add(SimpleGrantedAuthority("DELETE_$slug"))
+                    if (p["canExport"] == true) authorities.add(SimpleGrantedAuthority("EXPORT_$slug"))
+                }
 
                 val auth = UsernamePasswordAuthenticationToken(userId, null, authorities)
                 auth.details = mapOf(

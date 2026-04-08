@@ -6,9 +6,9 @@ server:
   port: 8080
 
 couchbase:
-  connection-string: ${CB_CONNECTION_STRING:couchbases://cb.qfnlqsnztvyhsxs.cloud.couchbase.com}
-  username: ${CB_USERNAME:PILOTE}
-  password: ${CB_PASSWORD:}
+  connection-string: ${CB_CONNECTION_STRING}
+  username: ${CB_USERNAME}
+  password: ${CB_PASSWORD}
   bucket: ${CB_BUCKET:epilote_prod}
 
 jwt:
@@ -24,5 +24,6 @@ app-services:
 
 logging:
   level:
-    cg.epilote: DEBUG
+    root: WARN
+    cg.epilote: INFO
     com.couchbase: WARN

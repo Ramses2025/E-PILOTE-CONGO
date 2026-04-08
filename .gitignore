@@ -18,6 +18,9 @@ local.properties
 *.cblite2/
 
 # Environment (ne jamais commiter)
+.env
+.env.*
+*.env
 epilote-infra/.env
 epilote-infra/ssl/
 

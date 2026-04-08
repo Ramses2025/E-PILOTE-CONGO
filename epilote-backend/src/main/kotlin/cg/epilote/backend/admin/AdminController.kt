@@ -14,7 +14,7 @@ import org.springframework.security.crypto.password.PasswordEncoder
 class AdminController(
     private val repo: AdminRepository,
     private val passwordEncoder: PasswordEncoder,
-    private val sgClient: SyncGatewayAdminClient
+    private val sgClient: AppServicesClient
 ) {
 
     private fun Authentication.userId() = principal as String
@@ -105,8 +105,8 @@ class AdminController(
         val profil = repo.getProfilById(req.profilId)
             ?: return@runBlocking ResponseEntity.badRequest().build<UserResponse>()
         val hash = passwordEncoder.encode(req.password)
-        val user = repo.createUser(groupeId, req, hash, profil.modulesAccess)
-        runCatching { sgClient.createOrUpdateUser(user.id, req.password, req.ecoleId, groupeId) }
+        val user = repo.createUser(groupeId, req, hash, profil.permissions)
+        runCatching { sgClient.provisionUser(user.id, req.ecoleId, "USER") }
         ResponseEntity.status(HttpStatus.CREATED).body(user)
     }
 

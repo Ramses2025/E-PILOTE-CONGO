@@ -18,16 +18,21 @@ class AuthService(
             throw AuthException("Identifiants incorrects")
         }
 
+        val offlineToken = jwtService.generateOfflineToken(user)
         return LoginResponse(
-            accessToken   = jwtService.generateAccessToken(user),
-            refreshToken  = jwtService.generateRefreshToken(user.userId),
-            offlineToken  = jwtService.generateOfflineToken(user),
-            userId        = user.userId,
-            ecoleId       = user.ecoleId,
-            groupeId      = user.groupeId,
-            role          = user.role.name,
-            modulesAccess = user.modulesAccess,
-            expiresIn     = 3600
+            accessToken          = jwtService.generateAccessToken(user),
+            refreshToken         = jwtService.generateRefreshToken(user.userId),
+            offlineToken         = offlineToken,
+            offlineTokenExpiresAt = System.currentTimeMillis() + jwtService.offlineExpirationMs,
+            userId               = user.userId,
+            username             = user.username,
+            firstName            = user.firstName,
+            lastName             = user.lastName,
+            ecoleId              = user.ecoleId,
+            groupeId             = user.groupeId,
+            role                 = user.role.name,
+            permissions          = user.permissions,
+            expiresIn            = 3600
         )
     }
 

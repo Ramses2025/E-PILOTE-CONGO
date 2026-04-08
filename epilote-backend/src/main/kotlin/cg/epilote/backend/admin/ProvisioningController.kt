@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*
 @RequestMapping("/api/provisioning")
 class ProvisioningController(
     private val adminRepo: AdminRepository,
-    private val sgClient: SyncGatewayAdminClient
+    private val sgClient: AppServicesClient
 ) {
 
     @PostMapping("/sync-user")

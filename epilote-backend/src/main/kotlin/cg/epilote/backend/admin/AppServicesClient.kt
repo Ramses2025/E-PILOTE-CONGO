@@ -1,6 +1,5 @@
 package cg.epilote.backend.admin
 
-import kotlinx.coroutines.runBlocking
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
@@ -10,7 +9,7 @@ import org.springframework.stereotype.Component
 import org.springframework.web.client.RestTemplate
 
 @Component
-class SyncGatewayAdminClient {
+class AppServicesClient {
 
     @Value("\${app-services.admin-url}")
     private lateinit var adminUrl: String

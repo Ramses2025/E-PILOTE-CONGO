@@ -21,7 +21,7 @@ class JwtService {
     private var refreshExpirationMs: Long = 2_592_000_000
 
     @Value("\${jwt.offline-expiration-ms}")
-    private var offlineExpirationMs: Long = 2_592_000_000
+    var offlineExpirationMs: Long = 2_592_000_000
 
     private val signingKey: SecretKey by lazy {
         Keys.hmacShaKeyFor(secret.toByteArray())
@@ -30,12 +30,22 @@ class JwtService {
     fun generateAccessToken(user: EpiloteUserDetails): String = buildToken(
         subject = user.userId,
         claims = mapOf(
-            "username"      to user.username,
-            "ecoleId"       to (user.ecoleId ?: ""),
-            "groupeId"      to (user.groupeId ?: ""),
-            "role"          to user.role.name,
-            "modulesAccess" to user.modulesAccess,
-            "tokenType"     to "access"
+            "username"    to user.username,
+            "firstName"   to user.firstName,
+            "lastName"    to user.lastName,
+            "ecoleId"     to (user.ecoleId ?: ""),
+            "groupeId"    to (user.groupeId ?: ""),
+            "role"        to user.role.name,
+            "permissions" to user.permissions.map { p ->
+                mapOf(
+                    "moduleSlug" to p.moduleSlug,
+                    "canRead"    to p.canRead,
+                    "canWrite"   to p.canWrite,
+                    "canDelete"  to p.canDelete,
+                    "canExport"  to p.canExport
+                )
+            },
+            "tokenType"   to "access"
         ),
         expirationMs = expirationMs
     )
@@ -49,11 +59,10 @@ class JwtService {
     fun generateOfflineToken(user: EpiloteUserDetails): String = buildToken(
         subject = user.userId,
         claims = mapOf(
-            "ecoleId"       to (user.ecoleId ?: ""),
-            "groupeId"      to (user.groupeId ?: ""),
-            "role"          to user.role.name,
-            "modulesAccess" to user.modulesAccess,
-            "tokenType"     to "offline"
+            "ecoleId"   to (user.ecoleId ?: ""),
+            "groupeId"  to (user.groupeId ?: ""),
+            "role"      to user.role.name,
+            "tokenType" to "offline"
         ),
         expirationMs = offlineExpirationMs
     )

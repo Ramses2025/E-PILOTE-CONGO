@@ -42,7 +42,7 @@ data class EcoleResponse(
 // ── Utilisateur ──────────────────────────────────────────────────
 data class CreateUserRequest(
     @field:NotBlank val username: String,
-    @field:NotBlank @field:Size(min = 6) val password: String,
+    @field:NotBlank @field:Size(min = 8) val password: String,
     @field:NotBlank val nom: String,
     @field:NotBlank val prenom: String,
     @field:Email val email: String,
@@ -53,14 +53,13 @@ data class CreateUserRequest(
 data class UserResponse(
     val id: String,
     val username: String,
-    val nom: String,
-    val prenom: String,
+    val firstName: String,
+    val lastName: String,
     val email: String,
     val ecoleId: String,
     val groupeId: String,
     val profilId: String,
     val role: String,
-    val modulesAccess: List<String>,
     val isActive: Boolean,
     val createdAt: Long
 )
@@ -70,18 +69,24 @@ data class AssignProfilRequest(
 )
 
 // ── Profil d'accès ───────────────────────────────────────────────
+data class ProfilPermission(
+    @field:NotBlank val moduleSlug: String,
+    val canRead: Boolean = true,
+    val canWrite: Boolean = false,
+    val canDelete: Boolean = false,
+    val canExport: Boolean = false
+)
+
 data class CreateProfilRequest(
     @field:NotBlank val nom: String,
-    val permissions: List<String> = emptyList(),
-    val modulesAccess: List<String> = emptyList()
+    val permissions: List<ProfilPermission> = emptyList()
 )
 
 data class ProfilResponse(
     val id: String,
     val groupeId: String,
     val nom: String,
-    val permissions: List<String>,
-    val modulesAccess: List<String>,
+    val permissions: List<ProfilPermission>,
     val createdAt: Long
 )
 
