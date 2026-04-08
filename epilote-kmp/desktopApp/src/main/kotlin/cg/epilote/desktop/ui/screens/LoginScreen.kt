@@ -1,42 +1,51 @@
 package cg.epilote.desktop.ui.screens
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.loadSvgPainter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cg.epilote.desktop.ui.theme.*
 import cg.epilote.shared.domain.model.UserSession
 import cg.epilote.shared.presentation.viewmodel.LoginUiState
 import cg.epilote.shared.presentation.viewmodel.LoginViewModel
+import java.awt.Cursor
 
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel,
     onLoginSuccess: (UserSession) -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val email by viewModel.username.collectAsState()
+    val uiState  by viewModel.uiState.collectAsState()
+    val email    by viewModel.username.collectAsState()
     val password by viewModel.password.collectAsState()
-
     var passwordVisible by remember { mutableStateOf(false) }
-    var rememberMe by remember { mutableStateOf(false) }
+    var rememberMe      by remember { mutableStateOf(false) }
 
     val density = LocalDensity.current
     val logoPainter = remember {
@@ -44,130 +53,152 @@ fun LoginScreen(
         stream?.let { loadSvgPainter(it, density) }
     }
 
+    val navy   = Color(0xFF1D3557)
+    val accent = Color(0xFF2A9D8F)
+    val border = Color(0xFFE0E4EA)
+    val label  = Color(0xFF6B7A8D)
+
+    // ── Entrance animation ──────────────────────────────────────
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(700, easing = FastOutSlowInEasing),
+        label = "alpha"
+    )
+
+    // ── Infinite animations (modern effects) ────────────────────
+    val fx = rememberInfiniteTransition(label = "fx")
+    val logoScale by fx.animateFloat(
+        initialValue = 1f, targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ), label = "logoScale"
+    )
+    val glowPulse by fx.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ), label = "glow"
+    )
+    val shimmerPhase by fx.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2500, easing = LinearEasing)
+        ), label = "shimmer"
+    )
+
     LaunchedEffect(uiState) {
         if (uiState is LoginUiState.Success) {
             onLoginSuccess((uiState as LoginUiState.Success).session)
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF7F8FA))) {
-
-        // ── Header bar — logo + nom plateforme + langue ──────────
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shadowElevation = 2.dp,
-            color = Color(0xFF1D3557)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .padding(horizontal = 24.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (logoPainter != null) {
-                        Image(
-                            painter = logoPainter,
-                            contentDescription = "Logo",
-                            modifier = Modifier.size(38.dp)
-                        )
-                    }
-                    Column {
-                        Text(
-                            "E-PILOTE CONGO",
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
-                        Text(
-                            "Plateforme de Gestion Scolaire",
-                            color = Color(0xFFDCE3EA),
-                            fontSize = 10.sp,
-                            letterSpacing = 0.5.sp
-                        )
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Language,
-                        contentDescription = null,
-                        tint = Color(0xFFE9C46A),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        "Français",
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize().background(Color.White)
+    ) {
+        val cardW: Dp = when {
+            maxWidth < 500.dp  -> maxWidth * 0.92f
+            maxWidth < 800.dp  -> maxWidth * 0.48f
+            maxWidth < 1200.dp -> 380.dp
+            else               -> 400.dp
         }
 
-        // ── Zone principale — formulaire centré ──────────────────
-        Box(
+        Column(
             modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Card(
-                modifier = Modifier.width(420.dp),
-                shape = RoundedCornerShape(12.dp),
-                elevation = CardDefaults.cardElevation(4.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+            Spacer(Modifier.weight(0.25f))
+
+            // ── Card (branding intégré) ─────────────────────────
+            Surface(
+                modifier = Modifier.width(cardW).alpha(contentAlpha),
+                shape = RoundedCornerShape(4.dp),
+                color = Color.White,
+                border = BorderStroke(1.dp, border),
+                shadowElevation = 1.dp
             ) {
                 Column(
-                    modifier = Modifier.padding(40.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                    modifier = Modifier.padding(horizontal = 40.dp, vertical = 32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+
+                    // ── Branding inside card ────────────────────
+                    if (logoPainter != null) {
+                        Image(logoPainter, "Logo E-PILOTE", Modifier.size(44.dp).scale(logoScale))
+                        Spacer(Modifier.height(10.dp))
+                    }
                     Text(
-                        "Connexion",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF172B4D)
+                        "E-PILOTE CONGO",
+                        fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                        color = navy, letterSpacing = 1.sp,
+                        modifier = Modifier.drawBehind {
+                            drawCircle(
+                                color = Color(0xFF2A9D8F).copy(alpha = glowPulse * 0.10f),
+                                radius = size.maxDimension * 0.8f
+                            )
+                        }
                     )
+                    Spacer(Modifier.height(6.dp))
+                    Box(
+                        Modifier
+                            .width(36.dp).height(2.dp)
+                            .drawBehind {
+                                drawRect(color = Color(0xFF2A9D8F))
+                                val sw = size.width * 0.4f
+                                val sx = shimmerPhase * (size.width + sw) - sw
+                                drawRect(
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            Color.White.copy(alpha = 0.7f),
+                                            Color.Transparent
+                                        ),
+                                        startX = sx,
+                                        endX = sx + sw
+                                    )
+                                )
+                            }
+                    )
+                    Spacer(Modifier.height(6.dp))
                     Text(
-                        "Entrez vos identifiants pour continuer",
-                        fontSize = 13.sp,
-                        color = EpiloteTextMuted,
-                        textAlign = TextAlign.Center
+                        "Plateforme de Gestion Scolaire \u2022 République du Congo",
+                        fontSize = 9.sp, color = label
                     )
 
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(28.dp))
 
+                    // Email
                     OutlinedTextField(
                         value = email,
                         onValueChange = viewModel::onUsernameChange,
-                        placeholder = { Text("Email", color = Color(0xFFB0B8C4)) },
+                        label = { Text("Adresse email", fontSize = 13.sp) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(4.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color(0xFFDFE3E8),
-                            focusedBorderColor = Color(0xFF1D3557)
+                            unfocusedBorderColor = border,
+                            focusedBorderColor = navy,
+                            unfocusedLabelColor = label,
+                            focusedLabelColor = navy
                         )
                     )
 
+                    Spacer(Modifier.height(16.dp))
+
+                    // Password
                     OutlinedTextField(
                         value = password,
                         onValueChange = viewModel::onPasswordChange,
-                        placeholder = { Text("Mot de passe", color = Color(0xFFB0B8C4)) },
+                        label = { Text("Mot de passe", fontSize = 13.sp) },
                         trailingIcon = {
                             IconButton(onClick = { passwordVisible = !passwordVisible }) {
                                 Icon(
-                                    if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    null,
-                                    tint = Color(0xFFB0B8C4)
+                                    if (passwordVisible) Icons.Default.VisibilityOff
+                                    else Icons.Default.Visibility,
+                                    null, tint = label, modifier = Modifier.size(18.dp)
                                 )
                             }
                         },
@@ -175,14 +206,18 @@ fun LoginScreen(
                                                else PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(4.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color(0xFFDFE3E8),
-                            focusedBorderColor = Color(0xFF1D3557)
+                            unfocusedBorderColor = border,
+                            focusedBorderColor = navy,
+                            unfocusedLabelColor = label,
+                            focusedLabelColor = navy
                         )
                     )
 
-                    // ── Remember me + Forgot password ────────────
+                    Spacer(Modifier.height(16.dp))
+
+                    // Se souvenir + Mot de passe oublié
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -192,69 +227,98 @@ fun LoginScreen(
                             Checkbox(
                                 checked = rememberMe,
                                 onCheckedChange = { rememberMe = it },
-                                colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1D3557))
+                                colors = CheckboxDefaults.colors(checkedColor = navy)
                             )
-                            Text("Se souvenir de moi", fontSize = 12.sp, color = Color(0xFF6B7280))
+                            Text("Se souvenir de moi", fontSize = 12.sp, color = label)
                         }
-                        TextButton(onClick = { /* TODO */ }) {
+                        TextButton(
+                            onClick = {},
+                            modifier = Modifier.pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR))),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
                             Text(
                                 "Mot de passe oublié ?",
-                                fontSize = 12.sp,
-                                color = Color(0xFF1D3557),
-                                fontWeight = FontWeight.Medium
+                                fontSize = 12.sp, color = navy, fontWeight = FontWeight.Medium
                             )
                         }
                     }
 
-                    if (uiState is LoginUiState.Error) {
+                    Spacer(Modifier.height(8.dp))
+
+                    // Error
+                    AnimatedVisibility(
+                        visible = uiState is LoginUiState.Error,
+                        enter = fadeIn() + slideInVertically(),
+                        exit  = fadeOut()
+                    ) {
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(3.dp),
                             color = Color(0xFFFEE2E2),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                         ) {
                             Text(
-                                (uiState as LoginUiState.Error).message,
+                                (uiState as? LoginUiState.Error)?.message ?: "",
                                 modifier = Modifier.padding(12.dp),
-                                color = Color(0xFFDC2626),
-                                fontSize = 13.sp
+                                color = Color(0xFFDC2626), fontSize = 12.sp
                             )
                         }
                     }
-
-                    if (uiState is LoginUiState.NoNetwork) {
+                    AnimatedVisibility(
+                        visible = uiState is LoginUiState.NoNetwork,
+                        enter = fadeIn() + slideInVertically(),
+                        exit  = fadeOut()
+                    ) {
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(3.dp),
                             color = Color(0xFFFFF3CD),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                         ) {
                             Text(
-                                "Mode hors-ligne : connexion réseau requise pour la première connexion",
+                                "Connexion réseau requise",
                                 modifier = Modifier.padding(12.dp),
-                                color = Color(0xFF856404),
-                                fontSize = 13.sp
+                                color = Color(0xFF856404), fontSize = 12.sp
                             )
                         }
                     }
 
+                    // Button with glow
                     Button(
                         onClick = { viewModel.login() },
-                        modifier = Modifier.fillMaxWidth().height(46.dp),
                         enabled = uiState !is LoginUiState.Loading,
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D3557))
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(
+                                elevation = (2 + glowPulse * 10).dp,
+                                shape = RoundedCornerShape(4.dp)
+                            )
+                            .pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR))),
+                        shape = RoundedCornerShape(4.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = navy),
+                        elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp),
+                        contentPadding = PaddingValues(vertical = 12.dp)
                     ) {
                         if (uiState is LoginUiState.Loading) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
+                                modifier = Modifier.size(18.dp),
+                                color = Color.White, strokeWidth = 2.dp
                             )
                         } else {
-                            Text("Se connecter", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Icon(Icons.Default.LockOpen, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Ouvrir une session", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
             }
+
+            Spacer(Modifier.weight(0.38f))
+
+            // ── Footer ──────────────────────────────────────────
+            Text(
+                "\u00A9 2026 E-PILOTE CONGO \u2022 République du Congo",
+                modifier = Modifier.padding(bottom = 16.dp),
+                fontSize = 9.sp, color = Color(0xFFC0C8D4)
+            )
         }
     }
 }
