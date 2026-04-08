@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <!-- Gradient bleu pour fond -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1D3557"/>
+      <stop offset="100%" stop-color="#0d1f3d"/>
+    </linearGradient>
+    
+    <!-- Gradient or pour accents -->
+    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E9C46A"/>
+      <stop offset="100%" stop-color="#f4d58d"/>
+    </linearGradient>
+    
+    <!-- Ombre portée -->
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  
+  <!-- Cercle de fond avec gradient bleu -->
+  <circle cx="100" cy="100" r="90" fill="url(#bgGradient)"/>
+  
+  <!-- Bordure principale vert Congo -->
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#2A9D8F" stroke-width="4"/>
+  
+  <!-- Bordure secondaire subtile -->
+  <circle cx="100" cy="100" r="82" fill="none" stroke="#2A9D8F" stroke-width="1" opacity="0.4"/>
+  
+  <!-- Étoile dorée en haut (symbole Congo) -->
+  <path d="M100 25 l2 8 h8 l-6 5 l2 8 l-6-5 l-6 5 l2-8 l-6-5 h8 Z" fill="#E9C46A"/>
+  
+  <!-- Lettre E (Blanc) -->
+  <text 
+    x="70" 
+    y="125" 
+    font-family="'Arial Black', 'Helvetica', sans-serif" 
+    font-size="72" 
+    font-weight="900" 
+    fill="#F9F9F9"
+    text-anchor="middle"
+    filter="url(#shadow)">E</text>
+  
+  <!-- Lettre P (Rouge Sobre #E63946) -->
+  <text 
+    x="130" 
+    y="125" 
+    font-family="'Arial Black', 'Helvetica', sans-serif" 
+    font-size="72" 
+    font-weight="900" 
+    fill="#E63946"
+    text-anchor="middle"
+    filter="url(#shadow)">P</text>
+  
+  <!-- Ligne de séparation dorée -->
+  <line x1="60" y1="140" x2="140" y2="140" stroke="url(#goldGradient)" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Texte "CONGO" bicolore -->
+  <text x="100" y="158" font-family="'Arial', sans-serif" font-size="10" font-weight="700" letter-spacing="2" text-anchor="middle">
+    <tspan fill="#2A9D8F">CON</tspan><tspan fill="#E9C46A">GO</tspan>
+  </text>
+  
+  <!-- Sous-titre "GESTION SCOLAIRE" -->
+  <text 
+    x="100" 
+    y="172" 
+    font-family="'Arial', sans-serif" 
+    font-size="7" 
+    font-weight="500" 
+    letter-spacing="1.5" 
+    fill="#DCE3EA" 
+    opacity="0.9" 
+    text-anchor="middle">GESTION SCOLAIRE</text>
+  
+  <!-- Points décoratifs dorés -->
+  <circle cx="50" cy="140" r="2" fill="#E9C46A"/>
+  <circle cx="150" cy="140" r="2" fill="#E9C46A"/>
+</svg>

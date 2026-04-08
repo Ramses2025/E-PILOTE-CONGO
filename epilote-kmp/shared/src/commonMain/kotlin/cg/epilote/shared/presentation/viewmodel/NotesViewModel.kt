@@ -32,22 +32,23 @@ class NotesViewModel(
         }
     }
 
-    fun saveNote(ecoleId: String, classeId: String, matiereId: String,
-                 eleveId: String, periode: String, valeur: Double, auteurId: String) {
+    fun saveNote(ecoleId: String, anneeId: String, classeId: String, matiereId: String,
+                 eleveId: String, periode: String, valeur: Double, enseignantId: String) {
         if (valeur < 0 || valeur > 20) {
             _uiState.value = NotesUiState.Error("La note doit être entre 0 et 20")
             return
         }
         scope.launch {
             val note = Note(
-                id        = Note.buildId(ecoleId, classeId, matiereId, eleveId, periode),
-                ecoleId   = ecoleId,
-                eleveId   = eleveId,
-                classeId  = classeId,
-                matiereId = matiereId,
-                periode   = periode,
-                valeur    = valeur,
-                auteurId  = auteurId
+                id           = Note.buildId(ecoleId, classeId, matiereId, eleveId, periode),
+                ecoleId      = ecoleId,
+                anneeId      = anneeId,
+                eleveId      = eleveId,
+                classeId     = classeId,
+                matiereId    = matiereId,
+                periode      = periode,
+                valeur       = valeur,
+                enseignantId = enseignantId
             )
             noteRepo.save(note)
             _uiState.value = NotesUiState.Saved

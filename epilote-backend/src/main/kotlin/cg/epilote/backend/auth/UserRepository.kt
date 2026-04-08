@@ -36,6 +36,29 @@ class UserRepository(private val bucket: Bucket) {
         }
     }
 
+    suspend fun findByEmailOrUsername(identifier: String): EpiloteUserDetails? {
+        val result = bucket.defaultScope().query(
+            statement = "SELECT META().id, * FROM `users` WHERE email = \$identifier OR username = \$identifier LIMIT 1",
+            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("identifier" to identifier)
+        ).execute()
+
+        return result.rows.firstOrNull()?.let { row ->
+            val doc = row.contentAs<Map<String, Any>>()
+            val inner = doc["users"] as? Map<*, *> ?: doc
+            EpiloteUserDetails(
+                userId       = doc["id"] as? String ?: "",
+                username     = inner["username"] as? String ?: "",
+                firstName    = inner["prenom"] as? String ?: "",
+                lastName     = inner["nom"] as? String ?: "",
+                ecoleId      = inner["ecoleId"] as? String,
+                groupeId     = inner["groupeId"] as? String,
+                role         = UserRole.valueOf(inner["role"] as? String ?: "USER"),
+                permissions  = parsePermissions(inner),
+                passwordHash = inner["passwordHash"] as? String ?: ""
+            )
+        }
+    }
+
     suspend fun findById(userId: String): EpiloteUserDetails? = runCatching {
         val result = collection.get(userId)
         val doc = result.contentAs<Map<String, Any>>()

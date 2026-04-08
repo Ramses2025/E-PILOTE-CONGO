@@ -49,9 +49,9 @@ class LoginUseCase(
             sessionRepo.saveSession(session)
 
             // Provisioning App Services (best-effort, n'empêche pas le login si échec réseau)
-            val schoolId = dto.ecoleId ?: ""
-            if (schoolId.isNotEmpty()) {
-                runCatching { authApi.provisionSyncUser(dto.userId, schoolId, dto.role) }
+            val schoolIds = dto.ecoleId?.let { listOf(it) } ?: emptyList()
+            if (dto.groupeId != null || schoolIds.isNotEmpty()) {
+                runCatching { authApi.provisionSyncUser(dto.userId, dto.groupeId, schoolIds, dto.role) }
             }
 
             // Démarrage de la sync CBLite avec credentials dérivés (jamais visibles par l'user)

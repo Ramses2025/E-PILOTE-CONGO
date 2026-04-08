@@ -1,14 +1,24 @@
 package cg.epilote.shared.data.local
 
 import cg.epilote.shared.domain.model.Eleve
-import com.couchbase.lite.*
+import com.couchbase.lite.DataSource
+import com.couchbase.lite.UnitOfWork
+import com.couchbase.lite.Database
+import com.couchbase.lite.Expression
+import com.couchbase.lite.Function
+import com.couchbase.lite.Meta
+import com.couchbase.lite.MutableDocument
+import com.couchbase.lite.Ordering
+import com.couchbase.lite.QueryBuilder
+import com.couchbase.lite.Result
+import com.couchbase.lite.SelectResult
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 
 class EleveRepository(private val db: Database) {
 
-    private val collection: Collection
+    private val collection: com.couchbase.lite.Collection
         get() = db.getCollection("students") ?: db.createCollection("students")
 
     fun save(eleve: Eleve) {
@@ -30,9 +40,7 @@ class EleveRepository(private val db: Database) {
     }
 
     fun saveAll(eleves: List<Eleve>) {
-        db.inBatch {
-            eleves.forEach { save(it) }
-        }
+        db.inBatch(UnitOfWork { eleves.forEach { save(it) } })
     }
 
     fun getByClasse(ecoleId: String, classeId: String): List<Eleve> {

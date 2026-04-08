@@ -14,18 +14,22 @@ class SyncIndicatorViewModel(syncManager: SyncManager) {
     val label: kotlinx.coroutines.flow.Flow<String> =
         combine(syncManager.syncStatus, syncManager.pendingCount) { status, count ->
             when (status) {
-                SyncStatus.SYNCED  -> "Synchronisé ✓"
-                SyncStatus.OFFLINE -> "Hors ligne"
-                SyncStatus.PENDING -> if (count > 0) "$count élément(s) en attente" else "Synchronisation..."
+                SyncStatus.SYNCED   -> "Synchronisé ✓"
+                SyncStatus.OFFLINE  -> "Hors ligne"
+                SyncStatus.PENDING  -> if (count > 0) "$count élément(s) en attente" else "Synchronisation..."
+                SyncStatus.ERROR    -> "Erreur de synchronisation"
+                SyncStatus.CONFLICT -> "Conflits détectés"
             }
         }
 
     val emoji: kotlinx.coroutines.flow.Flow<String> =
         syncManager.syncStatus.map { status ->
             when (status) {
-                SyncStatus.SYNCED  -> "🟢"
-                SyncStatus.OFFLINE -> "🔴"
-                SyncStatus.PENDING -> "🟡"
+                SyncStatus.SYNCED   -> "🟢"
+                SyncStatus.OFFLINE  -> "🔴"
+                SyncStatus.PENDING  -> "🟡"
+                SyncStatus.ERROR    -> "🔴"
+                SyncStatus.CONFLICT -> "🟠"
             }
         }
 }

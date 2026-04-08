@@ -35,16 +35,12 @@ class LoginViewModel(private val loginUseCase: LoginUseCase) {
     fun onUsernameChange(value: String) { _username.value = value }
     fun onPasswordChange(value: String) { _password.value = value }
 
-    fun login(pin: String) {
+    fun login(pin: String = "0000") {
         val u = _username.value.trim()
         val p = _password.value
 
         if (u.isBlank() || p.isBlank()) {
-            _uiState.value = LoginUiState.Error("Veuillez saisir votre identifiant et mot de passe")
-            return
-        }
-        if (pin.length < 4) {
-            _uiState.value = LoginUiState.Error("Le PIN doit contenir au moins 4 chiffres")
+            _uiState.value = LoginUiState.Error("Veuillez saisir votre email et mot de passe")
             return
         }
 

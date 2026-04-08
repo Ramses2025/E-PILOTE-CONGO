@@ -1,0 +1,9 @@
+id,code,label,schoolGroupId,description,isDefault,createdAt,updatedAt,createdById
+0a8838f7-790e-4930-9a51-4658a7441211,surveillant,Surveillant,8443c90c-7771-4096-9ffd-902bc68bd1de,Discipline et vie scolaire,false,2026-01-30 08:25:05.087,2026-01-30 08:25:05.087,
+2f82c83f-c0fb-4463-8a6d-f5f1cabcd8a7,enseignant,Enseignant,8443c90c-7771-4096-9ffd-902bc68bd1de,Gestion pédagogique et notes,false,2026-01-30 08:25:04.064,2026-01-30 08:25:04.064,
+3229a0ae-b3e9-44b4-8b42-48af03af70f1,directeur,Directeur,8443c90c-7771-4096-9ffd-902bc68bd1de,Accès complet à la gestion de l'école,false,2026-01-30 08:25:02.764,2026-01-30 08:25:02.764,
+3ed978cc-c3eb-4b84-bb8a-49df18cea9d9,chef_etablissement,Chef d'établissement,8443c90c-7771-4096-9ffd-902bc68bd1de,Accès complet à tous les modules de gestion de l'établissement,false,2026-01-30 08:28:43.235,2026-01-30 08:28:43.235,
+731e52e1-b1a2-4bf8-8e54-3254b7f4d863,comptable,Comptable,8443c90c-7771-4096-9ffd-902bc68bd1de,Gestion financière et comptabilité,false,2026-01-30 08:25:03.551,2026-01-30 08:25:03.551,
+8811567e-55be-4320-b1d4-12781a8488de,secretaire,Secrétaire,8443c90c-7771-4096-9ffd-902bc68bd1de,Gestion administrative,false,2026-01-30 08:25:04.576,2026-01-30 08:25:04.576,
+bd11c932-e692-484f-8a35-b993068b88f3,chef_etablissement,Chef d'établissement,33324de4-7843-4abd-806b-b10105cf3c3f,Accès complet à tous les modules de gestion de l'établissement,true,2026-02-14 07:47:24.21,2026-02-14 07:47:24.21,
+d6de552c-98d6-4045-a2a1-e3b116148790,chef_etablissement,Chef d'établissement,2c1c9946-44d0-4054-b1c5-6f760a437316,Accès complet à tous les modules de gestion de l'établissement,false,2026-01-31 07:25:43.596,2026-01-31 07:25:43.596,

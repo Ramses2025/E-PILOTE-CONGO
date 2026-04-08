@@ -1,7 +1,14 @@
 package cg.epilote.shared.data.sync
 
 import cg.epilote.shared.domain.model.SyncStatus
-import com.couchbase.lite.*
+import com.couchbase.lite.BasicAuthenticator
+import com.couchbase.lite.Database
+import com.couchbase.lite.Replicator
+import com.couchbase.lite.ReplicatorActivityLevel
+import com.couchbase.lite.ReplicatorConfiguration
+import com.couchbase.lite.ReplicatorStatus
+import com.couchbase.lite.ReplicatorType
+import com.couchbase.lite.URLEndpoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,21 +30,17 @@ class SyncManager(
         if (replicator != null) return
 
         val endpoint = URLEndpoint(URI(syncGatewayUrl))
-        val config = ReplicatorConfigurationFactory.newConfig(
-            target = endpoint,
-            collections = mapOf(database.collections to null),
-            type = ReplicatorType.PUSH_AND_PULL,
-            continuous = true,
-            authenticator = BasicAuthenticator(username, password.toCharArray()),
-            conflictResolver = EpiloteConflictResolver(),
-            maxAttempts = Int.MAX_VALUE,
-            maxAttemptWaitTime = 600u
-        )
+        val config = ReplicatorConfiguration(endpoint)
+        config.setType(ReplicatorType.PUSH_AND_PULL)
+        config.setContinuous(true)
+        config.setAuthenticator(BasicAuthenticator(username, password.toCharArray()))
+        config.setConflictResolver(EpiloteConflictResolver())
+        config.setMaxAttempts(Int.MAX_VALUE)
+        config.setMaxAttemptWaitTime(600)
+        database.collections.forEach { config.addCollection(it, null) }
 
         replicator = Replicator(config).apply {
-            addChangeListener { change ->
-                updateStatus(change.status)
-            }
+            addChangeListener { change -> updateStatus(change.status) }
             start()
         }
     }
@@ -59,9 +62,17 @@ class SyncManager(
     }
 
     private fun updateStatus(status: ReplicatorStatus) {
-        val pending = replicator?.getPendingDocumentIds(
-            database.getCollection("grades")!!
-        )?.size?.toLong() ?: 0L
+        val collectionsToCheck = listOf(
+            "grades", "attendances", "inscriptions", "students",
+            "report_cards", "disciplines", "timetable"
+        )
+        val pending = collectionsToCheck.sumOf { name ->
+            runCatching {
+                database.getCollection(name)?.let {
+                    replicator?.getPendingDocumentIds(it)?.size?.toLong()
+                } ?: 0L
+            }.getOrElse { 0L }
+        }
 
         _pendingCount.value = pending
 

@@ -3,6 +3,7 @@ import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.compose.desktop)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 kotlin {
@@ -13,12 +14,28 @@ kotlin {
     }
     sourceSets {
         val desktopMain by getting {
+            kotlin.srcDirs("src/main/kotlin")
+            resources.srcDirs("src/main/resources")
             dependencies {
                 implementation(project(":shared"))
                 implementation(compose.desktop.currentOs)
                 implementation(compose.material3)
                 implementation(compose.materialIconsExtended)
                 implementation(libs.coroutines.swing)
+                implementation(libs.coroutines.core)
+
+                // Ktor client pour appels REST (IA + API backend)
+                implementation(libs.ktor.client.core)
+                implementation(libs.ktor.client.java)
+                implementation(libs.ktor.client.content)
+                implementation(libs.ktor.serialization.json)
+                implementation(libs.ktor.client.logging)
+
+                // Sérialisation JSON
+                implementation(libs.serialization.json)
+
+                // Couchbase Lite JVM
+                implementation(libs.couchbase.lite.java)
             }
         }
     }

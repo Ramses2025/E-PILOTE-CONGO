@@ -2,11 +2,14 @@ package cg.epilote.shared.data.local
 
 import cg.epilote.shared.domain.model.ModulePermission
 import cg.epilote.shared.domain.model.UserSession
-import com.couchbase.lite.*
+import com.couchbase.lite.Database
+import com.couchbase.lite.MutableArray
+import com.couchbase.lite.MutableDictionary
+import com.couchbase.lite.MutableDocument
 
 class UserSessionRepository(private val db: Database) {
 
-    private val collection: Collection
+    private val collection: com.couchbase.lite.Collection
         get() = db.getCollection("sessions") ?: db.createCollection("sessions")
 
     private val SESSION_ID = "current_session"
@@ -43,32 +46,41 @@ class UserSessionRepository(private val db: Database) {
 
     fun getSession(): UserSession? {
         val doc = collection.getDocument(SESSION_ID) ?: return null
-        val perms = doc.getArray("permissions")?.let { arr ->
-            (0 until arr.count()).mapNotNull { i ->
-                arr.getDictionary(i)?.let { d ->
-                    ModulePermission(
-                        moduleSlug = d.getString("moduleSlug") ?: return@mapNotNull null,
-                        canRead    = d.getBoolean("canRead"),
-                        canWrite   = d.getBoolean("canWrite"),
-                        canDelete  = d.getBoolean("canDelete"),
-                        canExport  = d.getBoolean("canExport")
-                    )
-                }
+
+        val permsArr = doc.getArray("permissions")
+        val perms: List<ModulePermission> = if (permsArr != null) {
+            (0 until permsArr.count()).mapNotNull { i ->
+                val d = permsArr.getDictionary(i) ?: return@mapNotNull null
+                val slug = d.getString("moduleSlug") ?: return@mapNotNull null
+                ModulePermission(
+                    moduleSlug = slug,
+                    canRead    = d.getBoolean("canRead"),
+                    canWrite   = d.getBoolean("canWrite"),
+                    canDelete  = d.getBoolean("canDelete"),
+                    canExport  = d.getBoolean("canExport")
+                )
             }
-        } ?: emptyList()
+        } else emptyList()
+
+        val userId      = doc.getString("userId")      ?: return null
+        val username    = doc.getString("username")    ?: return null
+        val accessToken = doc.getString("accessToken") ?: return null
+        val refreshToken = doc.getString("refreshToken") ?: return null
+        val offlineToken = doc.getString("offlineToken") ?: return null
+
         return UserSession(
-            userId               = doc.getString("userId") ?: return null,
-            username             = doc.getString("username") ?: return null,
-            firstName            = doc.getString("firstName") ?: "",
-            lastName             = doc.getString("lastName") ?: "",
-            ecoleId              = doc.getString("ecoleId")?.takeIf { it.isNotEmpty() },
-            groupeId             = doc.getString("groupeId")?.takeIf { it.isNotEmpty() },
-            role                 = doc.getString("role") ?: "USER",
-            accessToken          = doc.getString("accessToken") ?: return null,
-            refreshToken         = doc.getString("refreshToken") ?: return null,
-            offlineToken         = doc.getString("offlineToken") ?: return null,
+            userId                = userId,
+            username              = username,
+            firstName             = doc.getString("firstName") ?: "",
+            lastName              = doc.getString("lastName") ?: "",
+            ecoleId               = doc.getString("ecoleId")?.takeIf { s -> s.isNotEmpty() },
+            groupeId              = doc.getString("groupeId")?.takeIf { s -> s.isNotEmpty() },
+            role                  = doc.getString("role") ?: "USER",
+            accessToken           = accessToken,
+            refreshToken          = refreshToken,
+            offlineToken          = offlineToken,
             offlineTokenExpiresAt = doc.getLong("offlineTokenExpiresAt"),
-            permissions          = perms
+            permissions           = perms
         )
     }
 

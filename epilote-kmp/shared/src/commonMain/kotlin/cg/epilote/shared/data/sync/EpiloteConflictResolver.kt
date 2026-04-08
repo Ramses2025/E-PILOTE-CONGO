@@ -1,7 +1,7 @@
 package cg.epilote.shared.data.sync
 
-import com.couchbase.lite.ConflictResolver
 import com.couchbase.lite.Conflict
+import com.couchbase.lite.ConflictResolver
 import com.couchbase.lite.Document
 import com.couchbase.lite.MutableDocument
 

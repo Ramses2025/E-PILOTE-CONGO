@@ -15,6 +15,12 @@ CREATE COLLECTION `epilote_prod`.`_default`.`schools`           IF NOT EXISTS;
 CREATE COLLECTION `epilote_prod`.`_default`.`academic_config`   IF NOT EXISTS;
 CREATE COLLECTION `epilote_prod`.`_default`.`users`             IF NOT EXISTS;
 
+-- Backend Admin (groupes, modules, plans, profils)
+CREATE COLLECTION `epilote_prod`.`_default`.`groupes`           IF NOT EXISTS;
+CREATE COLLECTION `epilote_prod`.`_default`.`modules`           IF NOT EXISTS;
+CREATE COLLECTION `epilote_prod`.`_default`.`plans`             IF NOT EXISTS;
+CREATE COLLECTION `epilote_prod`.`_default`.`profils`           IF NOT EXISTS;
+
 -- Scolarité
 CREATE COLLECTION `epilote_prod`.`_default`.`students`          IF NOT EXISTS;
 CREATE COLLECTION `epilote_prod`.`_default`.`inscriptions`      IF NOT EXISTS;
@@ -55,6 +61,8 @@ CREATE COLLECTION `epilote_prod`.`_default`.`ledger_entries`    IF NOT EXISTS;
 -- ── BLOC 2 : Créer les index ─────────────────────────────────
 
 CREATE INDEX idx_users_username   ON `epilote_prod`._default.`users`(username)  WHERE type="user";
+CREATE INDEX idx_users_email      ON `epilote_prod`._default.`users`(email)     WHERE type="user";
+CREATE INDEX idx_users_role       ON `epilote_prod`._default.`users`(role)      WHERE type="user";
 CREATE INDEX idx_users_school     ON `epilote_prod`._default.`users`(schoolId)  WHERE type="user";
 CREATE INDEX idx_users_group      ON `epilote_prod`._default.`users`(groupId)   WHERE type="user";
 
@@ -90,33 +98,106 @@ CREATE INDEX idx_cnf_status       ON `epilote_prod`._default.`sync_conflicts`(sc
 
 CREATE INDEX idx_config_type      ON `epilote_prod`._default.`config`(type);
 
+-- Backend Admin indexes
+CREATE INDEX idx_groupes_type     ON `epilote_prod`._default.`groupes`(type);
+CREATE INDEX idx_modules_type     ON `epilote_prod`._default.`modules`(type);
+CREATE INDEX idx_plans_type       ON `epilote_prod`._default.`plans`(type);
+CREATE INDEX idx_profils_groupe   ON `epilote_prod`._default.`profils`(groupeId) WHERE type="profil";
+
 -- ── BLOC 3 : Insérer les documents de référence ──────────────
+
+UPSERT INTO `epilote_prod`._default.`config` (KEY, VALUE) VALUES (
+  "config::categories",
+  {
+    "_id": "config::categories", "type": "config_categories", "_schemaVersion": 1,
+    "categories": [
+      { "code": "scolarite",     "nom": "Scolarité",     "isCore": true,  "ordre": 0 },
+      { "code": "pedagogie",     "nom": "Pédagogie",     "isCore": true,  "ordre": 1 },
+      { "code": "finances",      "nom": "Finances",      "isCore": false, "ordre": 2 },
+      { "code": "personnel",     "nom": "Personnel",     "isCore": false, "ordre": 3 },
+      { "code": "vie-scolaire",  "nom": "Vie Scolaire",  "isCore": false, "ordre": 4 },
+      { "code": "communication", "nom": "Communication", "isCore": false, "ordre": 5 }
+    ],
+    "updatedAt": "2026-04-08T00:00:00Z"
+  }
+);
 
 UPSERT INTO `epilote_prod`._default.`config` (KEY, VALUE) VALUES (
   "config::modules",
   {
-    "_id": "config::modules", "type": "config_modules", "_schemaVersion": 1,
+    "_id": "config::modules", "type": "config_modules", "_schemaVersion": 2,
     "modules": [
-      { "id": "mod::notes",    "slug": "notes",    "name": "Saisie des notes",    "isCore": true,  "requiredPlan": "gratuit" },
-      { "id": "mod::absences", "slug": "absences", "name": "Suivi des absences",  "isCore": true,  "requiredPlan": "gratuit" },
-      { "id": "mod::bulletins","slug": "bulletins","name": "Bulletins scolaires", "isCore": true,  "requiredPlan": "gratuit" },
-      { "id": "mod::finance",  "slug": "finance",  "name": "Gestion financiere",  "isCore": false, "requiredPlan": "premium"  },
-      { "id": "mod::rh",       "slug": "rh",       "name": "Ressources humaines", "isCore": false, "requiredPlan": "premium"  }
+      { "slug": "inscriptions",       "nom": "Inscriptions",        "categorieCode": "scolarite",     "isCore": true,  "requiredPlan": "gratuit", "ordre": 0  },
+      { "slug": "eleves",             "nom": "Élèves",              "categorieCode": "scolarite",     "isCore": true,  "requiredPlan": "gratuit", "ordre": 1  },
+      { "slug": "classes",            "nom": "Classes",             "categorieCode": "scolarite",     "isCore": true,  "requiredPlan": "gratuit", "ordre": 2  },
+      { "slug": "transferts",         "nom": "Transferts",          "categorieCode": "scolarite",     "isCore": false, "requiredPlan": "premium", "ordre": 3  },
+      { "slug": "documents",          "nom": "Documents scolaires", "categorieCode": "scolarite",     "isCore": false, "requiredPlan": "premium", "ordre": 4  },
+      { "slug": "notes",              "nom": "Notes & Évaluations", "categorieCode": "pedagogie",     "isCore": true,  "requiredPlan": "gratuit", "ordre": 7  },
+      { "slug": "matieres",           "nom": "Matières",            "categorieCode": "pedagogie",     "isCore": true,  "requiredPlan": "gratuit", "ordre": 5  },
+      { "slug": "bulletins",          "nom": "Bulletins",           "categorieCode": "pedagogie",     "isCore": false, "requiredPlan": "premium", "ordre": 8  },
+      { "slug": "emploi-du-temps",    "nom": "Emploi du temps",     "categorieCode": "pedagogie",     "isCore": false, "requiredPlan": "premium", "ordre": 6  },
+      { "slug": "cahier-textes",      "nom": "Cahier de textes",    "categorieCode": "pedagogie",     "isCore": false, "requiredPlan": "premium", "ordre": 9  },
+      { "slug": "evaluations",        "nom": "Évaluations",         "categorieCode": "pedagogie",     "isCore": false, "requiredPlan": "premium", "ordre": 11 },
+      { "slug": "conseils",           "nom": "Conseils de classe",  "categorieCode": "pedagogie",     "isCore": false, "requiredPlan": "pro",     "ordre": 10 },
+      { "slug": "finances",           "nom": "Finances",            "categorieCode": "finances",      "isCore": false, "requiredPlan": "premium", "ordre": 12 },
+      { "slug": "facturation",        "nom": "Facturation",         "categorieCode": "finances",      "isCore": false, "requiredPlan": "premium", "ordre": 13 },
+      { "slug": "depenses",           "nom": "Dépenses",            "categorieCode": "finances",      "isCore": false, "requiredPlan": "premium", "ordre": 14 },
+      { "slug": "budget",             "nom": "Budget",              "categorieCode": "finances",      "isCore": false, "requiredPlan": "pro",     "ordre": 15 },
+      { "slug": "comptabilite",       "nom": "Comptabilité",        "categorieCode": "finances",      "isCore": false, "requiredPlan": "pro",     "ordre": 16 },
+      { "slug": "personnel",          "nom": "Personnel",           "categorieCode": "personnel",     "isCore": false, "requiredPlan": "premium", "ordre": 17 },
+      { "slug": "presences-personnel","nom": "Présences personnel", "categorieCode": "personnel",     "isCore": false, "requiredPlan": "premium", "ordre": 18 },
+      { "slug": "conges",             "nom": "Congés",              "categorieCode": "personnel",     "isCore": false, "requiredPlan": "premium", "ordre": 19 },
+      { "slug": "paie",               "nom": "Paie",                "categorieCode": "personnel",     "isCore": false, "requiredPlan": "pro",     "ordre": 20 },
+      { "slug": "presences-eleves",   "nom": "Présences élèves",    "categorieCode": "vie-scolaire",  "isCore": false, "requiredPlan": "gratuit", "ordre": 21 },
+      { "slug": "discipline",         "nom": "Discipline",          "categorieCode": "vie-scolaire",  "isCore": false, "requiredPlan": "premium", "ordre": 22 },
+      { "slug": "bibliotheque",       "nom": "Bibliothèque",        "categorieCode": "vie-scolaire",  "isCore": false, "requiredPlan": "premium", "ordre": 23 },
+      { "slug": "cantine",            "nom": "Cantine",             "categorieCode": "vie-scolaire",  "isCore": false, "requiredPlan": "premium", "ordre": 24 },
+      { "slug": "infirmerie",         "nom": "Infirmerie",          "categorieCode": "vie-scolaire",  "isCore": false, "requiredPlan": "premium", "ordre": 25 },
+      { "slug": "annonces",           "nom": "Annonces",            "categorieCode": "communication", "isCore": false, "requiredPlan": "gratuit", "ordre": 26 },
+      { "slug": "messagerie",         "nom": "Messagerie",          "categorieCode": "communication", "isCore": false, "requiredPlan": "premium", "ordre": 27 },
+      { "slug": "notifications",      "nom": "Notifications",       "categorieCode": "communication", "isCore": false, "requiredPlan": "gratuit", "ordre": 28 },
+      { "slug": "evenements",         "nom": "Événements",          "categorieCode": "communication", "isCore": false, "requiredPlan": "premium", "ordre": 29 }
     ],
-    "updatedAt": "2026-04-07T00:00:00Z"
+    "updatedAt": "2026-04-08T00:00:00Z"
   }
 );
 
 UPSERT INTO `epilote_prod`._default.`config` (KEY, VALUE) VALUES (
   "config::plans",
   {
-    "_id": "config::plans", "type": "config_plans", "_schemaVersion": 1, "currency": "XAF",
+    "_id": "config::plans", "type": "config_plans", "_schemaVersion": 2, "currency": "XAF",
     "plans": [
-      { "id": "plan::gratuit",  "name": "Gratuit",  "type": "gratuit",  "price": 0,       "maxStudents": 100,  "maxPersonnel": 10  },
-      { "id": "plan::standard", "name": "Standard", "type": "standard", "price": 150000,  "maxStudents": 500,  "maxPersonnel": 50  },
-      { "id": "plan::premium",  "name": "Premium",  "type": "premium",  "price": 350000,  "maxStudents": 2000, "maxPersonnel": 200 }
+      {
+        "id": "plan::gratuit", "name": "Gratuit", "type": "gratuit", "price": 0,
+        "maxStudents": 100, "maxPersonnel": 10,
+        "modulesIncluded": [
+          "inscriptions","eleves","classes","notes","matieres",
+          "presences-eleves","annonces","notifications"
+        ]
+      },
+      {
+        "id": "plan::premium", "name": "Premium", "type": "premium", "price": 150000,
+        "maxStudents": 2000, "maxPersonnel": 200,
+        "modulesIncluded": [
+          "inscriptions","eleves","classes","notes","matieres","presences-eleves","annonces","notifications",
+          "bulletins","emploi-du-temps","cahier-textes","evaluations","transferts","documents",
+          "finances","facturation","depenses","personnel","presences-personnel","conges",
+          "discipline","bibliotheque","cantine","infirmerie","messagerie","evenements"
+        ]
+      },
+      {
+        "id": "plan::pro", "name": "Pro", "type": "pro", "price": 350000,
+        "maxStudents": 10000, "maxPersonnel": 1000,
+        "modulesIncluded": [
+          "inscriptions","eleves","classes","notes","matieres","presences-eleves","annonces","notifications",
+          "bulletins","emploi-du-temps","cahier-textes","evaluations","transferts","documents",
+          "finances","facturation","depenses","personnel","presences-personnel","conges",
+          "discipline","bibliotheque","cantine","infirmerie","messagerie","evenements",
+          "conseils","budget","comptabilite","paie"
+        ]
+      }
     ],
-    "updatedAt": "2026-04-07T00:00:00Z"
+    "updatedAt": "2026-04-08T00:00:00Z"
   }
 );
 

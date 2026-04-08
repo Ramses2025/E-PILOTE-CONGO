@@ -17,8 +17,13 @@ import cg.epilote.shared.domain.usecase.notes.LockBulletinUseCase
 import cg.epilote.shared.domain.usecase.notes.ResolveConflictUseCase
 import cg.epilote.shared.domain.usecase.notes.SaveNoteUseCase
 import cg.epilote.shared.presentation.viewmodel.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 class AppContainer(private val context: Context) {
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val backendUrl = "https://api.epilote.cg"
     private val syncGatewayUrl = "wss://x0by7zekx39pidsy.apps.cloud.couchbase.com:4984/epilote"
@@ -83,12 +88,10 @@ class AppContainer(private val context: Context) {
     }
 
     private fun observeConnectivity() {
-        kotlinx.coroutines.GlobalScope.run {
-            kotlinx.coroutines.launch(kotlinx.coroutines.Dispatchers.IO) {
-                connectivity.observe().collect { connected ->
-                    if (connected) syncManager.onNetworkAvailable()
-                    else syncManager.onNetworkLost()
-                }
+        appScope.launch {
+            connectivity.observe().collect { connected ->
+                if (connected) syncManager.onNetworkAvailable()
+                else syncManager.onNetworkLost()
             }
         }
     }

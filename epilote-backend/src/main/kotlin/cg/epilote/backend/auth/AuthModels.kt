@@ -58,6 +58,5 @@ enum class UserRole {
     ADMIN_SYSTEME,
     ADMIN_GROUPE,
     DIRECTOR,
-    ADMIN_ECOLE,
     USER
 }

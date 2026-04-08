@@ -22,6 +22,37 @@ class AdminController(
     @Suppress("UNCHECKED_CAST")
     private fun Authentication.details() = details as? Map<String, String> ?: emptyMap()
 
+    // ── Dashboard Stats ──────────────────────────────────────────
+
+    @GetMapping("/api/super-admin/dashboard-stats")
+    fun getDashboardStats(): ResponseEntity<DashboardStatsResponse> = runBlocking {
+        val groupes  = repo.countGroupes()
+        val ecoles   = repo.countEcoles()
+        val users    = repo.countUsers()
+        val modules  = repo.countModules()
+        val plans    = repo.listPlans()
+        val categories = CategorieConstants.ALL
+        ResponseEntity.ok(
+            DashboardStatsResponse(
+                totalGroupes    = groupes,
+                totalEcoles     = ecoles,
+                totalUtilisateurs = users,
+                totalModules    = modules,
+                totalPlans      = plans.size.toLong(),
+                totalCategories = categories.size.toLong(),
+                plans           = plans,
+                categories      = categories
+            )
+        )
+    }
+
+    // ── Catégories (constantes) ─────────────────────────────────
+
+    @GetMapping("/api/super-admin/categories")
+    @PreAuthorize("isAuthenticated()")
+    fun listCategories(): ResponseEntity<List<CategorieInfo>> =
+        ResponseEntity.ok(CategorieConstants.ALL)
+
     // ── Super Admin : Plans ──────────────────────────────────────
 
     @PostMapping("/api/super-admin/plans")
@@ -57,10 +88,28 @@ class AdminController(
     fun listGroupes(): ResponseEntity<List<GroupeResponse>> =
         runBlocking { ResponseEntity.ok(repo.listGroupes()) }
 
+    @PostMapping("/api/super-admin/groupes/{groupeId}/admins")
+    fun createAdminGroupe(
+        @PathVariable groupeId: String,
+        @Valid @RequestBody req: CreateAdminGroupeRequest
+    ): ResponseEntity<UserResponse> = runBlocking {
+        val groupe = repo.getGroupeById(groupeId)
+            ?: return@runBlocking ResponseEntity.notFound().build()
+        val hash = passwordEncoder.encode(req.password)
+        val admin = repo.createAdminGroupe(groupeId, req, hash)
+        val ecoleIds = repo.listEcolesByGroupe(groupeId).map { it.id }
+        runCatching { sgClient.provisionUser(admin.id, groupeId, ecoleIds, "ADMIN_GROUPE") }
+        ResponseEntity.status(HttpStatus.CREATED).body(admin)
+    }
+
+    @GetMapping("/api/super-admin/groupes/{groupeId}/admins")
+    fun listAdminGroupes(@PathVariable groupeId: String): ResponseEntity<List<UserResponse>> =
+        runBlocking { ResponseEntity.ok(repo.listAdminGroupesByGroupe(groupeId)) }
+
     // ── Admin Groupe : Écoles ────────────────────────────────────
 
     @PostMapping("/api/groupes/{groupeId}/ecoles")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN_SYSTEME','ADMIN_GROUPE')")
+    @PreAuthorize("hasAnyRole('ADMIN_SYSTEME','ADMIN_GROUPE')")
     fun createEcole(
         @PathVariable groupeId: String,
         @Valid @RequestBody req: CreateEcoleRequest,
@@ -68,18 +117,30 @@ class AdminController(
     ): ResponseEntity<EcoleResponse> = runBlocking {
         val groupe = repo.listGroupes().find { it.id == groupeId }
             ?: return@runBlocking ResponseEntity.notFound().build()
-        ResponseEntity.status(HttpStatus.CREATED).body(repo.createEcole(groupeId, req, groupe.planId))
+        val ecole = repo.createEcole(groupeId, req, groupe.planId)
+        val ecoleIds = repo.listEcolesByGroupe(groupeId).map { it.id }
+        repo.listAdminGroupesByGroupe(groupeId).forEach { admin ->
+            runCatching { sgClient.provisionUser(admin.id, groupeId, ecoleIds, "ADMIN_GROUPE") }
+        }
+        ResponseEntity.status(HttpStatus.CREATED).body(ecole)
     }
 
     @GetMapping("/api/groupes/{groupeId}/ecoles")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('ADMIN_SYSTEME','ADMIN_GROUPE')")
     fun listEcoles(@PathVariable groupeId: String): ResponseEntity<List<EcoleResponse>> =
         runBlocking { ResponseEntity.ok(repo.listEcolesByGroupe(groupeId)) }
+
+    // ── Admin Groupe : Modules disponibles (filtrés par plan) ─────
+
+    @GetMapping("/api/groupes/{groupeId}/modules-disponibles")
+    @PreAuthorize("hasAnyRole('ADMIN_SYSTEME','ADMIN_GROUPE')")
+    fun listModulesDisponibles(@PathVariable groupeId: String): ResponseEntity<List<ModuleResponse>> =
+        runBlocking { ResponseEntity.ok(repo.getModulesDisponibles(groupeId)) }
 
     // ── Admin Groupe : Profils ───────────────────────────────────
 
     @PostMapping("/api/groupes/{groupeId}/profils")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN_SYSTEME','ADMIN_GROUPE')")
+    @PreAuthorize("hasAnyRole('ADMIN_SYSTEME','ADMIN_GROUPE')")
     fun createProfil(
         @PathVariable groupeId: String,
         @Valid @RequestBody req: CreateProfilRequest,
@@ -89,14 +150,14 @@ class AdminController(
     }
 
     @GetMapping("/api/groupes/{groupeId}/profils")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('ADMIN_SYSTEME','ADMIN_GROUPE')")
     fun listProfils(@PathVariable groupeId: String): ResponseEntity<List<ProfilResponse>> =
         runBlocking { ResponseEntity.ok(repo.listProfilsByGroupe(groupeId)) }
 
     // ── Admin Groupe : Utilisateurs ──────────────────────────────
 
     @PostMapping("/api/groupes/{groupeId}/users")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN_SYSTEME','ADMIN_GROUPE')")
+    @PreAuthorize("hasAnyRole('ADMIN_SYSTEME','ADMIN_GROUPE')")
     fun createUser(
         @PathVariable groupeId: String,
         @Valid @RequestBody req: CreateUserRequest,
@@ -106,12 +167,12 @@ class AdminController(
             ?: return@runBlocking ResponseEntity.badRequest().build<UserResponse>()
         val hash = passwordEncoder.encode(req.password)
         val user = repo.createUser(groupeId, req, hash, profil.permissions)
-        runCatching { sgClient.provisionUser(user.id, req.ecoleId, "USER") }
+        runCatching { sgClient.provisionUser(user.id, groupeId, listOf(req.ecoleId), "USER") }
         ResponseEntity.status(HttpStatus.CREATED).body(user)
     }
 
     @GetMapping("/api/ecoles/{ecoleId}/users")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('ADMIN_SYSTEME','ADMIN_GROUPE')")
     fun listUsers(@PathVariable ecoleId: String): ResponseEntity<List<UserResponse>> =
         runBlocking { ResponseEntity.ok(repo.listUsersByEcole(ecoleId)) }
 

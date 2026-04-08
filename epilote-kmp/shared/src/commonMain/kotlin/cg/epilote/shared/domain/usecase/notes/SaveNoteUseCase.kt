@@ -12,12 +12,13 @@ class SaveNoteUseCase(private val noteRepo: NoteRepository) {
 
     fun execute(
         ecoleId: String,
+        anneeId: String,
         classeId: String,
         matiereId: String,
         eleveId: String,
         periode: String,
         valeur: Double,
-        auteurId: String
+        enseignantId: String
     ): SaveNoteResult {
         if (valeur < 0.0 || valeur > 20.0) {
             return SaveNoteResult.Error("La note doit être comprise entre 0 et 20")
@@ -31,14 +32,15 @@ class SaveNoteUseCase(private val noteRepo: NoteRepository) {
         }
 
         val note = Note(
-            id        = Note.buildId(ecoleId, classeId, matiereId, eleveId, periode),
-            ecoleId   = ecoleId,
-            eleveId   = eleveId,
-            classeId  = classeId,
-            matiereId = matiereId,
-            periode   = periode,
-            valeur    = valeur,
-            auteurId  = auteurId
+            id           = Note.buildId(ecoleId, classeId, matiereId, eleveId, periode),
+            ecoleId      = ecoleId,
+            anneeId      = anneeId,
+            eleveId      = eleveId,
+            classeId     = classeId,
+            matiereId    = matiereId,
+            periode      = periode,
+            valeur       = valeur,
+            enseignantId = enseignantId
         )
         noteRepo.save(note)
         return SaveNoteResult.Success

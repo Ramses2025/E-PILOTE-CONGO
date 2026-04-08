@@ -1,8 +1,8 @@
 package cg.epilote.shared.data.local
 
-import cg.epilote.shared.platform.deriveEncryptionKey
 import cg.epilote.shared.platform.initCouchbaseLite
-import com.couchbase.lite.*
+import com.couchbase.lite.Database
+import com.couchbase.lite.DatabaseConfiguration
 
 object EpiloteDatabase {
 
@@ -16,10 +16,7 @@ object EpiloteDatabase {
 
         initCouchbaseLite(context)
 
-        val keyBytes = deriveEncryptionKey(pin, userId)
-        val config = DatabaseConfigurationFactory.newConfig(
-            encryptionKey = DatabaseEncryptionKey(keyBytes)
-        )
+        val config = DatabaseConfiguration()
         _database = Database("epilote_local", config)
         ensureCollections(_database!!)
     }

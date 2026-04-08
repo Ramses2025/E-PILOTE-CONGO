@@ -1,5 +1,8 @@
 version: "3.9"
 
+# Sync Gateway self-hosted SUPPRIMÉ — on utilise Capella App Services (géré par Couchbase Cloud)
+# URL App Services : wss://x0by7zekx39pidsy.apps.cloud.couchbase.com:4984/epilote
+
 services:
 
   backend:
@@ -16,21 +19,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    depends_on:
-      - sync-gateway
-
-  sync-gateway:
-    image: couchbase/sync-gateway:3.2.0
-    volumes:
-      - ./sync-gateway-config.json:/etc/sync_gateway/config.json:ro
-    restart: always
-    ports:
-      - "4984:4984"
-      - "4985:4985"
-    environment:
-      - COUCHBASE_CONNECTION_STRING=${CB_CONNECTION_STRING}
-      - COUCHBASE_USERNAME=${CB_USERNAME}
-      - COUCHBASE_PASSWORD=${CB_PASSWORD}
 
   nginx:
     image: nginx:alpine
@@ -43,4 +31,3 @@ services:
       - "443:443"
     depends_on:
       - backend
-      - sync-gateway

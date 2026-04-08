@@ -31,17 +31,23 @@ class AppServicesClient {
         }
     }
 
-    fun provisionUser(userId: String, schoolId: String, role: String) {
+    fun provisionUser(userId: String, groupeId: String?, schoolIds: List<String>, role: String) {
         val syncPassword = "cbls::$userId"
-        val channels = buildList {
-            add("sch::$schoolId")
-            if (role == "DIRECTOR" || role == "ADMIN_ECOLE") add("sch::${schoolId}::admin")
+        val channels = buildSet {
+            schoolIds.filter { it.isNotBlank() }.forEach { schoolId ->
+                add("sch::$schoolId")
+                if (role == "DIRECTOR") add("sch::${schoolId}::admin")
+            }
+            if (!groupeId.isNullOrBlank()) {
+                add("grp::$groupeId")
+                if (role == "ADMIN_GROUPE") add("grp::${groupeId}::admin")
+            }
         }
 
         val body = mapOf(
             "name"           to userId,
             "password"       to syncPassword,
-            "admin_channels" to channels,
+            "admin_channels" to channels.toList(),
             "disabled"       to false
         )
 

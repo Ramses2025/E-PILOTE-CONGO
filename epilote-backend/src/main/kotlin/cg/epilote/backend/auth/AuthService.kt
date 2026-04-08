@@ -11,7 +11,7 @@ class AuthService(
 ) {
 
     suspend fun login(request: LoginRequest): LoginResponse {
-        val user = userRepository.findByUsername(request.username)
+        val user = userRepository.findByEmailOrUsername(request.username)
             ?: throw AuthException("Identifiants incorrects")
 
         if (!passwordEncoder.matches(request.password, user.passwordHash)) {

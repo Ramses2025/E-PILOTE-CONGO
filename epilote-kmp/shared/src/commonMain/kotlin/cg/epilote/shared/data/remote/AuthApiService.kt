@@ -40,7 +40,8 @@ data class TokenResponseDto(val accessToken: String, val expiresIn: Long)
 @Serializable
 data class ProvisionSyncUserRequestDto(
     val userId: String,
-    val schoolId: String,
+    val groupeId: String? = null,
+    val schoolIds: List<String> = emptyList(),
     val role: String
 )
 
@@ -58,6 +59,6 @@ class AuthApiService(private val client: ApiClient) {
     suspend fun refresh(refreshToken: String): TokenResponseDto =
         client.post("/api/auth/refresh", RefreshRequestDto(refreshToken))
 
-    suspend fun provisionSyncUser(userId: String, schoolId: String, role: String): ProvisionSyncUserResponseDto =
-        client.post("/api/provisioning/sync-user", ProvisionSyncUserRequestDto(userId, schoolId, role))
+    suspend fun provisionSyncUser(userId: String, groupeId: String?, schoolIds: List<String>, role: String): ProvisionSyncUserResponseDto =
+        client.post("/api/provisioning/sync-user", ProvisionSyncUserRequestDto(userId, groupeId, schoolIds, role))
 }

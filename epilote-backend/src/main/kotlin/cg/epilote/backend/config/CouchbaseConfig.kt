@@ -29,12 +29,14 @@ class CouchbaseConfig {
             username = username,
             password = password,
         ) {
-            io { kvConnectTimeout = 10.seconds }
+            applyProfile("wan-development")
         }
     }
 
     @Bean
     fun couchbaseBucket(cluster: Cluster) = runBlocking {
-        cluster.bucket(bucketName)
+        cluster.bucket(bucketName).apply {
+            waitUntilReady(30.seconds)
+        }
     }
 }

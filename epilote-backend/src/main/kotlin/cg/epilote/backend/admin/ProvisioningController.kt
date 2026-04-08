@@ -23,7 +23,7 @@ class ProvisioningController(
         if (requestingUserId != body.userId) {
             return ResponseEntity.status(403).build()
         }
-        runCatching { sgClient.provisionUser(body.userId, body.schoolId, body.role) }
+        runCatching { sgClient.provisionUser(body.userId, body.groupeId, body.schoolIds, body.role) }
         return ResponseEntity.ok(ProvisionSyncUserResponse(provisioned = true))
     }
 
@@ -53,7 +53,12 @@ class ProvisioningController(
         }
 }
 
-data class ProvisionSyncUserRequest(val userId: String, val schoolId: String, val role: String)
+data class ProvisionSyncUserRequest(
+    val userId: String,
+    val groupeId: String? = null,
+    val schoolIds: List<String> = emptyList(),
+    val role: String
+)
 data class ProvisionSyncUserResponse(val provisioned: Boolean, val message: String = "")
 
 data class SeedPackageResponse(

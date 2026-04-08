@@ -1,14 +1,22 @@
 package cg.epilote.shared.data.local
 
 import cg.epilote.shared.domain.model.Absence
-import com.couchbase.lite.*
+import com.couchbase.lite.DataSource
+import com.couchbase.lite.Database
+import com.couchbase.lite.Expression
+import com.couchbase.lite.Meta
+import com.couchbase.lite.MutableDocument
+import com.couchbase.lite.Ordering
+import com.couchbase.lite.QueryBuilder
+import com.couchbase.lite.Result
+import com.couchbase.lite.SelectResult
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 
 class AbsenceRepository(private val db: Database) {
 
-    private val collection: Collection
+    private val collection: com.couchbase.lite.Collection
         get() = db.getCollection("attendances") ?: db.createCollection("attendances")
 
     fun save(absence: Absence) {

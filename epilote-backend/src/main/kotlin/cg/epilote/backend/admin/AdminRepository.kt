@@ -35,11 +35,12 @@ class AdminRepository(private val bucket: Bucket) {
             "updatedAt"   to now()
         )
         col("groupes").upsert(id, doc)
+        createDefaultProfils(id, req.planId)
         return GroupeResponse(id, req.nom, req.province, req.planId, 0, now())
     }
 
     suspend fun listGroupes(): List<GroupeResponse> {
-        val result = scope.query("SELECT META().id, * FROM `groupes` WHERE type = 'groupe'").execute()
+        val result = scope.query("SELECT META().id, * FROM `groupes` WHERE `type` = 'groupe'").execute()
         return result.rows.map { row ->
             val d = row.contentAs<Map<String, Any>>()
             val inner = d["groupes"] as? Map<*, *> ?: d
@@ -51,6 +52,90 @@ class AdminRepository(private val bucket: Bucket) {
                 ecolesCount = (inner["ecolesCount"] as? Number)?.toInt() ?: 0,
                 createdAt   = (inner["createdAt"] as? Number)?.toLong() ?: 0L
             )
+        }
+    }
+
+    suspend fun getPlanById(planId: String): PlanResponse? = runCatching {
+        val doc = col("plans").get(planId).contentAs<Map<String, Any>>()
+        PlanResponse(
+            id                 = planId,
+            nom                = doc["nom"] as? String ?: "",
+            maxEcoles          = (doc["maxEcoles"] as? Number)?.toInt() ?: 0,
+            maxUtilisateurs    = (doc["maxUtilisateurs"] as? Number)?.toInt() ?: 0,
+            modulesIncluded    = @Suppress("UNCHECKED_CAST") (doc["modulesIncluded"] as? List<String> ?: emptyList()),
+            categoriesIncluded = @Suppress("UNCHECKED_CAST") (doc["categoriesIncluded"] as? List<String> ?: emptyList()),
+            dureeJours         = (doc["dureeJours"] as? Number)?.toInt() ?: 365
+        )
+    }.getOrNull()
+
+    suspend fun getGroupeById(groupeId: String): GroupeResponse? = runCatching {
+        val doc = col("groupes").get(groupeId).contentAs<Map<String, Any>>()
+        GroupeResponse(
+            id          = groupeId,
+            nom         = doc["nom"] as? String ?: "",
+            province    = doc["province"] as? String ?: "",
+            planId      = doc["planId"] as? String ?: "",
+            ecolesCount = (doc["ecolesCount"] as? Number)?.toInt() ?: 0,
+            createdAt   = (doc["createdAt"] as? Number)?.toLong() ?: 0L
+        )
+    }.getOrNull()
+
+    suspend fun getModulesDisponibles(groupeId: String): List<ModuleResponse> {
+        val groupe = getGroupeById(groupeId) ?: return emptyList()
+        val plan = getPlanById(groupe.planId) ?: return emptyList()
+        val allowed = plan.modulesIncluded.toSet()
+        return listModules().filter { it.code in allowed }
+    }
+
+    private suspend fun createDefaultProfils(groupeId: String, planId: String) {
+        val plan = getPlanById(planId)
+        val planModules = plan?.modulesIncluded?.toSet() ?: emptySet()
+
+        data class DefaultProfil(val code: String, val nom: String, val writeModules: List<String>)
+
+        val allPlan = planModules.map { ProfilPermission(it, canRead = true, canWrite = true, canDelete = false, canExport = true) }
+
+        fun perms(vararg slugs: String) = slugs
+            .filter { it in planModules }
+            .map { ProfilPermission(it, canRead = true, canWrite = true, canDelete = false, canExport = true) }
+
+        val defaults = listOf(
+            DefaultProfil("chef_etablissement", "Chef d'\u00e9tablissement", planModules.toList()),
+            DefaultProfil("directeur",          "Directeur",               planModules.toList()),
+            DefaultProfil("enseignant",         "Enseignant",              listOf("notes", "matieres", "bulletins", "presences-eleves", "evaluations", "cahier-textes")),
+            DefaultProfil("surveillant",        "Surveillant",             listOf("presences-eleves", "discipline")),
+            DefaultProfil("comptable",          "Comptable",               listOf("finances", "facturation", "depenses", "budget", "comptabilite")),
+            DefaultProfil("secretaire",         "Secr\u00e9taire",               listOf("inscriptions", "eleves", "transferts", "documents"))
+        )
+
+        defaults.forEach { dp ->
+            val permissions = dp.writeModules
+                .filter { it in planModules }
+                .map { ProfilPermission(it, canRead = true, canWrite = true, canDelete = false, canExport = true) }
+                .ifEmpty {
+                    planModules.map { ProfilPermission(it, canRead = true, canWrite = false, canDelete = false, canExport = false) }
+                }
+            val id = "profil::${groupeId}::${dp.code}"
+            val doc = mapOf(
+                "type"        to "profil",
+                "groupeId"    to groupeId,
+                "nom"         to dp.nom,
+                "code"        to dp.code,
+                "isDefault"   to true,
+                "permissions" to permissions.map { p ->
+                    mapOf(
+                        "moduleSlug" to p.moduleSlug,
+                        "canRead"    to p.canRead,
+                        "canWrite"   to p.canWrite,
+                        "canDelete"  to p.canDelete,
+                        "canExport"  to p.canExport
+                    )
+                },
+                "createdBy"   to "system",
+                "createdAt"   to now(),
+                "updatedAt"   to now()
+            )
+            col("profils").upsert(id, doc)
         }
     }
 
@@ -76,7 +161,7 @@ class AdminRepository(private val bucket: Bucket) {
 
     suspend fun listEcolesByGroupe(groupeId: String): List<EcoleResponse> {
         val result = scope.query(
-            "SELECT META().id, * FROM `schools` WHERE type = 'school' AND groupeId = \$groupeId",
+            "SELECT META().id, * FROM `schools` WHERE `type` = 'school' AND `groupeId` = \$groupeId",
             parameters = com.couchbase.client.kotlin.query.QueryParameters.named("groupeId" to groupeId)
         ).execute()
         return result.rows.map { row ->
@@ -98,11 +183,21 @@ class AdminRepository(private val bucket: Bucket) {
     // ── Profils ──────────────────────────────────────────────────
 
     suspend fun createProfil(groupeId: String, req: CreateProfilRequest, createdBy: String): ProfilResponse {
+        val groupe = getGroupeById(groupeId)
+        if (groupe != null) {
+            val plan = getPlanById(groupe.planId)
+            if (plan != null && plan.modulesIncluded.isNotEmpty()) {
+                val allowed = plan.modulesIncluded.toSet()
+                val invalid = req.permissions.map { it.moduleSlug }.filter { it !in allowed }
+                if (invalid.isNotEmpty()) throw InvalidModuleForPlanException(invalid)
+            }
+        }
         val id = newId("profil")
         val doc = mapOf(
             "type"        to "profil",
             "groupeId"    to groupeId,
             "nom"         to req.nom,
+            "isDefault"   to false,
             "permissions" to req.permissions.map { p ->
                 mapOf(
                     "moduleSlug" to p.moduleSlug,
@@ -117,12 +212,12 @@ class AdminRepository(private val bucket: Bucket) {
             "updatedAt"   to now()
         )
         col("profils").upsert(id, doc)
-        return ProfilResponse(id, groupeId, req.nom, req.permissions, now())
+        return ProfilResponse(id, groupeId, req.nom, req.permissions, false, now())
     }
 
     suspend fun listProfilsByGroupe(groupeId: String): List<ProfilResponse> {
         val result = scope.query(
-            "SELECT META().id, * FROM `profils` WHERE type = 'profil' AND groupeId = \$groupeId",
+            "SELECT META().id, * FROM `profils` WHERE `type` = 'profil' AND `groupeId` = \$groupeId",
             parameters = com.couchbase.client.kotlin.query.QueryParameters.named("groupeId" to groupeId)
         ).execute()
         return result.rows.map { row ->
@@ -133,12 +228,47 @@ class AdminRepository(private val bucket: Bucket) {
                 groupeId    = inner["groupeId"] as? String ?: "",
                 nom         = inner["nom"] as? String ?: "",
                 permissions = parseProfilPermissions(inner),
+                isDefault   = inner["isDefault"] as? Boolean ?: false,
                 createdAt   = (inner["createdAt"] as? Number)?.toLong() ?: 0L
             )
         }
     }
 
     // ── Utilisateurs ─────────────────────────────────────────────
+
+    suspend fun createAdminGroupe(groupeId: String, req: CreateAdminGroupeRequest, passwordHash: String): UserResponse {
+        val id = newId("user")
+        val doc = mapOf(
+            "type"         to "user",
+            "username"     to req.username,
+            "passwordHash" to passwordHash,
+            "nom"          to req.nom,
+            "prenom"       to req.prenom,
+            "email"        to req.email,
+            "ecoleId"      to null,
+            "groupeId"     to groupeId,
+            "profilId"     to null,
+            "role"         to "ADMIN_GROUPE",
+            "permissions"  to emptyList<Map<String, Any>>(),
+            "isActive"     to true,
+            "createdAt"    to now(),
+            "updatedAt"    to now()
+        )
+        col("users").upsert(id, doc)
+        val groupeCollection = col("groupes")
+        val groupeDoc = groupeCollection.get(groupeId).contentAs<Map<String, Any>>()
+        val currentAdminIds = (groupeDoc["adminIds"] as? List<*>)
+            ?.mapNotNull { it as? String }
+            ?.toMutableSet()
+            ?: mutableSetOf()
+        currentAdminIds += id
+        @Suppress("UNCHECKED_CAST")
+        val updatedGroupe = (groupeDoc as Map<String, Any>).toMutableMap()
+        updatedGroupe["adminIds"] = currentAdminIds.toList()
+        updatedGroupe["updatedAt"] = now()
+        groupeCollection.upsert(groupeId, updatedGroupe)
+        return UserResponse(id, req.username, req.prenom, req.nom, req.email, null, groupeId, null, "ADMIN_GROUPE", true, now())
+    }
 
     suspend fun createUser(groupeId: String, req: CreateUserRequest, passwordHash: String, profilPermissions: List<ProfilPermission>): UserResponse {
         val id = newId("user")
@@ -171,9 +301,33 @@ class AdminRepository(private val bucket: Bucket) {
             req.ecoleId, groupeId, req.profilId, "USER", true, now())
     }
 
+    suspend fun listAdminGroupesByGroupe(groupeId: String): List<UserResponse> {
+        val result = scope.query(
+            "SELECT META().id, * FROM `users` WHERE `type` = 'user' AND `groupeId` = \$groupeId AND `role` = 'ADMIN_GROUPE'",
+            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("groupeId" to groupeId)
+        ).execute()
+        return result.rows.map { row ->
+            val d = row.contentAs<Map<String, Any>>()
+            val inner = d["users"] as? Map<*, *> ?: d
+            UserResponse(
+                id        = d["id"] as? String ?: "",
+                username  = inner["username"] as? String ?: "",
+                firstName = inner["prenom"] as? String ?: "",
+                lastName  = inner["nom"] as? String ?: "",
+                email     = inner["email"] as? String ?: "",
+                ecoleId   = inner["ecoleId"] as? String,
+                groupeId  = inner["groupeId"] as? String ?: "",
+                profilId  = inner["profilId"] as? String,
+                role      = inner["role"] as? String ?: "ADMIN_GROUPE",
+                isActive  = inner["isActive"] as? Boolean ?: true,
+                createdAt = (inner["createdAt"] as? Number)?.toLong() ?: 0L
+            )
+        }
+    }
+
     suspend fun listUsersByEcole(ecoleId: String): List<UserResponse> {
         val result = scope.query(
-            "SELECT META().id, * FROM `users` WHERE type = 'user' AND ecoleId = \$ecoleId",
+            "SELECT META().id, * FROM `users` WHERE `type` = 'user' AND `ecoleId` = \$ecoleId",
             parameters = com.couchbase.client.kotlin.query.QueryParameters.named("ecoleId" to ecoleId)
         ).execute()
         return result.rows.map { row ->
@@ -185,9 +339,9 @@ class AdminRepository(private val bucket: Bucket) {
                 firstName = inner["prenom"] as? String ?: "",
                 lastName  = inner["nom"] as? String ?: "",
                 email     = inner["email"] as? String ?: "",
-                ecoleId   = inner["ecoleId"] as? String ?: "",
+                ecoleId   = inner["ecoleId"] as? String,
                 groupeId  = inner["groupeId"] as? String ?: "",
-                profilId  = inner["profilId"] as? String ?: "",
+                profilId  = inner["profilId"] as? String,
                 role      = inner["role"] as? String ?: "USER",
                 isActive  = inner["isActive"] as? Boolean ?: true,
                 createdAt = (inner["createdAt"] as? Number)?.toLong() ?: 0L
@@ -203,6 +357,7 @@ class AdminRepository(private val bucket: Bucket) {
             groupeId    = doc["groupeId"] as? String ?: "",
             nom         = doc["nom"] as? String ?: "",
             permissions = parseProfilPermissions(doc),
+            isDefault   = doc["isDefault"] as? Boolean ?: false,
             createdAt   = (doc["createdAt"] as? Number)?.toLong() ?: 0L
         )
     }.getOrNull()
@@ -237,11 +392,11 @@ class AdminRepository(private val bucket: Bucket) {
             "updatedAt"           to now()
         )
         col("modules").upsert(id, doc)
-        return ModuleResponse(id, req.code, req.nom, req.categorieCode, req.description, true)
+        return ModuleResponse(id, req.code, req.nom, req.categorieCode, req.description, false, "gratuit", true)
     }
 
     suspend fun listModules(): List<ModuleResponse> {
-        val result = scope.query("SELECT META().id, * FROM `modules` WHERE type = 'module'").execute()
+        val result = scope.query("SELECT META().id, * FROM `modules` WHERE `type` = 'module'").execute()
         return result.rows.map { row ->
             val d = row.contentAs<Map<String, Any>>()
             val inner = d["modules"] as? Map<*, *> ?: d
@@ -251,9 +406,41 @@ class AdminRepository(private val bucket: Bucket) {
                 nom          = inner["nom"] as? String ?: "",
                 categorieCode = inner["categorieCode"] as? String ?: "",
                 description  = inner["description"] as? String ?: "",
+                isCore       = inner["isCore"] as? Boolean ?: false,
+                requiredPlan = inner["requiredPlan"] as? String ?: "gratuit",
                 isActive     = inner["isActive"] as? Boolean ?: true
             )
         }
+    }
+
+    // ── Dashboard Stats ─────────────────────────────────────────
+
+    suspend fun countGroupes(): Long {
+        val result = scope.query("SELECT COUNT(*) AS cnt FROM `groupes` WHERE `type` = 'groupe'").execute()
+        return result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
+            (it["cnt"] as? Number)?.toLong() ?: 0L
+        } ?: 0L
+    }
+
+    suspend fun countEcoles(): Long {
+        val result = scope.query("SELECT COUNT(*) AS cnt FROM `schools` WHERE `type` = 'school'").execute()
+        return result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
+            (it["cnt"] as? Number)?.toLong() ?: 0L
+        } ?: 0L
+    }
+
+    suspend fun countUsers(): Long {
+        val result = scope.query("SELECT COUNT(*) AS cnt FROM `users` WHERE `type` = 'user'").execute()
+        return result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
+            (it["cnt"] as? Number)?.toLong() ?: 0L
+        } ?: 0L
+    }
+
+    suspend fun countModules(): Long {
+        val result = scope.query("SELECT COUNT(*) AS cnt FROM `modules` WHERE `type` = 'module'").execute()
+        return result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
+            (it["cnt"] as? Number)?.toLong() ?: 0L
+        } ?: 0L
     }
 
     // ── Plans ────────────────────────────────────────────────────
@@ -276,7 +463,7 @@ class AdminRepository(private val bucket: Bucket) {
     }
 
     suspend fun listPlans(): List<PlanResponse> {
-        val result = scope.query("SELECT META().id, * FROM `plans` WHERE type = 'plan'").execute()
+        val result = scope.query("SELECT META().id, * FROM `plans` WHERE `type` = 'plan'").execute()
         return result.rows.map { row ->
             val d = row.contentAs<Map<String, Any>>()
             val inner = d["plans"] as? Map<*, *> ?: d
