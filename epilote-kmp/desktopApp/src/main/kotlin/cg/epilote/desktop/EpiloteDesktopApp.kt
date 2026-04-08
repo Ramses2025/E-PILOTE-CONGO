@@ -191,7 +191,7 @@ fun EpiloteDesktopApp() {
             }
             val apiClient = remember {
                 ApiClient(
-                    baseUrl        = "https://api.epilote.cg",
+                    baseUrl        = "http://localhost:8080",
                     tokenProvider  = { null },
                     onTokenExpired = {}
                 )

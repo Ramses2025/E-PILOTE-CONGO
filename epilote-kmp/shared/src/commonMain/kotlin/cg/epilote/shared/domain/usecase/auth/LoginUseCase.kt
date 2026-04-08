@@ -54,13 +54,15 @@ class LoginUseCase(
                 runCatching { authApi.provisionSyncUser(dto.userId, dto.groupeId, schoolIds, dto.role) }
             }
 
-            // Démarrage de la sync CBLite avec credentials dérivés (jamais visibles par l'user)
-            val syncPassword = "cbls::${dto.userId}"
-            syncManager.start(dto.userId, syncPassword)
+            // Démarrage de la sync CBLite (best-effort, n'empêche pas le login)
+            runCatching {
+                val syncPassword = "cbls::${dto.userId}"
+                syncManager.start(dto.userId, syncPassword)
+            }
 
             LoginResult.Success(session)
         } catch (e: Exception) {
-            val msg = e.message ?: "Erreur inconnue"
+            val msg = e.message ?: (e::class.simpleName ?: "Erreur inconnue")
             when {
                 msg.contains("401") || msg.contains("Unauthorized") ||
                 msg.contains("Identifiants")                         -> LoginResult.Error("Identifiants incorrects")

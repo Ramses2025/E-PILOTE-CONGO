@@ -6,6 +6,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -15,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -69,13 +69,6 @@ fun LoginScreen(
 
     // ── Infinite animations (modern effects) ────────────────────
     val fx = rememberInfiniteTransition(label = "fx")
-    val logoScale by fx.animateFloat(
-        initialValue = 1f, targetValue = 1.06f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ), label = "logoScale"
-    )
     val glowPulse by fx.animateFloat(
         initialValue = 0f, targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -127,19 +120,13 @@ fun LoginScreen(
 
                     // ── Branding inside card ────────────────────
                     if (logoPainter != null) {
-                        Image(logoPainter, "Logo E-PILOTE", Modifier.size(44.dp).scale(logoScale))
+                        Image(logoPainter, "Logo E-PILOTE", Modifier.size(44.dp))
                         Spacer(Modifier.height(10.dp))
                     }
                     Text(
                         "E-PILOTE CONGO",
                         fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                        color = navy, letterSpacing = 1.sp,
-                        modifier = Modifier.drawBehind {
-                            drawCircle(
-                                color = Color(0xFF2A9D8F).copy(alpha = glowPulse * 0.10f),
-                                radius = size.maxDimension * 0.8f
-                            )
-                        }
+                        color = navy, letterSpacing = 1.sp
                     )
                     Spacer(Modifier.height(6.dp))
                     Box(
@@ -223,7 +210,10 @@ fun LoginScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.offset(x = (-12).dp)
+                        ) {
                             Checkbox(
                                 checked = rememberMe,
                                 onCheckedChange = { rememberMe = it },

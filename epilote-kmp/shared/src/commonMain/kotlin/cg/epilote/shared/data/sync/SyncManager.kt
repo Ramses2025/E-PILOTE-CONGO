@@ -2,6 +2,7 @@ package cg.epilote.shared.data.sync
 
 import cg.epilote.shared.domain.model.SyncStatus
 import com.couchbase.lite.BasicAuthenticator
+import com.couchbase.lite.CollectionConfiguration
 import com.couchbase.lite.Database
 import com.couchbase.lite.Replicator
 import com.couchbase.lite.ReplicatorActivityLevel
@@ -34,10 +35,12 @@ class SyncManager(
         config.setType(ReplicatorType.PUSH_AND_PULL)
         config.setContinuous(true)
         config.setAuthenticator(BasicAuthenticator(username, password.toCharArray()))
-        config.setConflictResolver(EpiloteConflictResolver())
         config.setMaxAttempts(Int.MAX_VALUE)
         config.setMaxAttemptWaitTime(600)
-        database.collections.forEach { config.addCollection(it, null) }
+
+        val collConfig = CollectionConfiguration()
+        collConfig.setConflictResolver(EpiloteConflictResolver())
+        database.collections.forEach { config.addCollection(it, collConfig) }
 
         replicator = Replicator(config).apply {
             addChangeListener { change -> updateStatus(change.status) }
