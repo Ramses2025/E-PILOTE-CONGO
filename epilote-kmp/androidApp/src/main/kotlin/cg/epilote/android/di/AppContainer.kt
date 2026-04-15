@@ -20,6 +20,8 @@ import cg.epilote.shared.presentation.viewmodel.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 
 class AppContainer(private val context: Context) {
 
@@ -29,11 +31,14 @@ class AppContainer(private val context: Context) {
     private val syncGatewayUrl = "wss://x0by7zekx39pidsy.apps.cloud.couchbase.com:4984/epilote"
 
     private val sessionRepo: UserSessionRepository by lazy {
-        UserSessionRepository(EpiloteDatabase.instance)
+        if (!EpiloteDatabase.isSessionsOpen()) {
+            EpiloteDatabase.initSessions(context)
+        }
+        UserSessionRepository(EpiloteDatabase.sessionsInstance)
     }
 
     val syncManager: SyncManager by lazy {
-        SyncManager(EpiloteDatabase.instance, syncGatewayUrl)
+        SyncManager(syncGatewayUrl)
     }
 
     private val connectivity = ConnectivityObserver(context)

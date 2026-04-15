@@ -1,5 +1,6 @@
 package cg.epilote.shared.data.local
 
+import cg.epilote.shared.data.schema.SchemaContract
 import cg.epilote.shared.domain.model.Classe
 import com.couchbase.lite.Collection
 import com.couchbase.lite.DataSource
@@ -23,8 +24,9 @@ class ClasseRepository(private val db: Database) {
 
     fun save(classe: Classe) {
         val doc = MutableDocument(classe.id).apply {
+            setInt(SchemaContract.FIELD_SCHEMA_VERSION, SchemaContract.CURRENT_SCHEMA_VERSION)
             setString("type",                    "class")
-            setString("ecoleId",                 classe.ecoleId)
+            setString("schoolId",                classe.schoolId)
             setString("anneeId",                 classe.anneeId)
             setString("nom",                     classe.nom)
             setString("section",                 classe.section ?: "")
@@ -43,24 +45,24 @@ class ClasseRepository(private val db: Database) {
         db.inBatch(UnitOfWork { classes.forEach { save(it) } })
     }
 
-    fun getByEcole(ecoleId: String): List<Classe> =
+    fun getByEcole(schoolId: String): List<Classe> =
         QueryBuilder
             .select(SelectResult.all(), SelectResult.expression(Meta.id))
             .from(DataSource.collection(collection))
             .where(
-                Expression.property("ecoleId").equalTo(Expression.string(ecoleId))
+                Expression.property("schoolId").equalTo(Expression.string(schoolId))
                     .and(Expression.property("type").equalTo(Expression.string("class")))
             )
             .orderBy(Ordering.property("nom"))
             .execute().allResults().mapNotNull { it.toClasse() }
 
-    fun observeByEcole(ecoleId: String): Flow<List<Classe>> =
+    fun observeByEcole(schoolId: String): Flow<List<Classe>> =
         callbackFlow {
             val query = QueryBuilder
                 .select(SelectResult.all(), SelectResult.expression(Meta.id))
                 .from(DataSource.collection(collection))
                 .where(
-                    Expression.property("ecoleId").equalTo(Expression.string(ecoleId))
+                    Expression.property("schoolId").equalTo(Expression.string(schoolId))
                         .and(Expression.property("type").equalTo(Expression.string("class")))
                 )
                 .orderBy(Ordering.property("nom"))
@@ -77,7 +79,7 @@ class ClasseRepository(private val db: Database) {
         val id   = getString("id") ?: return null
         return Classe(
             id                     = id,
-            ecoleId                = dict.getString("ecoleId")              ?: return null,
+            schoolId = dict.getString("schoolId")             ?: return null,
             anneeId                = dict.getString("anneeId")              ?: "",
             nom                    = dict.getString("nom")                  ?: "",
             section                = dict.getString("section")?.takeIf { it.isNotEmpty() },

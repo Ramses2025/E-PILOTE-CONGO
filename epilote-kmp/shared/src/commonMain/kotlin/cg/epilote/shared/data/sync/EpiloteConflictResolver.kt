@@ -16,8 +16,8 @@ class EpiloteConflictResolver : ConflictResolver {
         if (remote == null) return local
 
         // Documents verrouillés → la version verrouillée gagne toujours
-        if (remote.getBoolean("_locked")) return remote
-        if (local.getBoolean("_locked"))  return local
+        if (remote.getBoolean("locked") || remote.getBoolean("_locked")) return remote
+        if (local.getBoolean("locked") || local.getBoolean("_locked"))  return local
 
         val localTs  = local.getLong("updatedAt")
         val remoteTs = remote.getLong("updatedAt")

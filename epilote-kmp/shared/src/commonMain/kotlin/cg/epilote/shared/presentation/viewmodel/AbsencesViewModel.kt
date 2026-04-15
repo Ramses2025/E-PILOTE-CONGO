@@ -31,28 +31,28 @@ class AbsencesViewModel(
     private val _uiState = MutableStateFlow<AbsenceUiState>(AbsenceUiState.Idle)
     val uiState: StateFlow<AbsenceUiState> = _uiState.asStateFlow()
 
-    fun loadByDate(ecoleId: String, date: String) {
+    fun loadByDate(schoolId: String, date: String) {
         scope.launch {
-            absenceRepo.observeByDate(ecoleId, date).collect { _absences.value = it }
+            absenceRepo.observeByDate(schoolId, date).collect { _absences.value = it }
         }
     }
 
-    fun loadByEleve(ecoleId: String, eleveId: String) {
+    fun loadByEleve(schoolId: String, eleveId: String) {
         scope.launch {
-            _absences.value = absenceRepo.getByEleve(ecoleId, eleveId)
+            _absences.value = absenceRepo.getByEleve(schoolId, eleveId)
         }
     }
 
-    fun markAbsent(ecoleId: String, eleveId: String, date: String, saisieParId: String) {
-        val result = saveAbsenceUseCase.execute(ecoleId, eleveId, date, saisieParId)
+    fun markAbsent(schoolId: String, eleveId: String, date: String, saisieParId: String) {
+        val result = saveAbsenceUseCase.execute(schoolId, eleveId, date, saisieParId)
         _uiState.value = when (result) {
             is AbsenceResult.Success -> AbsenceUiState.Saved
             is AbsenceResult.Error   -> AbsenceUiState.Error(result.message)
         }
     }
 
-    fun justifyAbsence(ecoleId: String, eleveId: String, date: String, motif: String) {
-        val result = justifyUseCase.execute(ecoleId, eleveId, date, motif)
+    fun justifyAbsence(schoolId: String, eleveId: String, date: String, motif: String) {
+        val result = justifyUseCase.execute(schoolId, eleveId, date, motif)
         _uiState.value = when (result) {
             is AbsenceResult.Success -> AbsenceUiState.Justified
             is AbsenceResult.Error   -> AbsenceUiState.Error(result.message)

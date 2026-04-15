@@ -1,4 +1,4 @@
-package cg.epilote.desktop.ui.screens
+﻿package cg.epilote.desktop.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,12 +42,12 @@ fun NotesScreen(
     var selectedPeriode by remember { mutableStateOf("T1") }
     val periodes = listOf("T1", "T2", "T3")
 
-    LaunchedEffect(session.ecoleId) {
-        session.ecoleId?.let { classesViewModel.loadClasses(it) }
+    LaunchedEffect(session.schoolId) {
+        session.schoolId?.let { classesViewModel.loadClasses(it) }
     }
 
     LaunchedEffect(selectedClasse, selectedMatiere, selectedPeriode) {
-        val ecole = session.ecoleId ?: return@LaunchedEffect
+        val ecole = session.schoolId ?: return@LaunchedEffect
         val classe = selectedClasse ?: return@LaunchedEffect
         val matiere = selectedMatiere ?: return@LaunchedEffect
         notesViewModel.loadNotes(ecole, classe.id, selectedPeriode)
@@ -69,7 +69,7 @@ fun NotesScreen(
                 classes = classes,
                 selected = selectedClasse,
                 onSelected = { classe ->
-                    session.ecoleId?.let { classesViewModel.selectClasse(classe, it) }
+                    session.schoolId?.let { classesViewModel.selectClasse(classe, it) }
                     selectedMatiere = null
                 }
             )
@@ -100,12 +100,12 @@ fun NotesScreen(
                 notes = notes,
                 matiere = selectedMatiere!!,
                 periode = selectedPeriode,
-                ecoleId = session.ecoleId ?: "",
+                schoolId = session.schoolId ?: "",
                 classeId = selectedClasse!!.id,
                 enseignantId = session.userId,
                 onSave = { eleveId, valeur ->
                     notesViewModel.saveNote(
-                        ecoleId      = session.ecoleId ?: "",
+                        schoolId = session.schoolId ?: "",
                         anneeId      = selectedClasse!!.anneeId,
                         classeId     = selectedClasse!!.id,
                         matiereId    = selectedMatiere!!.id,
@@ -125,7 +125,7 @@ private fun NotesGrid(
     notes: List<Note>,
     matiere: Matiere,
     periode: String,
-    ecoleId: String,
+    schoolId: String,
     classeId: String,
     enseignantId: String,
     onSave: (eleveId: String, valeur: Double) -> Unit

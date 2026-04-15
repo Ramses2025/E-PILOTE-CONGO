@@ -11,6 +11,6 @@ class LogoutUseCase(
     fun execute() {
         syncManager.stop()
         sessionRepo.clearSession()
-        EpiloteDatabase.close()
+        EpiloteDatabase.closeAll()
     }
 }

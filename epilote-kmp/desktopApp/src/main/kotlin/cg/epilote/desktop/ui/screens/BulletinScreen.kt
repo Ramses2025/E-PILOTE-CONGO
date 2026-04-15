@@ -1,4 +1,4 @@
-package cg.epilote.desktop.ui.screens
+﻿package cg.epilote.desktop.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -47,12 +47,12 @@ fun BulletinScreen(
     var selectedPeriode by remember { mutableStateOf("T1") }
     val periodes = listOf("T1", "T2", "T3")
 
-    LaunchedEffect(session.ecoleId) {
-        session.ecoleId?.let { classesViewModel.loadClasses(it) }
+    LaunchedEffect(session.schoolId) {
+        session.schoolId?.let { classesViewModel.loadClasses(it) }
     }
 
     LaunchedEffect(selectedClasse, selectedPeriode) {
-        val ecole = session.ecoleId ?: return@LaunchedEffect
+        val ecole = session.schoolId ?: return@LaunchedEffect
         val classe = selectedClasse ?: return@LaunchedEffect
         bulletinViewModel.loadBulletins(ecole, classe.id, selectedPeriode)
     }
@@ -73,7 +73,7 @@ fun BulletinScreen(
                 classes = classes,
                 selected = selectedClasse,
                 onSelected = { classe ->
-                    session.ecoleId?.let { classesViewModel.selectClasse(classe, it) }
+                    session.schoolId?.let { classesViewModel.selectClasse(classe, it) }
                 }
             )
 
@@ -88,7 +88,7 @@ fun BulletinScreen(
             if (uiState is BulletinUiState.Ready) {
                 Button(
                     onClick = {
-                        session.ecoleId?.let { ecole ->
+                        session.schoolId?.let { ecole ->
                             selectedClasse?.let { classe ->
                                 bulletinViewModel.lockBulletin(ecole, classe.id, selectedPeriode)
                             }

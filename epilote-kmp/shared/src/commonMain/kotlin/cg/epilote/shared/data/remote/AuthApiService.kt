@@ -3,7 +3,7 @@ package cg.epilote.shared.data.remote
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class LoginRequestDto(val username: String, val password: String)
+data class LoginRequestDto(val email: String, val password: String)
 
 @Serializable
 data class PermissionDto(
@@ -21,11 +21,11 @@ data class LoginResponseDto(
     val offlineToken: String,
     val offlineTokenExpiresAt: Long = 0L,
     val userId: String,
-    val username: String? = null,
+    val email: String,
     val firstName: String = "",
     val lastName: String = "",
-    val ecoleId: String?,
-    val groupeId: String?,
+    val schoolId: String?,
+    val groupId: String?,
     val role: String,
     val permissions: List<PermissionDto> = emptyList(),
     val expiresIn: Long
@@ -40,7 +40,7 @@ data class TokenResponseDto(val accessToken: String, val expiresIn: Long)
 @Serializable
 data class ProvisionSyncUserRequestDto(
     val userId: String,
-    val groupeId: String? = null,
+    val groupId: String? = null,
     val schoolIds: List<String> = emptyList(),
     val role: String
 )
@@ -48,17 +48,18 @@ data class ProvisionSyncUserRequestDto(
 @Serializable
 data class ProvisionSyncUserResponseDto(
     val provisioned: Boolean,
-    val message: String = ""
+    val message: String = "",
+    val syncToken: String = ""
 )
 
 class AuthApiService(private val client: ApiClient) {
 
-    suspend fun login(username: String, password: String): LoginResponseDto =
-        client.post("/api/auth/login", LoginRequestDto(username, password))
+    suspend fun login(email: String, password: String): LoginResponseDto =
+        client.post("/api/auth/login", LoginRequestDto(email, password))
 
     suspend fun refresh(refreshToken: String): TokenResponseDto =
         client.post("/api/auth/refresh", RefreshRequestDto(refreshToken))
 
-    suspend fun provisionSyncUser(userId: String, groupeId: String?, schoolIds: List<String>, role: String): ProvisionSyncUserResponseDto =
-        client.post("/api/provisioning/sync-user", ProvisionSyncUserRequestDto(userId, groupeId, schoolIds, role))
+    suspend fun provisionSyncUser(userId: String, groupId: String?, schoolIds: List<String>, role: String): ProvisionSyncUserResponseDto =
+        client.post("/api/provisioning/sync-user", ProvisionSyncUserRequestDto(userId, groupId, schoolIds, role))
 }

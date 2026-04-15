@@ -23,7 +23,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class EcoleDto(
     val id: String = "",
-    val groupeId: String = "",
+    val groupId: String = "",
     val nom: String = "",
     val province: String = "",
     val territoire: String = "",
@@ -38,7 +38,7 @@ fun AdminEcolesScreen(
     ecoles: List<EcoleDto>,
     groupes: List<GroupeDto>,
     isLoading: Boolean,
-    onCreateEcole: (groupeId: String, nom: String, province: String, territoire: String) -> Unit,
+    onCreateEcole: (groupId: String, nom: String, province: String, territoire: String) -> Unit,
     onRefresh: () -> Unit
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -102,7 +102,7 @@ fun AdminEcolesScreen(
         }
 
         ecoles.forEach { ecole ->
-            val groupeNom = groupes.find { it.id == ecole.groupeId }?.nom ?: ecole.groupeId
+            val groupeNom = groupes.find { it.id == ecole.groupId }?.nom ?: ecole.groupId
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
@@ -146,8 +146,8 @@ fun AdminEcolesScreen(
         CreateEcoleDialog(
             groupes = groupes,
             onDismiss = { showCreateDialog = false },
-            onCreate = { groupeId, nom, province, territoire ->
-                onCreateEcole(groupeId, nom, province, territoire)
+            onCreate = { groupId, nom, province, territoire ->
+                onCreateEcole(groupId, nom, province, territoire)
                 showCreateDialog = false
             }
         )
@@ -158,7 +158,7 @@ fun AdminEcolesScreen(
 private fun CreateEcoleDialog(
     groupes: List<GroupeDto>,
     onDismiss: () -> Unit,
-    onCreate: (groupeId: String, nom: String, province: String, territoire: String) -> Unit
+    onCreate: (groupId: String, nom: String, province: String, territoire: String) -> Unit
 ) {
     var nom by remember { mutableStateOf("") }
     var province by remember { mutableStateOf("") }

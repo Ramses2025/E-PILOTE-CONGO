@@ -12,10 +12,15 @@ couchbase:
   bucket: ${CB_BUCKET:epilote_prod}
 
 jwt:
-  secret: ${JWT_SECRET:epilote-secret-key-change-in-production-min-256-bits}
+  secret: ${JWT_SECRET:epilote-secret-key-change-in-production-min-256-bits-2026-secure}
   expiration-ms: 3600000        # 1 heure
   refresh-expiration-ms: 2592000000  # 30 jours
   offline-expiration-ms: 2592000000  # 30 jours offline token
+
+epilote:
+  super-admin:
+    email: ${SUPER_ADMIN_EMAIL:super@admin.cg}
+    password: ${SUPER_ADMIN_PASSWORD:}
 
 app-services:
   admin-url: ${APP_SERVICES_ADMIN_URL:https://x0by7zekx39pidsy.apps.cloud.couchbase.com:4985}

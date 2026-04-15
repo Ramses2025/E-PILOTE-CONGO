@@ -11,7 +11,7 @@ sealed class AbsenceResult {
 class SaveAbsenceUseCase(private val absenceRepo: AbsenceRepository) {
 
     fun execute(
-        ecoleId: String,
+        schoolId: String,
         eleveId: String,
         date: String,
         saisieParId: String
@@ -19,8 +19,8 @@ class SaveAbsenceUseCase(private val absenceRepo: AbsenceRepository) {
         if (date.isBlank()) return AbsenceResult.Error("Date invalide")
 
         val absence = Absence(
-            id          = Absence.buildId(ecoleId, eleveId, date),
-            ecoleId     = ecoleId,
+            id          = Absence.buildId(schoolId, eleveId, date),
+            schoolId = schoolId,
             eleveId     = eleveId,
             date        = date,
             justifiee   = false,

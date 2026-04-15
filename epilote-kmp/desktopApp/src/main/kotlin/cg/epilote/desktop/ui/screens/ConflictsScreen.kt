@@ -1,4 +1,4 @@
-package cg.epilote.desktop.ui.screens
+﻿package cg.epilote.desktop.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -35,8 +35,8 @@ fun ConflictsScreen(
     var resolvedCount by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(session.ecoleId) {
-        val ecole = session.ecoleId ?: return@LaunchedEffect
+    LaunchedEffect(session.schoolId) {
+        val ecole = session.schoolId ?: return@LaunchedEffect
         isLoading = true
         conflicts = noteRepo.getPendingReview(ecole)
         isLoading = false

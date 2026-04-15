@@ -1,4 +1,4 @@
-package cg.epilote.desktop.ui.screens
+﻿package cg.epilote.desktop.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,8 +31,8 @@ fun ClassesScreen(
     val selectedClasse by viewModel.selectedClasse.collectAsState()
     val matieres by viewModel.matieres.collectAsState()
 
-    LaunchedEffect(session.ecoleId) {
-        session.ecoleId?.let { viewModel.loadClasses(it) }
+    LaunchedEffect(session.schoolId) {
+        session.schoolId?.let { viewModel.loadClasses(it) }
     }
 
     Row(modifier = Modifier.fillMaxSize()) {
@@ -86,7 +86,7 @@ fun ClassesScreen(
                             classe = classe,
                             isSelected = selectedClasse?.id == classe.id,
                             onClick = {
-                                session.ecoleId?.let { viewModel.selectClasse(classe, it) }
+                                session.schoolId?.let { viewModel.selectClasse(classe, it) }
                             }
                         )
                     }

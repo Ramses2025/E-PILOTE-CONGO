@@ -1,4 +1,4 @@
-package cg.epilote.desktop.ui.screens
+﻿package cg.epilote.desktop.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -26,8 +26,8 @@ data class UserDto(
     val firstName: String = "",
     val lastName: String = "",
     val email: String = "",
-    val ecoleId: String = "",
-    val groupeId: String = "",
+    val schoolId: String = "",
+    val groupId: String = "",
     val profilId: String = "",
     val role: String = "USER",
     val isActive: Boolean = true,
@@ -156,9 +156,8 @@ fun AdminUsersScreen(
 }
 
 private fun roleColor(role: String): Color = when (role) {
-    "SUPER_ADMIN" -> Color(0xFFE63946)
-    "ADMIN_SYSTEME" -> Color(0xFF1D3557)
+    "SUPER_ADMIN"  -> Color(0xFFE63946)
     "ADMIN_GROUPE" -> Color(0xFF6C5CE7)
-    "DIRECTOR" -> Color(0xFFE9C46A)
-    else -> Color(0xFF2A9D8F)
+    "USER"         -> Color(0xFF2A9D8F)
+    else           -> Color(0xFF2A9D8F)
 }

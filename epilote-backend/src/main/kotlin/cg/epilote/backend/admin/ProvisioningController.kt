@@ -1,5 +1,6 @@
 package cg.epilote.backend.admin
 
+import com.fasterxml.jackson.annotation.JsonAlias
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
@@ -18,26 +19,41 @@ class ProvisioningController(
     fun provisionSyncUser(
         @RequestBody body: ProvisionSyncUserRequest,
         auth: Authentication
-    ): ResponseEntity<ProvisionSyncUserResponse> {
+    ): ResponseEntity<ProvisionSyncUserResponse> = runBlocking {
         val requestingUserId = auth.principal as String
         if (requestingUserId != body.userId) {
-            return ResponseEntity.status(403).build()
+            return@runBlocking ResponseEntity.status(403).build<ProvisionSyncUserResponse>()
         }
-        runCatching { sgClient.provisionUser(body.userId, body.groupeId, body.schoolIds, body.role) }
-        return ResponseEntity.ok(ProvisionSyncUserResponse(provisioned = true))
+
+        // For ADMIN_GROUPE, resolve all school IDs from the group's schools
+        // to avoid channel erasure on re-login (client doesn't know all schoolIds)
+        val effectiveSchoolIds = if (body.role == "ADMIN_GROUPE" && !body.groupId.isNullOrBlank()) {
+            adminRepo.listEcolesByGroupe(body.groupId).map { it.id }
+        } else {
+            body.schoolIds
+        }
+
+        val syncToken = runCatching {
+            sgClient.provisionUser(body.userId, body.groupId, effectiveSchoolIds, body.role)
+        }.getOrNull()
+        if (syncToken != null) {
+            ResponseEntity.ok(ProvisionSyncUserResponse(provisioned = true, syncToken = syncToken))
+        } else {
+            ResponseEntity.ok(ProvisionSyncUserResponse(provisioned = false, message = "Provisioning failed"))
+        }
     }
 
-    @GetMapping("/seed/{ecoleId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN_SYSTEME','ADMIN_GROUPE')")
-    fun getSeedPackage(@PathVariable ecoleId: String): ResponseEntity<SeedPackageResponse> =
+    @GetMapping("/seed/{schoolId}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN_GROUPE')")
+    fun getSeedPackage(@PathVariable schoolId: String): ResponseEntity<SeedPackageResponse> =
         runBlocking {
             val ecoles = adminRepo.listEcolesByGroupe(
                 adminRepo.listGroupes().firstOrNull()?.id ?: return@runBlocking ResponseEntity.notFound().build()
             )
-            val ecole = ecoles.find { it.id == ecoleId }
+            val ecole = ecoles.find { it.id == schoolId }
                 ?: return@runBlocking ResponseEntity.notFound().build<SeedPackageResponse>()
 
-            val users   = adminRepo.listUsersByEcole(ecoleId)
+            val users   = adminRepo.listUsersByEcole(schoolId)
             val modules = adminRepo.listModules()
             val plans   = adminRepo.listPlans()
 
@@ -55,11 +71,12 @@ class ProvisioningController(
 
 data class ProvisionSyncUserRequest(
     val userId: String,
-    val groupeId: String? = null,
+    @JsonAlias("groupeId")
+    val groupId: String? = null,
     val schoolIds: List<String> = emptyList(),
     val role: String
 )
-data class ProvisionSyncUserResponse(val provisioned: Boolean, val message: String = "")
+data class ProvisionSyncUserResponse(val provisioned: Boolean, val message: String = "", val syncToken: String = "")
 
 data class SeedPackageResponse(
     val ecole: EcoleResponse,

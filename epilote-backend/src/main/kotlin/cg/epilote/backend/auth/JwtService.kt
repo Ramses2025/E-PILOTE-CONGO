@@ -30,11 +30,11 @@ class JwtService {
     fun generateAccessToken(user: EpiloteUserDetails): String = buildToken(
         subject = user.userId,
         claims = mapOf(
-            "username"    to user.username,
+            "email"       to user.email,
             "firstName"   to user.firstName,
             "lastName"    to user.lastName,
-            "ecoleId"     to (user.ecoleId ?: ""),
-            "groupeId"    to (user.groupeId ?: ""),
+            "schoolId"    to (user.schoolId ?: ""),
+            "groupId"     to (user.groupId ?: ""),
             "role"        to user.role.name,
             "permissions" to user.permissions.map { p ->
                 mapOf(
@@ -59,8 +59,8 @@ class JwtService {
     fun generateOfflineToken(user: EpiloteUserDetails): String = buildToken(
         subject = user.userId,
         claims = mapOf(
-            "ecoleId"   to (user.ecoleId ?: ""),
-            "groupeId"  to (user.groupeId ?: ""),
+            "schoolId"  to (user.schoolId ?: ""),
+            "groupId"   to (user.groupId ?: ""),
             "role"      to user.role.name,
             "tokenType" to "offline"
         ),

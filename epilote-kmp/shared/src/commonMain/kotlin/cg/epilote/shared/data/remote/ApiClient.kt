@@ -18,6 +18,8 @@ class ApiClient(
     private val onTokenExpired: suspend () -> Unit
 ) {
     val http = HttpClient {
+        expectSuccess = true
+
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true

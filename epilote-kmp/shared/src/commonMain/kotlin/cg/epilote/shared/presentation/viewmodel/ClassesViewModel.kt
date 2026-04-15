@@ -25,19 +25,19 @@ class ClassesViewModel(
     private val _selectedClasse = MutableStateFlow<Classe?>(null)
     val selectedClasse: StateFlow<Classe?> = _selectedClasse.asStateFlow()
 
-    fun loadClasses(ecoleId: String) {
+    fun loadClasses(schoolId: String) {
         scope.launch {
-            classeRepo.observeByEcole(ecoleId).collect { _classes.value = it }
+            classeRepo.observeByEcole(schoolId).collect { _classes.value = it }
         }
     }
 
-    fun selectClasse(classe: Classe, ecoleId: String) {
+    fun selectClasse(classe: Classe, schoolId: String) {
         _selectedClasse.value = classe
         scope.launch {
-            matiereRepo.observeByClasse(ecoleId, classe.id).collect { _matieres.value = it }
+            matiereRepo.observeByClasse(schoolId, classe.id).collect { _matieres.value = it }
         }
     }
 
-    fun getMatieresByEnseignant(ecoleId: String, enseignantId: String): List<Matiere> =
-        matiereRepo.getByEnseignant(ecoleId, enseignantId)
+    fun getMatieresByEnseignant(schoolId: String, enseignantId: String): List<Matiere> =
+        matiereRepo.getByEnseignant(schoolId, enseignantId)
 }

@@ -11,7 +11,7 @@ sealed class SaveNoteResult {
 class SaveNoteUseCase(private val noteRepo: NoteRepository) {
 
     fun execute(
-        ecoleId: String,
+        schoolId: String,
         anneeId: String,
         classeId: String,
         matiereId: String,
@@ -24,7 +24,7 @@ class SaveNoteUseCase(private val noteRepo: NoteRepository) {
             return SaveNoteResult.Error("La note doit être comprise entre 0 et 20")
         }
 
-        val existingNote = noteRepo.getByClasse(ecoleId, classeId, periode)
+        val existingNote = noteRepo.getByClasse(schoolId, classeId, periode)
             .find { it.eleveId == eleveId && it.matiereId == matiereId }
 
         if (existingNote?.locked == true) {
@@ -32,8 +32,8 @@ class SaveNoteUseCase(private val noteRepo: NoteRepository) {
         }
 
         val note = Note(
-            id           = Note.buildId(ecoleId, classeId, matiereId, eleveId, periode),
-            ecoleId      = ecoleId,
+            id           = Note.buildId(schoolId, classeId, matiereId, eleveId, periode),
+            schoolId = schoolId,
             anneeId      = anneeId,
             eleveId      = eleveId,
             classeId     = classeId,

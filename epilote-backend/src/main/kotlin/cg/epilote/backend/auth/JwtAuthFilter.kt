@@ -24,7 +24,12 @@ class JwtAuthFilter(private val jwtService: JwtService) : OncePerRequestFilter()
             if (jwtService.validateToken(token) && !jwtService.isTokenType(token, "refresh")) {
                 val claims = jwtService.getClaimsFromToken(token)
                 val userId = claims.subject
-                val role = claims["role"] as? String ?: "USER"
+                val rawRole = claims["role"] as? String ?: "USER"
+                val role = when (rawRole) {
+                    "ADMIN_SYSTEME" -> "SUPER_ADMIN"   // garde-fou : rôle inexistant, redirigé vers SUPER_ADMIN
+                    "DIRECTOR"      -> "USER"           // garde-fou : rôle inexistant, le directeur est un USER avec profil
+                    else            -> rawRole
+                }
 
                 @Suppress("UNCHECKED_CAST")
                 val permissions = claims["permissions"] as? List<Map<String, Any>> ?: emptyList()
@@ -40,8 +45,8 @@ class JwtAuthFilter(private val jwtService: JwtService) : OncePerRequestFilter()
 
                 val auth = UsernamePasswordAuthenticationToken(userId, null, authorities)
                 auth.details = mapOf(
-                    "ecoleId"  to (claims["ecoleId"] as? String ?: ""),
-                    "groupeId" to (claims["groupeId"] as? String ?: ""),
+                    "schoolId" to (claims["schoolId"] as? String ?: ""),
+                    "groupId"  to (claims["groupId"] as? String ?: ""),
                     "role"     to role
                 )
                 SecurityContextHolder.getContext().authentication = auth

@@ -1,4 +1,4 @@
-package cg.epilote.shared.data.local
+﻿package cg.epilote.shared.data.local
 
 import cg.epilote.shared.domain.model.ModulePermission
 import cg.epilote.shared.domain.model.UserSession
@@ -17,11 +17,11 @@ class UserSessionRepository(private val db: Database) {
     fun saveSession(session: UserSession) {
         val doc = MutableDocument(SESSION_ID).apply {
             setString("userId",               session.userId)
-            setString("username",             session.username)
+            setString("email",                session.email)
             setString("firstName",            session.firstName)
             setString("lastName",             session.lastName)
-            setString("ecoleId",              session.ecoleId ?: "")
-            setString("groupeId",             session.groupeId ?: "")
+            setString("schoolId",              session.schoolId ?: "")
+            setString("groupId",             session.groupId ?: "")
             setString("role",                 session.role)
             setString("accessToken",          session.accessToken)
             setString("refreshToken",         session.refreshToken)
@@ -63,18 +63,18 @@ class UserSessionRepository(private val db: Database) {
         } else emptyList()
 
         val userId      = doc.getString("userId")      ?: return null
-        val username    = doc.getString("username")    ?: return null
+        val email       = doc.getString("email") ?: doc.getString("username") ?: return null
         val accessToken = doc.getString("accessToken") ?: return null
         val refreshToken = doc.getString("refreshToken") ?: return null
         val offlineToken = doc.getString("offlineToken") ?: return null
 
         return UserSession(
             userId                = userId,
-            username              = username,
+            email                 = email,
             firstName             = doc.getString("firstName") ?: "",
             lastName              = doc.getString("lastName") ?: "",
-            ecoleId               = doc.getString("ecoleId")?.takeIf { s -> s.isNotEmpty() },
-            groupeId              = doc.getString("groupeId")?.takeIf { s -> s.isNotEmpty() },
+            schoolId = doc.getString("schoolId")?.takeIf { s -> s.isNotEmpty() },
+            groupId = doc.getString("groupId")?.takeIf { s -> s.isNotEmpty() },
             role                  = doc.getString("role") ?: "USER",
             accessToken           = accessToken,
             refreshToken          = refreshToken,

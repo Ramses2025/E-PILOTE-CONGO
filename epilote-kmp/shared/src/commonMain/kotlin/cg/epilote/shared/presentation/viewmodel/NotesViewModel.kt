@@ -25,14 +25,14 @@ class NotesViewModel(
     val syncStatus: StateFlow<SyncStatus> = syncManager.syncStatus
     val pendingCount: StateFlow<Long>     = syncManager.pendingCount
 
-    fun loadNotes(ecoleId: String, classeId: String, periode: String) {
+    fun loadNotes(schoolId: String, classeId: String, periode: String) {
         scope.launch {
-            noteRepo.observeByClasse(ecoleId, classeId, periode)
+            noteRepo.observeByClasse(schoolId, classeId, periode)
                 .collect { _notes.value = it }
         }
     }
 
-    fun saveNote(ecoleId: String, anneeId: String, classeId: String, matiereId: String,
+    fun saveNote(schoolId: String, anneeId: String, classeId: String, matiereId: String,
                  eleveId: String, periode: String, valeur: Double, enseignantId: String) {
         if (valeur < 0 || valeur > 20) {
             _uiState.value = NotesUiState.Error("La note doit être entre 0 et 20")
@@ -40,8 +40,8 @@ class NotesViewModel(
         }
         scope.launch {
             val note = Note(
-                id           = Note.buildId(ecoleId, classeId, matiereId, eleveId, periode),
-                ecoleId      = ecoleId,
+                id           = Note.buildId(schoolId, classeId, matiereId, eleveId, periode),
+                schoolId = schoolId,
                 anneeId      = anneeId,
                 eleveId      = eleveId,
                 classeId     = classeId,
@@ -55,9 +55,9 @@ class NotesViewModel(
         }
     }
 
-    fun loadPendingReview(ecoleId: String) {
+    fun loadPendingReview(schoolId: String) {
         scope.launch {
-            val pending = noteRepo.getPendingReview(ecoleId)
+            val pending = noteRepo.getPendingReview(schoolId)
             if (pending.isNotEmpty()) {
                 _uiState.value = NotesUiState.HasConflicts(pending)
             }

@@ -26,27 +26,27 @@ class LoginViewModel(private val loginUseCase: LoginUseCase) {
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
-    private val _username = MutableStateFlow("")
-    val username: StateFlow<String> = _username.asStateFlow()
+    private val _email = MutableStateFlow("")
+    val email: StateFlow<String> = _email.asStateFlow()
 
     private val _password = MutableStateFlow("")
     val password: StateFlow<String> = _password.asStateFlow()
 
-    fun onUsernameChange(value: String) { _username.value = value }
+    fun onEmailChange(value: String) { _email.value = value }
     fun onPasswordChange(value: String) { _password.value = value }
 
-    fun login(pin: String = "0000") {
-        val u = _username.value.trim()
+    fun login() {
+        val e = _email.value.trim()
         val p = _password.value
 
-        if (u.isBlank() || p.isBlank()) {
+        if (e.isBlank() || p.isBlank()) {
             _uiState.value = LoginUiState.Error("Veuillez saisir votre email et mot de passe")
             return
         }
 
         _uiState.value = LoginUiState.Loading
         scope.launch {
-            _uiState.value = when (val result = loginUseCase.execute(u, p, pin)) {
+            _uiState.value = when (val result = loginUseCase.execute(e, p)) {
                 is LoginResult.Success  -> LoginUiState.Success(result.session)
                 is LoginResult.Error    -> LoginUiState.Error(result.message)
                 is LoginResult.NoNetwork -> LoginUiState.NoNetwork

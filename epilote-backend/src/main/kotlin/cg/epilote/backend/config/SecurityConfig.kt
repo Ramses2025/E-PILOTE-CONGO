@@ -29,8 +29,8 @@ class SecurityConfig(private val jwtAuthFilter: JwtAuthFilter) {
                 it.requestMatchers("/api/auth/**").permitAll()
                 it.requestMatchers("/actuator/health").permitAll()
                 it.requestMatchers("/api/super-admin/**").hasRole("SUPER_ADMIN")
-                it.requestMatchers("/api/admin-systeme/**").hasAnyRole("SUPER_ADMIN", "ADMIN_SYSTEME")
-                it.requestMatchers("/api/groupes/**").hasAnyRole("ADMIN_SYSTEME", "ADMIN_GROUPE")
+                it.requestMatchers("/api/groupes/**").hasAnyRole("SUPER_ADMIN", "ADMIN_GROUPE")
+                it.requestMatchers("/api/schools/**").hasAnyRole("SUPER_ADMIN", "ADMIN_GROUPE")
                 it.anyRequest().authenticated()
             }
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter::class.java)

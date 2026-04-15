@@ -40,6 +40,11 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
+private val desktopBackendBaseUrl: String
+    get() = System.getProperty("epilote.backend.url")
+        ?: System.getenv("EPILOTE_BACKEND_URL")
+        ?: "http://localhost:8080"
+
 // ── DTOs IA pour appels REST backend ─────────────────────────────────────────
 
 @Serializable
@@ -116,35 +121,54 @@ class DesktopAdminClient(private val baseUrl: String, private val tokenProvider:
     suspend fun listGroupes(): List<GroupeApiDto>? = get("/api/super-admin/groupes")
     suspend fun listPlans(): List<PlanApiDto>? = get("/api/super-admin/plans")
     suspend fun listModules(): List<ModuleApiDto>? = get("/api/super-admin/modules")
-    suspend fun listAdminGroupes(groupeId: String): List<UserApiDto>? = get("/api/super-admin/groupes/$groupeId/admins")
+    suspend fun listAdminGroupes(groupId: String): List<UserApiDto>? = get("/api/super-admin/groupes/$groupId/admins")
 
     suspend fun createGroupe(nom: String, province: String, planId: String): GroupeApiDto? =
         post("/api/super-admin/groupes", CreateGroupeDto(nom, province, planId))
 
     suspend fun createAdminGroupe(
-        groupeId: String,
-        username: String,
+        groupId: String,
         password: String,
         nom: String,
         prenom: String,
         email: String
     ): UserApiDto? = post(
-        "/api/super-admin/groupes/$groupeId/admins",
-        CreateAdminGroupeDto(username, password, nom, prenom, email)
+        "/api/super-admin/groupes/$groupId/admins",
+        CreateAdminGroupeDto(password, nom, prenom, email)
     )
 }
 
 @Serializable data class DashboardStatsDto(
     val totalGroupes: Long = 0, val totalEcoles: Long = 0,
     val totalUtilisateurs: Long = 0, val totalModules: Long = 0,
-    val totalPlans: Long = 0, val totalCategories: Long = 0
+    val totalPlans: Long = 0, val totalCategories: Long = 0,
+    val totalSubscriptions: Long = 0, val activeSubscriptions: Long = 0,
+    val totalInvoices: Long = 0, val revenueTotal: Long = 0,
+    val revenuePaid: Long = 0, val invoicesOverdue: Long = 0,
+    val groupesByProvince: List<ProvinceStatsDto> = emptyList(),
+    val planDistribution: List<PlanDistributionDto> = emptyList(),
+    val subscriptionsByStatus: Map<String, Long> = emptyMap(),
+    val recentGroupes: List<GroupeApiDto> = emptyList(),
+    val recentInvoices: List<InvoiceApiDto> = emptyList()
+)
+@Serializable data class ProvinceStatsDto(
+    val province: String = "", val groupesCount: Long = 0, val ecolesCount: Long = 0
+)
+@Serializable data class PlanDistributionDto(
+    val planId: String = "", val planNom: String = "", val groupesCount: Long = 0
+)
+@Serializable data class InvoiceApiDto(
+    val id: String = "", val groupeId: String = "", val subscriptionId: String = "",
+    val montantXAF: Long = 0, val statut: String = "draft",
+    val dateEmission: Long = 0, val dateEcheance: Long = 0,
+    val datePaiement: Long? = null, val reference: String = "", val notes: String = ""
 )
 @Serializable data class GroupeApiDto(val id: String = "", val nom: String = "", val province: String = "", val planId: String = "", val ecolesCount: Int = 0, val createdAt: Long = 0)
-@Serializable data class PlanApiDto(val id: String = "", val nom: String = "", val maxEcoles: Int = 0, val maxUtilisateurs: Int = 0, val modulesIncluded: List<String> = emptyList(), val categoriesIncluded: List<String> = emptyList(), val dureeJours: Int = 365)
+@Serializable data class PlanApiDto(val id: String = "", val nom: String = "", val prixXAF: Long = 0, val maxEcoles: Int = 0, val maxUtilisateurs: Int = 0, val modulesIncluded: List<String> = emptyList(), val categoriesIncluded: List<String> = emptyList(), val dureeJours: Int = 365)
 @Serializable data class ModuleApiDto(val id: String = "", val code: String = "", val nom: String = "", val categorieCode: String = "", val description: String = "", val isCore: Boolean = false, val requiredPlan: String = "gratuit", val isActive: Boolean = true)
-@Serializable data class UserApiDto(val id: String = "", val username: String = "", val firstName: String = "", val lastName: String = "", val email: String = "", val ecoleId: String? = null, val groupeId: String = "", val profilId: String? = null, val role: String = "USER", val isActive: Boolean = true, val createdAt: Long = 0)
+@Serializable data class UserApiDto(val id: String = "", val username: String = "", val firstName: String = "", val lastName: String = "", val email: String = "", val schoolId: String? = null, val groupId: String = "", val profilId: String? = null, val role: String = "USER", val isActive: Boolean = true, val createdAt: Long = 0)
 @Serializable data class CreateGroupeDto(val nom: String, val province: String, val planId: String)
-@Serializable data class CreateAdminGroupeDto(val username: String, val password: String, val nom: String, val prenom: String, val email: String)
+@Serializable data class CreateAdminGroupeDto(val password: String, val nom: String, val prenom: String, val email: String)
 
 // ── Client IA Desktop ─────────────────────────────────────────────────────────
 
@@ -185,20 +209,20 @@ fun EpiloteDesktopApp() {
 
     EpiloteTheme {
         if (session == null) {
-            val preLoginDb = remember {
-                if (!EpiloteDatabase.isOpen()) EpiloteDatabase.init(null, "bootstrap", "0000")
-                EpiloteDatabase.instance
+            val sessionsDb = remember {
+                if (!EpiloteDatabase.isSessionsOpen()) EpiloteDatabase.initSessions(null)
+                EpiloteDatabase.sessionsInstance
             }
             val apiClient = remember {
                 ApiClient(
-                    baseUrl        = "http://localhost:8080",
+                    baseUrl        = desktopBackendBaseUrl,
                     tokenProvider  = { null },
                     onTokenExpired = {}
                 )
             }
-            val sessionRepo    = remember { UserSessionRepository(preLoginDb) }
+            val sessionRepo    = remember { UserSessionRepository(sessionsDb) }
             val syncManager    = remember {
-                SyncManager(preLoginDb, "wss://x0by7zekx39pidsy.apps.cloud.couchbase.com:4984/epilote")
+                SyncManager("wss://x0by7zekx39pidsy.apps.cloud.couchbase.com:4984/epilote")
             }
             val authService    = remember { AuthApiService(apiClient) }
             val loginUseCase   = remember { LoginUseCase(authService, sessionRepo, syncManager, null) }
@@ -208,7 +232,11 @@ fun EpiloteDesktopApp() {
                 viewModel      = loginViewModel,
                 onLoginSuccess = { s ->
                     session = s
-                    currentScreen = if (s.role == "SUPER_ADMIN") DesktopScreen.ADMIN_DASHBOARD else DesktopScreen.DASHBOARD
+                    currentScreen = when (s.role) {
+                        "SUPER_ADMIN"  -> DesktopScreen.ADMIN_DASHBOARD
+                        "ADMIN_GROUPE" -> DesktopScreen.GROUPE_DASHBOARD
+                        else           -> DesktopScreen.DASHBOARD
+                    }
                 }
             )
         } else {
@@ -222,34 +250,54 @@ fun EpiloteDesktopApp() {
             val eleveRepo   = remember { EleveRepository(db) }
 
             val syncManager = remember {
-                SyncManager(db, "wss://x0by7zekx39pidsy.apps.cloud.couchbase.com:4984/epilote")
-                    .also { it.start(s.username, s.accessToken) }
+                SyncManager("wss://x0by7zekx39pidsy.apps.cloud.couchbase.com:4984/epilote")
             }
 
             val aiClient = remember {
-                DesktopAIClient("https://api.epilote.cg") { s.accessToken }
+                DesktopAIClient(desktopBackendBaseUrl) { s.accessToken }
             }
 
             val appScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
 
             val adminClient = remember {
-                DesktopAdminClient("https://api.epilote.cg") { s.accessToken }
+                DesktopAdminClient(desktopBackendBaseUrl) { s.accessToken }
             }
 
             // ── Admin state ──────────────────────────────────────────
             var adminStats by remember { mutableStateOf(AdminStats()) }
+            var dashboardStatsDto by remember { mutableStateOf(DashboardStatsDto()) }
             var adminGroupes by remember { mutableStateOf<List<GroupeDto>>(emptyList()) }
             var adminGroupAdmins by remember { mutableStateOf<Map<String, List<UserDto>>>(emptyMap()) }
             var adminPlans by remember { mutableStateOf<List<PlanDto>>(emptyList()) }
             var adminModules by remember { mutableStateOf<List<ModuleDto>>(emptyList()) }
             var adminLoading by remember { mutableStateOf(false) }
+            var sidebarExpanded by remember { mutableStateOf(true) }
 
             fun loadAdminData() {
                 adminLoading = true
                 appScope.launch {
                     val stats = adminClient.getDashboardStats()
                     if (stats != null) {
-                        adminStats = AdminStats(stats.totalGroupes, stats.totalEcoles, stats.totalUtilisateurs, stats.totalModules, stats.totalPlans, stats.totalCategories)
+                        dashboardStatsDto = stats
+                        adminStats = AdminStats(
+                            totalGroupes = stats.totalGroupes,
+                            totalEcoles = stats.totalEcoles,
+                            totalUtilisateurs = stats.totalUtilisateurs,
+                            totalModules = stats.totalModules,
+                            totalPlans = stats.totalPlans,
+                            totalCategories = stats.totalCategories,
+                            totalSubscriptions = stats.totalSubscriptions,
+                            activeSubscriptions = stats.activeSubscriptions,
+                            totalInvoices = stats.totalInvoices,
+                            revenueTotal = stats.revenueTotal,
+                            revenuePaid = stats.revenuePaid,
+                            invoicesOverdue = stats.invoicesOverdue,
+                            groupesByProvince = stats.groupesByProvince,
+                            planDistribution = stats.planDistribution,
+                            subscriptionsByStatus = stats.subscriptionsByStatus,
+                            recentGroupes = stats.recentGroupes,
+                            recentInvoices = stats.recentInvoices
+                        )
                     }
                     val g = adminClient.listGroupes()
                     if (g != null) {
@@ -263,8 +311,8 @@ fun EpiloteDesktopApp() {
                                         firstName = it.firstName,
                                         lastName = it.lastName,
                                         email = it.email,
-                                        ecoleId = it.ecoleId ?: "",
-                                        groupeId = it.groupeId,
+                                        schoolId = it.schoolId ?: "",
+                                        groupId = it.groupId,
                                         profilId = it.profilId ?: "",
                                         role = it.role,
                                         isActive = it.isActive,
@@ -313,9 +361,12 @@ fun EpiloteDesktopApp() {
                         onScreenSelected = { currentScreen = it },
                         onLogout         = {
                             syncManager.stop()
-                            EpiloteDatabase.close()
+                            UserSessionRepository(EpiloteDatabase.sessionsInstance).clearSession()
+                            EpiloteDatabase.closeAll()
                             session = null
-                        }
+                        },
+                        isExpanded       = sidebarExpanded,
+                        onToggleExpanded = { sidebarExpanded = !sidebarExpanded }
                     )
 
                     Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
@@ -343,9 +394,9 @@ fun EpiloteDesktopApp() {
                                             loadAdminData()
                                         }
                                     },
-                                    onCreateAdminGroupe = { groupeId, username, password, nom, prenom, email ->
+                                    onCreateAdminGroupe = { groupId, password, nom, prenom, email ->
                                         appScope.launch {
-                                            adminClient.createAdminGroupe(groupeId, username, password, nom, prenom, email)
+                                            adminClient.createAdminGroupe(groupId, password, nom, prenom, email)
                                             loadAdminData()
                                         }
                                     },
@@ -365,6 +416,46 @@ fun EpiloteDesktopApp() {
                                     isLoading = adminLoading,
                                     onRefresh = { loadAdminData() }
                                 )
+
+                            DesktopScreen.ADMIN_CATEGORIES ->
+                                PlaceholderScreen("Catégories", "CRUD des catégories dynamiques de la plateforme")
+
+                            DesktopScreen.ADMIN_SUBSCRIPTIONS ->
+                                PlaceholderScreen("Abonnements", "Gestion des abonnements par groupe scolaire")
+
+                            DesktopScreen.ADMIN_INVOICES ->
+                                PlaceholderScreen("Factures", "Facturation plateforme — émission, suivi, relances")
+
+                            DesktopScreen.ADMIN_ADMINISTRATORS ->
+                                PlaceholderScreen("Administrateurs", "Gestion des administrateurs de groupes scolaires")
+
+                            DesktopScreen.ADMIN_ANNOUNCEMENTS ->
+                                PlaceholderScreen("Annonces", "Diffusion d'annonces vers tous les groupes")
+
+                            DesktopScreen.ADMIN_NOTIFICATIONS ->
+                                PlaceholderScreen("Notifications", "Notifications plateforme — alertes et rappels")
+
+                            DesktopScreen.ADMIN_MESSAGING ->
+                                PlaceholderScreen("Messagerie", "Messagerie interne plateforme")
+
+                            DesktopScreen.ADMIN_TICKETS ->
+                                PlaceholderScreen("Signalements", "Tickets de support et signalements")
+
+                            DesktopScreen.ADMIN_AUDIT_LOG ->
+                                AuditLogScreen()
+
+                            // ── Admin Groupe Screens ──────────────────
+                            DesktopScreen.GROUPE_DASHBOARD ->
+                                PlaceholderScreen("Dashboard Groupe", "Vue d'ensemble du groupe scolaire")
+
+                            DesktopScreen.GROUPE_ECOLES ->
+                                PlaceholderScreen("Écoles", "Gestion des écoles du groupe")
+
+                            DesktopScreen.GROUPE_UTILISATEURS ->
+                                PlaceholderScreen("Utilisateurs", "Gestion de tous les utilisateurs du groupe")
+
+                            DesktopScreen.GROUPE_PROFILS ->
+                                PlaceholderScreen("Profils d'accès", "Gestion des profils et permissions du groupe")
 
                             // ── Regular Screens ──────────────────────
                             DesktopScreen.DASHBOARD ->

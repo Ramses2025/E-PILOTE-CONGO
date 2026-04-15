@@ -6,17 +6,17 @@ import kotlinx.coroutines.flow.Flow
 
 class GetElevesByClasseUseCase(private val eleveRepo: EleveRepository) {
 
-    fun asFlow(ecoleId: String, classeId: String): Flow<List<Eleve>> =
-        eleveRepo.observeByClasse(ecoleId, classeId)
+    fun asFlow(schoolId: String, classeId: String): Flow<List<Eleve>> =
+        eleveRepo.observeByClasse(schoolId, classeId)
 
-    fun now(ecoleId: String, classeId: String): List<Eleve> =
-        eleveRepo.getByClasse(ecoleId, classeId)
+    fun now(schoolId: String, classeId: String): List<Eleve> =
+        eleveRepo.getByClasse(schoolId, classeId)
 }
 
 class SearchEleveUseCase(private val eleveRepo: EleveRepository) {
 
-    fun execute(ecoleId: String, query: String): List<Eleve> {
+    fun execute(schoolId: String, query: String): List<Eleve> {
         if (query.length < 2) return emptyList()
-        return eleveRepo.search(ecoleId, query)
+        return eleveRepo.search(schoolId, query)
     }
 }

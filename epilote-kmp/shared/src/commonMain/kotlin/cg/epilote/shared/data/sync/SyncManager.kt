@@ -1,5 +1,6 @@
 package cg.epilote.shared.data.sync
 
+import cg.epilote.shared.data.local.DataCollections
 import cg.epilote.shared.domain.model.SyncStatus
 import com.couchbase.lite.BasicAuthenticator
 import com.couchbase.lite.CollectionConfiguration
@@ -16,10 +17,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.net.URI
 
 class SyncManager(
-    private val database: Database,
     private val syncGatewayUrl: String
 ) {
     private var replicator: Replicator? = null
+    private var database: Database? = null
 
     private val _syncStatus = MutableStateFlow(SyncStatus.OFFLINE)
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
@@ -27,8 +28,15 @@ class SyncManager(
     private val _pendingCount = MutableStateFlow(0L)
     val pendingCount: StateFlow<Long> = _pendingCount.asStateFlow()
 
+    companion object {
+        val SYNCED_COLLECTIONS = DataCollections.synced
+    }
+
     fun start(username: String, password: String) {
         if (replicator != null) return
+
+        val db = cg.epilote.shared.data.local.EpiloteDatabase.instance
+        database = db
 
         val endpoint = URLEndpoint(URI(syncGatewayUrl))
         val config = ReplicatorConfiguration(endpoint)
@@ -40,7 +48,10 @@ class SyncManager(
 
         val collConfig = CollectionConfiguration()
         collConfig.setConflictResolver(EpiloteConflictResolver())
-        database.collections.forEach { config.addCollection(it, collConfig) }
+
+        SYNCED_COLLECTIONS.forEach { name ->
+            db.getCollection(name)?.let { config.addCollection(it, collConfig) }
+        }
 
         replicator = Replicator(config).apply {
             addChangeListener { change -> updateStatus(change.status) }
@@ -51,6 +62,7 @@ class SyncManager(
     fun stop() {
         replicator?.stop()
         replicator = null
+        database = null
         _syncStatus.value = SyncStatus.OFFLINE
     }
 
@@ -65,13 +77,10 @@ class SyncManager(
     }
 
     private fun updateStatus(status: ReplicatorStatus) {
-        val collectionsToCheck = listOf(
-            "grades", "attendances", "inscriptions", "students",
-            "report_cards", "disciplines", "timetable"
-        )
-        val pending = collectionsToCheck.sumOf { name ->
+        val db = database ?: return
+        val pending = SYNCED_COLLECTIONS.sumOf { name ->
             runCatching {
-                database.getCollection(name)?.let {
+                db.getCollection(name)?.let {
                     replicator?.getPendingDocumentIds(it)?.size?.toLong()
                 } ?: 0L
             }.getOrElse { 0L }

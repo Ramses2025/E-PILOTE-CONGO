@@ -1,5 +1,6 @@
 package cg.epilote.shared.data.local
 
+import cg.epilote.shared.data.schema.SchemaContract
 import cg.epilote.shared.domain.model.Absence
 import com.couchbase.lite.DataSource
 import com.couchbase.lite.Database
@@ -21,8 +22,9 @@ class AbsenceRepository(private val db: Database) {
 
     fun save(absence: Absence) {
         val doc = MutableDocument(absence.id).apply {
+            setInt(SchemaContract.FIELD_SCHEMA_VERSION, SchemaContract.CURRENT_SCHEMA_VERSION)
             setString("type",        "attendance")
-            setString("ecoleId",     absence.ecoleId)
+            setString("schoolId",    absence.schoolId)
             setString("anneeId",     absence.anneeId)
             setString("classeId",    absence.classeId)
             setString("eleveId",     absence.eleveId)
@@ -36,12 +38,12 @@ class AbsenceRepository(private val db: Database) {
         collection.save(doc)
     }
 
-    fun getByEleve(ecoleId: String, eleveId: String): List<Absence> {
+    fun getByEleve(schoolId: String, eleveId: String): List<Absence> {
         val query = QueryBuilder
             .select(SelectResult.all(), SelectResult.expression(Meta.id))
             .from(DataSource.collection(collection))
             .where(
-                Expression.property("ecoleId").equalTo(Expression.string(ecoleId))
+                Expression.property("schoolId").equalTo(Expression.string(schoolId))
                     .and(Expression.property("eleveId").equalTo(Expression.string(eleveId)))
             )
             .orderBy(Ordering.property("date").descending())
@@ -49,13 +51,13 @@ class AbsenceRepository(private val db: Database) {
         return query.execute().allResults().mapNotNull { it.toAbsence() }
     }
 
-    fun observeByDate(ecoleId: String, date: String): Flow<List<Absence>> =
+    fun observeByDate(schoolId: String, date: String): Flow<List<Absence>> =
         callbackFlow {
             val query = QueryBuilder
                 .select(SelectResult.all(), SelectResult.expression(Meta.id))
                 .from(DataSource.collection(collection))
                 .where(
-                    Expression.property("ecoleId").equalTo(Expression.string(ecoleId))
+                    Expression.property("schoolId").equalTo(Expression.string(schoolId))
                         .and(Expression.property("date").equalTo(Expression.string(date)))
                 )
             val token = query.addChangeListener { change ->
@@ -70,7 +72,7 @@ class AbsenceRepository(private val db: Database) {
         val id   = getString("id") ?: return null
         return Absence(
             id          = id,
-            ecoleId     = dict.getString("ecoleId")   ?: return null,
+            schoolId = dict.getString("schoolId")  ?: return null,
             anneeId     = dict.getString("anneeId")   ?: "",
             classeId    = dict.getString("classeId")  ?: "",
             eleveId     = dict.getString("eleveId")   ?: return null,

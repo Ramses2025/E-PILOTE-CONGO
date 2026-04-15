@@ -58,51 +58,52 @@ CREATE COLLECTION `epilote_prod`.`_default`.`sync_conflicts`    IF NOT EXISTS;
 CREATE COLLECTION `epilote_prod`.`_default`.`audit_logs`        IF NOT EXISTS;
 CREATE COLLECTION `epilote_prod`.`_default`.`ledger_entries`    IF NOT EXISTS;
 
--- ── BLOC 2 : Créer les index ─────────────────────────────────
+-- ── BLOC 2 : Créer les index (IF NOT EXISTS = idempotent) ────
 
-CREATE INDEX idx_users_username   ON `epilote_prod`._default.`users`(username)  WHERE type="user";
-CREATE INDEX idx_users_email      ON `epilote_prod`._default.`users`(email)     WHERE type="user";
-CREATE INDEX idx_users_role       ON `epilote_prod`._default.`users`(role)      WHERE type="user";
-CREATE INDEX idx_users_school     ON `epilote_prod`._default.`users`(schoolId)  WHERE type="user";
-CREATE INDEX idx_users_group      ON `epilote_prod`._default.`users`(groupId)   WHERE type="user";
+CREATE INDEX idx_users_username   IF NOT EXISTS ON `epilote_prod`._default.`users`(username)  WHERE type="user";
+CREATE INDEX idx_users_email      IF NOT EXISTS ON `epilote_prod`._default.`users`(email)     WHERE type="user";
+CREATE INDEX idx_users_role       IF NOT EXISTS ON `epilote_prod`._default.`users`(role)      WHERE type="user";
+CREATE INDEX idx_users_school     IF NOT EXISTS ON `epilote_prod`._default.`users`(schoolId)  WHERE type="user";
+CREATE INDEX idx_users_group      IF NOT EXISTS ON `epilote_prod`._default.`users`(groupId)   WHERE type="user";
 
-CREATE INDEX idx_schools_group    ON `epilote_prod`._default.`schools`(groupId) WHERE type="school";
+CREATE INDEX idx_schools_group    IF NOT EXISTS ON `epilote_prod`._default.`schools`(groupId) WHERE type="school";
 
-CREATE INDEX idx_acfg_school      ON `epilote_prod`._default.`academic_config`(schoolId) WHERE type="academic_config";
+CREATE INDEX idx_acfg_school      IF NOT EXISTS ON `epilote_prod`._default.`academic_config`(schoolId) WHERE type="academic_config";
 
-CREATE INDEX idx_students_school  ON `epilote_prod`._default.`students`(schoolId) WHERE type="student";
-CREATE INDEX idx_students_class   ON `epilote_prod`._default.`students`(schoolId, currentClassId) WHERE type="student";
+CREATE INDEX idx_students_school  IF NOT EXISTS ON `epilote_prod`._default.`students`(schoolId) WHERE type="student";
+CREATE INDEX idx_students_class   IF NOT EXISTS ON `epilote_prod`._default.`students`(schoolId, currentClassId) WHERE type="student";
 
-CREATE INDEX idx_inscriptions_sy  ON `epilote_prod`._default.`inscriptions`(schoolId, academicYearId) WHERE type="inscription";
+CREATE INDEX idx_inscriptions_sy  IF NOT EXISTS ON `epilote_prod`._default.`inscriptions`(schoolId, academicYearId) WHERE type="inscription";
 
-CREATE INDEX idx_grades_class     ON `epilote_prod`._default.`grades`(schoolId, classId, period) WHERE type="grade";
-CREATE INDEX idx_grades_student   ON `epilote_prod`._default.`grades`(schoolId, studentId, period) WHERE type="grade";
-CREATE INDEX idx_grades_review    ON `epilote_prod`._default.`grades`(schoolId, requiresReview) WHERE type="grade" AND requiresReview=true;
+CREATE INDEX idx_grades_class     IF NOT EXISTS ON `epilote_prod`._default.`grades`(schoolId, classeId, periode) WHERE type="grade";
+CREATE INDEX idx_grades_student   IF NOT EXISTS ON `epilote_prod`._default.`grades`(schoolId, eleveId, periode) WHERE type="grade";
+CREATE INDEX idx_grades_review    IF NOT EXISTS ON `epilote_prod`._default.`grades`(schoolId, requiresReview) WHERE type="grade" AND requiresReview=true;
 
-CREATE INDEX idx_rc_class         ON `epilote_prod`._default.`report_cards`(schoolId, classId, period) WHERE type="report_card";
+CREATE INDEX idx_rc_class         IF NOT EXISTS ON `epilote_prod`._default.`report_cards`(schoolId, classeId, periode) WHERE type="report_card";
 
-CREATE INDEX idx_att_class_date   ON `epilote_prod`._default.`attendances`(schoolId, classId, date) WHERE type="attendance";
-CREATE INDEX idx_att_student      ON `epilote_prod`._default.`attendances`(schoolId, studentId) WHERE type="attendance";
+CREATE INDEX idx_att_class_date   IF NOT EXISTS ON `epilote_prod`._default.`attendances`(schoolId, classeId, date) WHERE type="attendance";
+CREATE INDEX idx_att_student      IF NOT EXISTS ON `epilote_prod`._default.`attendances`(schoolId, eleveId) WHERE type="attendance";
 
-CREATE INDEX idx_invoices_school  ON `epilote_prod`._default.`invoices`(schoolId, status) WHERE type="invoice";
-CREATE INDEX idx_invoices_student ON `epilote_prod`._default.`invoices`(schoolId, studentId) WHERE type="invoice";
+CREATE INDEX idx_invoices_school  IF NOT EXISTS ON `epilote_prod`._default.`invoices`(schoolId, status) WHERE type="invoice";
+CREATE INDEX idx_invoices_student IF NOT EXISTS ON `epilote_prod`._default.`invoices`(schoolId, studentId) WHERE type="invoice";
 
-CREATE INDEX idx_expenses_school  ON `epilote_prod`._default.`expenses`(schoolId, status) WHERE type="expense";
-CREATE INDEX idx_budgets_school   ON `epilote_prod`._default.`budgets`(schoolId, academicYearId) WHERE type="budget";
+CREATE INDEX idx_expenses_school  IF NOT EXISTS ON `epilote_prod`._default.`expenses`(schoolId, status) WHERE type="expense";
+CREATE INDEX idx_budgets_school   IF NOT EXISTS ON `epilote_prod`._default.`budgets`(schoolId, academicYearId) WHERE type="budget";
 
-CREATE INDEX idx_staff_school     ON `epilote_prod`._default.`staff`(schoolId) WHERE type="staff";
-CREATE INDEX idx_payslips_staff   ON `epilote_prod`._default.`payslips`(schoolId, staffId, year, month) WHERE type="payslip";
+CREATE INDEX idx_staff_school     IF NOT EXISTS ON `epilote_prod`._default.`staff`(schoolId) WHERE type="staff";
+CREATE INDEX idx_payslips_staff   IF NOT EXISTS ON `epilote_prod`._default.`payslips`(schoolId, staffId, year, month) WHERE type="payslip";
+CREATE INDEX idx_staff_att_school IF NOT EXISTS ON `epilote_prod`._default.`staff_attendances`(schoolId, staffId, date) WHERE type="staff_attendance";
 
-CREATE INDEX idx_mut_status       ON `epilote_prod`._default.`sync_mutations`(schoolId, status) WHERE type="sync_mutation";
-CREATE INDEX idx_cnf_status       ON `epilote_prod`._default.`sync_conflicts`(schoolId, status) WHERE type="sync_conflict";
+CREATE INDEX idx_mut_status       IF NOT EXISTS ON `epilote_prod`._default.`sync_mutations`(schoolId, status) WHERE type="sync_mutation";
+CREATE INDEX idx_cnf_status       IF NOT EXISTS ON `epilote_prod`._default.`sync_conflicts`(schoolId, status) WHERE type="sync_conflict";
 
-CREATE INDEX idx_config_type      ON `epilote_prod`._default.`config`(type);
+CREATE INDEX idx_config_type      IF NOT EXISTS ON `epilote_prod`._default.`config`(type);
 
 -- Backend Admin indexes
-CREATE INDEX idx_groupes_type     ON `epilote_prod`._default.`groupes`(type);
-CREATE INDEX idx_modules_type     ON `epilote_prod`._default.`modules`(type);
-CREATE INDEX idx_plans_type       ON `epilote_prod`._default.`plans`(type);
-CREATE INDEX idx_profils_groupe   ON `epilote_prod`._default.`profils`(groupeId) WHERE type="profil";
+CREATE INDEX idx_groupes_type     IF NOT EXISTS ON `epilote_prod`._default.`groupes`(type);
+CREATE INDEX idx_modules_type     IF NOT EXISTS ON `epilote_prod`._default.`modules`(type);
+CREATE INDEX idx_plans_type       IF NOT EXISTS ON `epilote_prod`._default.`plans`(type);
+CREATE INDEX idx_profils_groupe   IF NOT EXISTS ON `epilote_prod`._default.`profils`(groupeId) WHERE type="profil";
 
 -- ── BLOC 3 : Insérer les documents de référence ──────────────
 

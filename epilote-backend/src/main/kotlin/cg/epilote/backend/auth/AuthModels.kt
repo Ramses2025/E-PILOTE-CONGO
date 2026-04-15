@@ -3,9 +3,8 @@ package cg.epilote.backend.auth
 import jakarta.validation.constraints.NotBlank
 
 data class LoginRequest(
-    @field:NotBlank val username: String,
-    @field:NotBlank val password: String,
-    val ecoleId: String? = null
+    @field:NotBlank val email: String,
+    @field:NotBlank val password: String
 )
 
 data class PermissionDto(
@@ -22,11 +21,11 @@ data class LoginResponse(
     val offlineToken: String,
     val offlineTokenExpiresAt: Long,
     val userId: String,
-    val username: String,
+    val email: String,
     val firstName: String,
     val lastName: String,
-    val ecoleId: String?,
-    val groupeId: String?,
+    val schoolId: String?,
+    val groupId: String?,
     val role: String,
     val permissions: List<PermissionDto>,
     val expiresIn: Long
@@ -44,19 +43,19 @@ data class TokenResponse(
 data class EpiloteUserDetails(
     val userId: String,
     val username: String,
+    val email: String,
     val firstName: String,
     val lastName: String,
-    val ecoleId: String?,
-    val groupeId: String?,
+    val schoolId: String?,
+    val groupId: String?,
     val role: UserRole,
     val permissions: List<PermissionDto>,
-    val passwordHash: String
+    val passwordHash: String,
+    val isActive: Boolean = true
 )
 
 enum class UserRole {
     SUPER_ADMIN,
-    ADMIN_SYSTEME,
     ADMIN_GROUPE,
-    DIRECTOR,
     USER
 }

@@ -4,22 +4,28 @@
   "scopes": {
     "_default": {
       "collections": {
-        "students": {},
         "grades": {},
         "attendances": {},
+        "students": {},
         "inscriptions": {},
-        "report_cards": {},
         "timetable": {},
+        "report_cards": {},
         "disciplines": {},
         "academic_config": {},
         "users": {},
+        "config": {},
+        "school_groups": {},
+        "schools": {},
         "staff": {},
         "staff_attendances": {},
+        "payslips": {},
+        "invoices": {},
+        "expenses": {},
+        "budgets": {},
+        "accounting_pieces": {},
         "announcements": {},
         "messages": {},
-        "notifications": {},
-        "sync_mutations": {},
-        "sync_conflicts": {}
+        "notifications": {}
       }
     }
   }

@@ -12,9 +12,9 @@ data class ModulePermission(
 
 data class UserSession(
     val userId: String,
-    val username: String,
-    val ecoleId: String?,
-    val groupeId: String?,
+    val email: String,
+    val schoolId: String?,
+    val groupId: String?,
     val role: String,
     val firstName: String = "",
     val lastName: String = "",
@@ -45,7 +45,7 @@ data class Filiere(
 
 data class AcademicConfig(
     val id: String,
-    val ecoleId: String,
+    val schoolId: String,
     val anneeId: String,
     val anneeNom: String,
     val isCurrent: Boolean,
@@ -54,7 +54,7 @@ data class AcademicConfig(
     val periodes: List<String>
 ) {
     companion object {
-        fun buildId(ecoleId: String, annee: String) = "acfg::$ecoleId::$annee"
+        fun buildId(schoolId: String, annee: String) = "acfg::$schoolId::$annee"
     }
 }
 
@@ -76,7 +76,7 @@ data class Parent(
 
 data class Eleve(
     val id: String,
-    val ecoleId: String,
+    val schoolId: String,
     val matricule: String,
     val nom: String,
     val prenom: String,
@@ -91,7 +91,7 @@ data class Eleve(
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     companion object {
-        fun buildId(ecoleId: String, matricule: String) = "stu::${ecoleId}_$matricule"
+        fun buildId(schoolId: String, matricule: String) = "stu::${schoolId}_$matricule"
     }
 }
 
@@ -99,7 +99,7 @@ data class Eleve(
 
 data class Note(
     val id: String,
-    val ecoleId: String,
+    val schoolId: String,
     val anneeId: String,
     val classeId: String,
     val eleveId: String,
@@ -119,8 +119,8 @@ data class Note(
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     companion object {
-        fun buildId(ecoleId: String, classeId: String, matiereId: String, eleveId: String, periode: String, typeEval: String = "DS") =
-            "grd::$ecoleId::$classeId::$matiereId::$eleveId::$periode::$typeEval"
+        fun buildId(schoolId: String, classeId: String, matiereId: String, eleveId: String, periode: String, typeEval: String = "DS") =
+            "grd::$schoolId::$classeId::$matiereId::$eleveId::$periode::$typeEval"
     }
 }
 
@@ -128,7 +128,7 @@ data class Note(
 
 data class Absence(
     val id: String,
-    val ecoleId: String,
+    val schoolId: String,
     val anneeId: String = "",
     val classeId: String = "",
     val eleveId: String,
@@ -140,8 +140,8 @@ data class Absence(
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     companion object {
-        fun buildId(ecoleId: String, eleveId: String, date: String) =
-            "att::$ecoleId::$eleveId::$date"
+        fun buildId(schoolId: String, eleveId: String, date: String) =
+            "att::$schoolId::$eleveId::$date"
     }
 }
 
@@ -149,7 +149,7 @@ data class Absence(
 
 data class Classe(
     val id: String,
-    val ecoleId: String,
+    val schoolId: String,
     val anneeId: String,
     val nom: String,
     val section: String? = null,
@@ -162,8 +162,8 @@ data class Classe(
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     companion object {
-        fun buildId(ecoleId: String, anneeId: String, nom: String) =
-            "cls::$ecoleId::$anneeId::${nom.replace(" ", "_").lowercase()}"
+        fun buildId(schoolId: String, anneeId: String, nom: String) =
+            "cls::$schoolId::$anneeId::${nom.replace(" ", "_").lowercase()}"
     }
 }
 
@@ -171,7 +171,7 @@ data class Classe(
 
 data class Matiere(
     val id: String,
-    val ecoleId: String,
+    val schoolId: String,
     val classeId: String,
     val nom: String,
     val code: String = "",
@@ -183,8 +183,8 @@ data class Matiere(
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     companion object {
-        fun buildId(ecoleId: String, classeId: String, code: String) =
-            "sub::$ecoleId::$classeId::${code.lowercase()}"
+        fun buildId(schoolId: String, classeId: String, code: String) =
+            "sub::$schoolId::$classeId::${code.lowercase()}"
     }
 }
 
@@ -211,7 +211,7 @@ enum class SyncStatus {
 
 data class SyncMutation(
     val id: String,
-    val ecoleId: String,
+    val schoolId: String,
     val clientMutationId: String,
     val deviceId: String,
     val entityType: String,

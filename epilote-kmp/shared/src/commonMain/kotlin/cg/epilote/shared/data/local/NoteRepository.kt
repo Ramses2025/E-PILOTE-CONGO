@@ -1,5 +1,6 @@
 package cg.epilote.shared.data.local
 
+import cg.epilote.shared.data.schema.SchemaContract
 import cg.epilote.shared.domain.model.Note
 import com.couchbase.lite.DataSource
 import com.couchbase.lite.Database
@@ -21,8 +22,9 @@ class NoteRepository(private val db: Database) {
 
     fun save(note: Note) {
         val doc = MutableDocument(note.id).apply {
+            setInt(SchemaContract.FIELD_SCHEMA_VERSION, SchemaContract.CURRENT_SCHEMA_VERSION)
             setString("type",            "grade")
-            setString("ecoleId",         note.ecoleId)
+            setString("schoolId",        note.schoolId)
             setString("anneeId",         note.anneeId)
             setString("classeId",        note.classeId)
             setString("eleveId",         note.eleveId)
@@ -44,36 +46,36 @@ class NoteRepository(private val db: Database) {
         collection.save(doc)
     }
 
-    fun getByClasse(ecoleId: String, classeId: String, periode: String): List<Note> =
+    fun getByClasse(schoolId: String, classeId: String, periode: String): List<Note> =
         QueryBuilder
             .select(SelectResult.all(), SelectResult.expression(Meta.id))
             .from(DataSource.collection(collection))
             .where(
-                Expression.property("ecoleId").equalTo(Expression.string(ecoleId))
+                Expression.property("schoolId").equalTo(Expression.string(schoolId))
                     .and(Expression.property("classeId").equalTo(Expression.string(classeId)))
                     .and(Expression.property("periode").equalTo(Expression.string(periode)))
             )
             .orderBy(Ordering.property("eleveId"))
             .execute().allResults().mapNotNull { it.toNote() }
 
-    fun getByEleve(ecoleId: String, eleveId: String, periode: String): List<Note> =
+    fun getByEleve(schoolId: String, eleveId: String, periode: String): List<Note> =
         QueryBuilder
             .select(SelectResult.all(), SelectResult.expression(Meta.id))
             .from(DataSource.collection(collection))
             .where(
-                Expression.property("ecoleId").equalTo(Expression.string(ecoleId))
+                Expression.property("schoolId").equalTo(Expression.string(schoolId))
                     .and(Expression.property("eleveId").equalTo(Expression.string(eleveId)))
                     .and(Expression.property("periode").equalTo(Expression.string(periode)))
             )
             .execute().allResults().mapNotNull { it.toNote() }
 
-    fun observeByClasse(ecoleId: String, classeId: String, periode: String): Flow<List<Note>> =
+    fun observeByClasse(schoolId: String, classeId: String, periode: String): Flow<List<Note>> =
         callbackFlow {
             val query = QueryBuilder
                 .select(SelectResult.all(), SelectResult.expression(Meta.id))
                 .from(DataSource.collection(collection))
                 .where(
-                    Expression.property("ecoleId").equalTo(Expression.string(ecoleId))
+                    Expression.property("schoolId").equalTo(Expression.string(schoolId))
                         .and(Expression.property("classeId").equalTo(Expression.string(classeId)))
                         .and(Expression.property("periode").equalTo(Expression.string(periode)))
                 )
@@ -84,12 +86,12 @@ class NoteRepository(private val db: Database) {
             awaitClose { token.remove() }
         }
 
-    fun getPendingReview(ecoleId: String): List<Note> =
+    fun getPendingReview(schoolId: String): List<Note> =
         QueryBuilder
             .select(SelectResult.all(), SelectResult.expression(Meta.id))
             .from(DataSource.collection(collection))
             .where(
-                Expression.property("ecoleId").equalTo(Expression.string(ecoleId))
+                Expression.property("schoolId").equalTo(Expression.string(schoolId))
                     .and(Expression.property("requiresReview").equalTo(Expression.booleanValue(true)))
             )
             .execute().allResults().mapNotNull { it.toNote() }
@@ -99,7 +101,7 @@ class NoteRepository(private val db: Database) {
         val id   = getString("id") ?: return null
         return Note(
             id             = id,
-            ecoleId        = dict.getString("ecoleId")     ?: return null,
+            schoolId = dict.getString("schoolId")    ?: return null,
             anneeId        = dict.getString("anneeId")     ?: "",
             classeId       = dict.getString("classeId")    ?: return null,
             eleveId        = dict.getString("eleveId")     ?: return null,

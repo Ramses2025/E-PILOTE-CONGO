@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,6 +20,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import org.jetbrains.skia.Image as SkiaImage
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalDensity
@@ -42,7 +47,7 @@ fun LoginScreen(
     onLoginSuccess: (UserSession) -> Unit
 ) {
     val uiState  by viewModel.uiState.collectAsState()
-    val email    by viewModel.username.collectAsState()
+    val email    by viewModel.email.collectAsState()
     val password by viewModel.password.collectAsState()
     var passwordVisible by remember { mutableStateOf(false) }
     var rememberMe      by remember { mutableStateOf(false) }
@@ -51,6 +56,13 @@ fun LoginScreen(
     val logoPainter = remember {
         val stream = Thread.currentThread().contextClassLoader.getResourceAsStream("logo.svg")
         stream?.let { loadSvgPainter(it, density) }
+    }
+    val bgBitmap: ImageBitmap? = remember {
+        runCatching {
+            val bytes = Thread.currentThread().contextClassLoader
+                .getResourceAsStream("bk.webp")!!.readBytes()
+            SkiaImage.makeFromEncoded(bytes).toComposeImageBitmap()
+        }.getOrNull()
     }
 
     val navy   = Color(0xFF1D3557)
@@ -67,15 +79,8 @@ fun LoginScreen(
         label = "alpha"
     )
 
-    // ── Infinite animations (modern effects) ────────────────────
+    // ── Subtle shimmer on brand line ─────────────────────────────
     val fx = rememberInfiniteTransition(label = "fx")
-    val glowPulse by fx.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ), label = "glow"
-    )
     val shimmerPhase by fx.animateFloat(
         initialValue = 0f, targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -90,8 +95,22 @@ fun LoginScreen(
     }
 
     BoxWithConstraints(
-        modifier = Modifier.fillMaxSize().background(Color.White)
+        modifier = Modifier.fillMaxSize()
     ) {
+        // ── Background image ──────────────────────────────────────
+        if (bgBitmap != null) {
+            Image(
+                bitmap = bgBitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+        // ── Dark overlay for readability ──────────────────────────
+        Box(
+            modifier = Modifier.fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+        )
         val cardW: Dp = when {
             maxWidth < 500.dp  -> maxWidth * 0.92f
             maxWidth < 800.dp  -> maxWidth * 0.48f
@@ -109,7 +128,7 @@ fun LoginScreen(
             Surface(
                 modifier = Modifier.width(cardW).alpha(contentAlpha),
                 shape = RoundedCornerShape(4.dp),
-                color = Color.White,
+                color = Color.White.copy(alpha = 0.95f),
                 border = BorderStroke(1.dp, border),
                 shadowElevation = 1.dp
             ) {
@@ -160,7 +179,7 @@ fun LoginScreen(
                     // Email
                     OutlinedTextField(
                         value = email,
-                        onValueChange = viewModel::onUsernameChange,
+                        onValueChange = viewModel::onEmailChange,
                         label = { Text("Adresse email", fontSize = 13.sp) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -173,7 +192,7 @@ fun LoginScreen(
                         )
                     )
 
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(12.dp))
 
                     // Password
                     OutlinedTextField(
@@ -185,7 +204,7 @@ fun LoginScreen(
                                 Icon(
                                     if (passwordVisible) Icons.Default.VisibilityOff
                                     else Icons.Default.Visibility,
-                                    null, tint = label, modifier = Modifier.size(18.dp)
+                                    null, tint = label, modifier = Modifier.size(16.dp)
                                 )
                             }
                         },
@@ -238,54 +257,63 @@ fun LoginScreen(
                     // Error
                     AnimatedVisibility(
                         visible = uiState is LoginUiState.Error,
-                        enter = fadeIn() + slideInVertically(),
-                        exit  = fadeOut()
+                        enter = fadeIn(animationSpec = tween(300)),
+                        exit  = fadeOut(animationSpec = tween(200))
                     ) {
                         Surface(
                             shape = RoundedCornerShape(3.dp),
                             color = Color(0xFFFEE2E2),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
                         ) {
-                            Text(
-                                (uiState as? LoginUiState.Error)?.message ?: "",
-                                modifier = Modifier.padding(12.dp),
-                                color = Color(0xFFDC2626), fontSize = 12.sp
-                            )
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFDC2626), modifier = Modifier.size(16.dp))
+                                Text(
+                                    (uiState as? LoginUiState.Error)?.message ?: "",
+                                    color = Color(0xFFDC2626), fontSize = 12.sp
+                                )
+                            }
                         }
                     }
                     AnimatedVisibility(
                         visible = uiState is LoginUiState.NoNetwork,
-                        enter = fadeIn() + slideInVertically(),
-                        exit  = fadeOut()
+                        enter = fadeIn(animationSpec = tween(300)),
+                        exit  = fadeOut(animationSpec = tween(200))
                     ) {
                         Surface(
                             shape = RoundedCornerShape(3.dp),
                             color = Color(0xFFFFF3CD),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
                         ) {
-                            Text(
-                                "Connexion réseau requise",
-                                modifier = Modifier.padding(12.dp),
-                                color = Color(0xFF856404), fontSize = 12.sp
-                            )
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.WifiOff, null, tint = Color(0xFF856404), modifier = Modifier.size(16.dp))
+                                Text(
+                                    "Connexion réseau requise",
+                                    color = Color(0xFF856404), fontSize = 12.sp
+                                )
+                            }
                         }
                     }
 
-                    // Button with glow
+                    // Button
                     Button(
                         onClick = { viewModel.login() },
                         enabled = uiState !is LoginUiState.Loading,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .shadow(
-                                elevation = (2 + glowPulse * 10).dp,
-                                shape = RoundedCornerShape(4.dp)
-                            )
+                            .height(44.dp)
                             .pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR))),
                         shape = RoundedCornerShape(4.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = navy),
-                        elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp),
-                        contentPadding = PaddingValues(vertical = 12.dp)
+                        elevation = ButtonDefaults.buttonElevation(2.dp, 4.dp, 0.dp),
+                        contentPadding = PaddingValues(vertical = 0.dp)
                     ) {
                         if (uiState is LoginUiState.Loading) {
                             CircularProgressIndicator(
@@ -307,7 +335,7 @@ fun LoginScreen(
             Text(
                 "\u00A9 2026 E-PILOTE CONGO \u2022 République du Congo",
                 modifier = Modifier.padding(bottom = 16.dp),
-                fontSize = 9.sp, color = Color(0xFFC0C8D4)
+                fontSize = 9.sp, color = Color.White.copy(alpha = 0.7f)
             )
         }
     }

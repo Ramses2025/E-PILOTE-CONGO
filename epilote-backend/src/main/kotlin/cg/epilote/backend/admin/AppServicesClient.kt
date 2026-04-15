@@ -1,5 +1,6 @@
 package cg.epilote.backend.admin
 
+ import cg.epilote.backend.auth.UserRepository
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
@@ -9,7 +10,9 @@ import org.springframework.stereotype.Component
 import org.springframework.web.client.RestTemplate
 
 @Component
-class AppServicesClient {
+class AppServicesClient(
+    private val userRepository: UserRepository
+) {
 
     @Value("\${app-services.admin-url}")
     private lateinit var adminUrl: String
@@ -22,6 +25,22 @@ class AppServicesClient {
 
     private val restTemplate = RestTemplate()
 
+    private val provisionedCollections = listOf(
+        "grades",
+        "attendances",
+        "students",
+        "inscriptions",
+        "timetable",
+        "report_cards",
+        "disciplines",
+        "academic_config",
+        "staff",
+        "staff_attendances",
+        "announcements",
+        "messages",
+        "notifications"
+    )
+
     private fun authHeaders(): HttpHeaders {
         val credentials = java.util.Base64.getEncoder()
             .encodeToString("$adminUser:$adminPassword".toByteArray())
@@ -31,38 +50,58 @@ class AppServicesClient {
         }
     }
 
-    fun provisionUser(userId: String, groupeId: String?, schoolIds: List<String>, role: String) {
-        val syncPassword = "cbls::$userId"
+    fun provisionUser(userId: String, groupId: String?, schoolIds: List<String>, role: String): String {
+        // SUPER_ADMIN works REST-only, never syncs via CBLite
+        if (role == "SUPER_ADMIN") {
+            throw IllegalArgumentException("SUPER_ADMIN does not use Couchbase Lite sync")
+        }
+
+        val syncToken = kotlinx.coroutines.runBlocking {
+            userRepository.ensureSyncToken(userId)
+        }
         val channels = buildSet {
             schoolIds.filter { it.isNotBlank() }.forEach { schoolId ->
                 add("sch::$schoolId")
-                if (role == "DIRECTOR") add("sch::${schoolId}::admin")
             }
-            if (!groupeId.isNullOrBlank()) {
-                add("grp::$groupeId")
-                if (role == "ADMIN_GROUPE") add("grp::${groupeId}::admin")
+            if (!groupId.isNullOrBlank() && role == "ADMIN_GROUPE") {
+                add("grp::$groupId")
             }
         }
 
+        val collectionAccess = mapOf(
+            "_default" to provisionedCollections.associateWith {
+                mapOf("admin_channels" to channels.toList())
+            }
+        )
+
         val body = mapOf(
-            "name"           to userId,
-            "password"       to syncPassword,
-            "admin_channels" to channels.toList(),
-            "disabled"       to false
+            "name"              to userId,
+            "password"          to syncToken,
+            "collection_access" to collectionAccess,
+            "disabled"          to false
         )
 
         val updateUrl = "$adminUrl/epilote/_user/$userId"
         val createUrl = "$adminUrl/epilote/_user/"
 
-        val updated = runCatching {
+        val updateAttempt = runCatching {
             restTemplate.exchange(updateUrl, HttpMethod.PUT, HttpEntity(body, authHeaders()), Map::class.java)
-        }.isSuccess
-
-        if (!updated) {
-            runCatching {
-                restTemplate.exchange(createUrl, HttpMethod.POST, HttpEntity(body, authHeaders()), Map::class.java)
-            }
         }
+
+        if (updateAttempt.isSuccess) {
+            return syncToken
+        }
+
+        val createAttempt = runCatching {
+            restTemplate.exchange(createUrl, HttpMethod.POST, HttpEntity(body, authHeaders()), Map::class.java)
+        }
+
+        if (createAttempt.isSuccess) {
+            return syncToken
+        }
+
+        val cause = createAttempt.exceptionOrNull() ?: updateAttempt.exceptionOrNull()
+        throw IllegalStateException("Provisioning App Services impossible pour $userId", cause)
     }
 
     fun disableUser(userId: String) {

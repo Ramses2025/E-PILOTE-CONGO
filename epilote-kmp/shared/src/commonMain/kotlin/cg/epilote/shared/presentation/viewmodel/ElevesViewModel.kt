@@ -24,19 +24,19 @@ class ElevesViewModel(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private var currentEcoleId: String = ""
+    private var currentSchoolId: String = ""
 
-    fun loadByClasse(ecoleId: String, classeId: String) {
-        currentEcoleId = ecoleId
+    fun loadByClasse(schoolId: String, classeId: String) {
+        currentSchoolId = schoolId
         scope.launch {
-            getElevesUseCase.asFlow(ecoleId, classeId).collect { _eleves.value = it }
+            getElevesUseCase.asFlow(schoolId, classeId).collect { _eleves.value = it }
         }
     }
 
     fun onSearchQueryChange(query: String) {
         _searchQuery.value = query
         if (query.length >= 2) {
-            _searchResults.value = searchUseCase.execute(currentEcoleId, query)
+            _searchResults.value = searchUseCase.execute(currentSchoolId, query)
         } else {
             _searchResults.value = emptyList()
         }

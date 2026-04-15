@@ -5,6 +5,7 @@ import com.couchbase.client.kotlin.Collection
 import com.couchbase.client.kotlin.query.execute
 import kotlinx.coroutines.runBlocking
 import org.springframework.stereotype.Repository
+ import java.util.UUID
 
 @Repository
 class UserRepository(private val bucket: Bucket) {
@@ -13,33 +14,18 @@ class UserRepository(private val bucket: Bucket) {
         runBlocking { bucket.defaultScope().collection("users") }
     }
 
-    suspend fun findByUsername(username: String): EpiloteUserDetails? {
-        val result = bucket.defaultScope().query(
-            statement = "SELECT META().id, * FROM `users` WHERE username = \$username LIMIT 1",
-            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("username" to username)
-        ).execute()
-
-        return result.rows.firstOrNull()?.let { row ->
-            val doc = row.contentAs<Map<String, Any>>()
-            val inner = doc["users"] as? Map<*, *> ?: doc
-            EpiloteUserDetails(
-                userId       = doc["id"] as? String ?: "",
-                username     = inner["username"] as? String ?: "",
-                firstName    = inner["prenom"] as? String ?: "",
-                lastName     = inner["nom"] as? String ?: "",
-                ecoleId      = inner["ecoleId"] as? String,
-                groupeId     = inner["groupeId"] as? String,
-                role         = UserRole.valueOf(inner["role"] as? String ?: "USER"),
-                permissions  = parsePermissions(inner),
-                passwordHash = inner["passwordHash"] as? String ?: ""
-            )
-        }
+    private fun migrateRole(raw: String?): UserRole = when (raw) {
+        "SUPER_ADMIN"   -> UserRole.SUPER_ADMIN
+        "ADMIN_SYSTEME" -> UserRole.SUPER_ADMIN   // garde-fou : rôle inexistant, redirigé vers SUPER_ADMIN
+        "ADMIN_GROUPE"  -> UserRole.ADMIN_GROUPE
+        "DIRECTOR"      -> UserRole.USER           // garde-fou : rôle inexistant, le directeur est un USER avec profil
+        else            -> UserRole.USER
     }
 
-    suspend fun findByEmailOrUsername(identifier: String): EpiloteUserDetails? {
+    suspend fun findByEmail(email: String): EpiloteUserDetails? {
         val result = bucket.defaultScope().query(
-            statement = "SELECT META().id, * FROM `users` WHERE email = \$identifier OR username = \$identifier LIMIT 1",
-            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("identifier" to identifier)
+            statement = "SELECT META().id, * FROM `users` WHERE email = \$email LIMIT 1",
+            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("email" to email)
         ).execute()
 
         return result.rows.firstOrNull()?.let { row ->
@@ -50,11 +36,13 @@ class UserRepository(private val bucket: Bucket) {
                 username     = inner["username"] as? String ?: "",
                 firstName    = inner["prenom"] as? String ?: "",
                 lastName     = inner["nom"] as? String ?: "",
-                ecoleId      = inner["ecoleId"] as? String,
-                groupeId     = inner["groupeId"] as? String,
-                role         = UserRole.valueOf(inner["role"] as? String ?: "USER"),
+                schoolId     = (inner["schoolId"] ?: inner["ecoleId"]) as? String,
+                groupId      = (inner["groupId"] ?: inner["groupeId"]) as? String,
+                role         = migrateRole(inner["role"] as? String),
                 permissions  = parsePermissions(inner),
-                passwordHash = inner["passwordHash"] as? String ?: ""
+                passwordHash = inner["passwordHash"] as? String ?: "",
+                email        = inner["email"] as? String ?: "",
+                isActive     = inner["isActive"] as? Boolean ?: true
             )
         }
     }
@@ -65,19 +53,39 @@ class UserRepository(private val bucket: Bucket) {
         EpiloteUserDetails(
             userId       = userId,
             username     = doc["username"] as? String ?: "",
+            email        = doc["email"] as? String ?: "",
             firstName    = doc["prenom"] as? String ?: "",
             lastName     = doc["nom"] as? String ?: "",
-            ecoleId      = doc["ecoleId"] as? String,
-            groupeId     = doc["groupeId"] as? String,
-            role         = UserRole.valueOf(doc["role"] as? String ?: "USER"),
+            schoolId     = (doc["schoolId"] ?: doc["ecoleId"]) as? String,
+            groupId      = (doc["groupId"] ?: doc["groupeId"]) as? String,
+            role         = migrateRole(doc["role"] as? String),
             permissions  = parsePermissions(doc),
-            passwordHash = doc["passwordHash"] as? String ?: ""
+            passwordHash = doc["passwordHash"] as? String ?: "",
+            isActive     = doc["isActive"] as? Boolean ?: true
         )
     }.getOrNull()
 
+    suspend fun ensureSyncToken(userId: String): String {
+        val existing = collection.get(userId).contentAs<MutableMap<String, Any?>>()
+        val current = existing["syncToken"] as? String
+        if (!current.isNullOrBlank()) {
+            return current
+        }
+
+        val token = UUID.randomUUID().toString()
+        existing["syncToken"] = token
+        existing["updatedAt"] = System.currentTimeMillis()
+        collection.upsert(userId, existing)
+        return token
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun parsePermissions(doc: Map<*, *>): List<PermissionDto> {
-        val raw = doc["permissions"] as? List<*> ?: return emptyList()
+        val raw = when (val permissions = doc["permissions"]) {
+            is List<*> -> permissions
+            is Map<*, *> -> permissions["modules"] as? List<*>
+            else -> null
+        } ?: return emptyList()
         return raw.filterIsInstance<Map<String, Any>>().map { p ->
             PermissionDto(
                 moduleSlug = p["moduleSlug"] as? String ?: "",

@@ -34,22 +34,22 @@ class BulletinViewModel(
     private val _uiState = MutableStateFlow<BulletinUiState>(BulletinUiState.Loading)
     val uiState: StateFlow<BulletinUiState> = _uiState.asStateFlow()
 
-    fun loadBulletins(ecoleId: String, classeId: String, periode: String) {
+    fun loadBulletins(schoolId: String, classeId: String, periode: String) {
         _uiState.value = BulletinUiState.Loading
         scope.launch {
             runCatching {
-                val eleves   = eleveRepo.getByClasse(ecoleId, classeId)
-                val notes    = noteRepo.getByClasse(ecoleId, classeId, periode)
-                val matieres = matiereRepo.getByClasse(ecoleId, classeId)
+                val eleves   = eleveRepo.getByClasse(schoolId, classeId)
+                val notes    = noteRepo.getByClasse(schoolId, classeId, periode)
+                val matieres = matiereRepo.getByClasse(schoolId, classeId)
 
                 val bulletins = eleves.map { eleve ->
-                    val absCount = absenceRepo.getByEleve(ecoleId, eleve.id).size
+                    val absCount = absenceRepo.getByEleve(schoolId, eleve.id).size
                     MoyenneCalculator.calculerBulletinEleve(eleve, notes, matieres, absCount, periode)
                 }
                 MoyenneCalculator.calculerRangs(bulletins)
             }.onSuccess { bulletins ->
                 val isLocked = bulletins.isNotEmpty() && noteRepo
-                    .getByClasse(ecoleId, bulletins.first().classeId, periode)
+                    .getByClasse(schoolId, bulletins.first().classeId, periode)
                     .all { it.locked }
                 _uiState.value = if (isLocked)
                     BulletinUiState.Locked(bulletins)
@@ -61,10 +61,10 @@ class BulletinViewModel(
         }
     }
 
-    fun lockBulletin(ecoleId: String, classeId: String, periode: String) {
+    fun lockBulletin(schoolId: String, classeId: String, periode: String) {
         scope.launch {
-            val count = lockUseCase.execute(ecoleId, classeId, periode)
-            loadBulletins(ecoleId, classeId, periode)
+            val count = lockUseCase.execute(schoolId, classeId, periode)
+            loadBulletins(schoolId, classeId, periode)
         }
     }
 }

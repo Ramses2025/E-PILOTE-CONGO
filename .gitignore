@@ -29,6 +29,9 @@ epilote-infra/create-admin.json
 epilote-infra/create-appuser.json
 epilote-infra/update-endpoint.json
 
+# Fichiers contenant des tokens/secrets GitHub
+Github_Token.md
+
 # OS
 .DS_Store
 Thumbs.db

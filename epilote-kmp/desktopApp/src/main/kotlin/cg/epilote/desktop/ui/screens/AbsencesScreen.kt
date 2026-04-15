@@ -1,4 +1,4 @@
-package cg.epilote.desktop.ui.screens
+﻿package cg.epilote.desktop.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -36,12 +36,12 @@ fun AbsencesScreen(
     var justifyDialog by remember { mutableStateOf<Absence?>(null) }
 
     LaunchedEffect(selectedDate) {
-        session.ecoleId?.let { viewModel.loadByDate(it, selectedDate) }
+        session.schoolId?.let { viewModel.loadByDate(it, selectedDate) }
     }
 
     LaunchedEffect(uiState) {
         if (uiState is AbsenceUiState.Saved || uiState is AbsenceUiState.Justified) {
-            session.ecoleId?.let { viewModel.loadByDate(it, selectedDate) }
+            session.schoolId?.let { viewModel.loadByDate(it, selectedDate) }
             viewModel.resetState()
         }
     }
@@ -139,7 +139,7 @@ fun AbsencesScreen(
         JustificationDialog(
             absence = absence,
             onConfirm = { motif ->
-                session.ecoleId?.let {
+                session.schoolId?.let {
                     viewModel.justifyAbsence(it, absence.eleveId, absence.date, motif)
                 }
                 justifyDialog = null

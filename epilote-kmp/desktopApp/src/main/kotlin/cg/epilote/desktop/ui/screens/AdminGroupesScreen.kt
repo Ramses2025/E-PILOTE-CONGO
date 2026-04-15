@@ -1,4 +1,4 @@
-package cg.epilote.desktop.ui.screens
+﻿package cg.epilote.desktop.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -35,7 +35,7 @@ fun AdminGroupesScreen(
     adminGroupesByGroup: Map<String, List<UserDto>>,
     isLoading: Boolean,
     onCreateGroupe: (nom: String, province: String, planId: String) -> Unit,
-    onCreateAdminGroupe: (groupeId: String, username: String, password: String, nom: String, prenom: String, email: String) -> Unit,
+    onCreateAdminGroupe: (groupId: String, password: String, nom: String, prenom: String, email: String) -> Unit,
     onRefresh: () -> Unit
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -224,8 +224,8 @@ fun AdminGroupesScreen(
         CreateAdminGroupeDialog(
             groupe = groupe,
             onDismiss = { selectedGroupeForAdmin = null },
-            onCreate = { username, password, nom, prenom, email ->
-                onCreateAdminGroupe(groupe.id, username, password, nom, prenom, email)
+            onCreate = { password, nom, prenom, email ->
+                onCreateAdminGroupe(groupe.id, password, nom, prenom, email)
                 selectedGroupeForAdmin = null
             }
         )
@@ -299,9 +299,8 @@ private fun CreateGroupeDialog(
 private fun CreateAdminGroupeDialog(
     groupe: GroupeDto,
     onDismiss: () -> Unit,
-    onCreate: (username: String, password: String, nom: String, prenom: String, email: String) -> Unit
+    onCreate: (password: String, nom: String, prenom: String, email: String) -> Unit
 ) {
-    var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var nom by remember { mutableStateOf("") }
     var prenom by remember { mutableStateOf("") }
@@ -316,15 +315,14 @@ private fun CreateAdminGroupeDialog(
                 OutlinedTextField(value = prenom, onValueChange = { prenom = it }, label = { Text("Prénom") }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(10.dp))
                 OutlinedTextField(value = nom, onValueChange = { nom = it }, label = { Text("Nom") }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(10.dp))
                 OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(10.dp))
-                OutlinedTextField(value = username, onValueChange = { username = it }, label = { Text("Identifiant") }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(10.dp))
                 OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Mot de passe") }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(10.dp))
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    if (username.isNotBlank() && password.length >= 8 && nom.isNotBlank() && prenom.isNotBlank() && email.isNotBlank()) {
-                        onCreate(username, password, nom, prenom, email)
+                    if (password.length >= 8 && nom.isNotBlank() && prenom.isNotBlank() && email.isNotBlank()) {
+                        onCreate(password, nom, prenom, email)
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C5CE7)),

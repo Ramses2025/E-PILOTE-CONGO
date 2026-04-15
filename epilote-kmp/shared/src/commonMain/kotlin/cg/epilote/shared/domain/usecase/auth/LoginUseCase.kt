@@ -1,4 +1,4 @@
-package cg.epilote.shared.domain.usecase.auth
+﻿package cg.epilote.shared.domain.usecase.auth
 
 import cg.epilote.shared.data.local.EpiloteDatabase
 import cg.epilote.shared.data.local.UserSessionRepository
@@ -18,17 +18,17 @@ class LoginUseCase(
     private val syncManager: SyncManager,
     private val context: Any?
 ) {
-    suspend fun execute(username: String, password: String, pin: String): LoginResult {
+    suspend fun execute(email: String, password: String): LoginResult {
         return try {
-            val dto = authApi.login(username, password)
+            val dto = authApi.login(email, password)
 
             val session = UserSession(
                 userId               = dto.userId,
-                username             = dto.username ?: username,
+                email                = dto.email,
                 firstName            = dto.firstName,
                 lastName             = dto.lastName,
-                ecoleId              = dto.ecoleId,
-                groupeId             = dto.groupeId,
+                schoolId = dto.schoolId,
+                groupId = dto.groupId,
                 role                 = dto.role,
                 accessToken          = dto.accessToken,
                 refreshToken         = dto.refreshToken,
@@ -45,19 +45,23 @@ class LoginUseCase(
                 }
             )
 
-            EpiloteDatabase.init(context, dto.userId, pin)
+            EpiloteDatabase.initUserData(context, dto.userId)
             sessionRepo.saveSession(session)
 
             // Provisioning App Services (best-effort, n'empêche pas le login si échec réseau)
-            val schoolIds = dto.ecoleId?.let { listOf(it) } ?: emptyList()
-            if (dto.groupeId != null || schoolIds.isNotEmpty()) {
-                runCatching { authApi.provisionSyncUser(dto.userId, dto.groupeId, schoolIds, dto.role) }
+            var syncToken: String? = null
+            val schoolIds = dto.schoolId?.let { listOf(it) } ?: emptyList()
+            if (dto.groupId != null || schoolIds.isNotEmpty()) {
+                syncToken = runCatching {
+                    authApi.provisionSyncUser(dto.userId, dto.groupId, schoolIds, dto.role)
+                }.getOrNull()?.syncToken
             }
 
             // Démarrage de la sync CBLite (best-effort, n'empêche pas le login)
-            runCatching {
-                val syncPassword = "cbls::${dto.userId}"
-                syncManager.start(dto.userId, syncPassword)
+            if (syncToken != null) {
+                runCatching {
+                    syncManager.start(dto.userId, syncToken)
+                }
             }
 
             LoginResult.Success(session)

@@ -1,5 +1,6 @@
 package cg.epilote.shared.data.local
 
+import cg.epilote.shared.data.schema.SchemaContract
 import cg.epilote.shared.domain.model.Matiere
 import com.couchbase.lite.DataSource
 import com.couchbase.lite.UnitOfWork
@@ -22,8 +23,9 @@ class MatiereRepository(private val db: Database) {
 
     fun save(matiere: Matiere) {
         val doc = MutableDocument(matiere.id).apply {
+            setInt(SchemaContract.FIELD_SCHEMA_VERSION, SchemaContract.CURRENT_SCHEMA_VERSION)
             setString("type",             "subject")
-            setString("ecoleId",          matiere.ecoleId)
+            setString("schoolId",         matiere.schoolId)
             setString("classeId",         matiere.classeId)
             setString("nom",              matiere.nom)
             setString("code",             matiere.code)
@@ -41,25 +43,25 @@ class MatiereRepository(private val db: Database) {
         db.inBatch(UnitOfWork { matieres.forEach { save(it) } })
     }
 
-    fun getByClasse(ecoleId: String, classeId: String): List<Matiere> =
+    fun getByClasse(schoolId: String, classeId: String): List<Matiere> =
         QueryBuilder
             .select(SelectResult.all(), SelectResult.expression(Meta.id))
             .from(DataSource.collection(collection))
             .where(
-                Expression.property("ecoleId").equalTo(Expression.string(ecoleId))
+                Expression.property("schoolId").equalTo(Expression.string(schoolId))
                     .and(Expression.property("classeId").equalTo(Expression.string(classeId)))
                     .and(Expression.property("type").equalTo(Expression.string("subject")))
             )
             .orderBy(Ordering.property("nom"))
             .execute().allResults().mapNotNull { it.toMatiere() }
 
-    fun observeByClasse(ecoleId: String, classeId: String): Flow<List<Matiere>> =
+    fun observeByClasse(schoolId: String, classeId: String): Flow<List<Matiere>> =
         callbackFlow {
             val query = QueryBuilder
                 .select(SelectResult.all(), SelectResult.expression(Meta.id))
                 .from(DataSource.collection(collection))
                 .where(
-                    Expression.property("ecoleId").equalTo(Expression.string(ecoleId))
+                    Expression.property("schoolId").equalTo(Expression.string(schoolId))
                         .and(Expression.property("classeId").equalTo(Expression.string(classeId)))
                         .and(Expression.property("type").equalTo(Expression.string("subject")))
                 )
@@ -72,12 +74,12 @@ class MatiereRepository(private val db: Database) {
             awaitClose { token.remove() }
         }
 
-    fun getByEnseignant(ecoleId: String, enseignantId: String): List<Matiere> =
+    fun getByEnseignant(schoolId: String, enseignantId: String): List<Matiere> =
         QueryBuilder
             .select(SelectResult.all(), SelectResult.expression(Meta.id))
             .from(DataSource.collection(collection))
             .where(
-                Expression.property("ecoleId").equalTo(Expression.string(ecoleId))
+                Expression.property("schoolId").equalTo(Expression.string(schoolId))
                     .and(Expression.property("enseignantId").equalTo(Expression.string(enseignantId)))
                     .and(Expression.property("type").equalTo(Expression.string("subject")))
             )
@@ -89,7 +91,7 @@ class MatiereRepository(private val db: Database) {
         val id   = getString("id") ?: return null
         return Matiere(
             id              = id,
-            ecoleId         = dict.getString("ecoleId")         ?: return null,
+            schoolId = dict.getString("schoolId")        ?: return null,
             classeId        = dict.getString("classeId")        ?: "",
             nom             = dict.getString("nom")             ?: "",
             code            = dict.getString("code")            ?: "",
