@@ -101,8 +101,6 @@ class AIService(
         }
 
         val pronoun = if (req.genre == "F") "Elle" else "Il"
-        val possessif = if (req.genre == "F") "sa" else "son"
-        val article = if (req.genre == "F") "La" else "Le"
 
         val notesTexte = if (req.notesMatieres.isNotEmpty()) {
             req.notesMatieres.joinToString(", ") {

@@ -6,32 +6,34 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import org.jetbrains.skia.Image as SkiaImage
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.loadSvgPainter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,18 +41,25 @@ import cg.epilote.desktop.ui.theme.*
 import cg.epilote.shared.domain.model.UserSession
 import cg.epilote.shared.presentation.viewmodel.LoginUiState
 import cg.epilote.shared.presentation.viewmodel.LoginViewModel
+import org.jetbrains.skia.Image as SkiaImage
 import java.awt.Cursor
+
+private val HandCursorIcon: PointerIcon = PointerIcon(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR))
 
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel,
     onLoginSuccess: (UserSession) -> Unit
 ) {
-    val uiState  by viewModel.uiState.collectAsState()
-    val email    by viewModel.email.collectAsState()
-    val password by viewModel.password.collectAsState()
+    val uiState    by viewModel.uiState.collectAsState()
+    val email      by viewModel.email.collectAsState()
+    val password   by viewModel.password.collectAsState()
+    val rememberMe by viewModel.rememberMe.collectAsState()
     var passwordVisible by remember { mutableStateOf(false) }
-    var rememberMe      by remember { mutableStateOf(false) }
+
+    val focusManager = LocalFocusManager.current
+    val emailFocusReq = remember { FocusRequester() }
+    val passFocusReq  = remember { FocusRequester() }
 
     val density = LocalDensity.current
     val logoPainter = remember {
@@ -66,7 +75,6 @@ fun LoginScreen(
     }
 
     val navy   = Color(0xFF1D3557)
-    val accent = Color(0xFF2A9D8F)
     val border = Color(0xFFE0E4EA)
     val label  = Color(0xFF6B7A8D)
 
@@ -88,10 +96,34 @@ fun LoginScreen(
         ), label = "shimmer"
     )
 
-    LaunchedEffect(uiState) {
-        if (uiState is LoginUiState.Success) {
+    // ── Handle success → direct redirect (no intermediate screen) ─
+    if (uiState is LoginUiState.Success) {
+        // Show transition spinner while parent processes the redirect
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = EpiloteGreen, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
+        }
+        LaunchedEffect(Unit) {
             onLoginSuccess((uiState as LoginUiState.Success).session)
         }
+        return
+    }
+
+    // ── Reset error/network state when user starts editing ──────
+    fun onEmailChange(v: String) {
+        if (uiState is LoginUiState.Error || uiState is LoginUiState.NoNetwork) viewModel.resetState()
+        viewModel.onEmailChange(v)
+    }
+    fun onPasswordChange(v: String) {
+        if (uiState is LoginUiState.Error || uiState is LoginUiState.NoNetwork) viewModel.resetState()
+        viewModel.onPasswordChange(v)
+    }
+
+    // ── Enter key handler ───────────────────────────────────────
+    val enterModifier = Modifier.onKeyEvent { event ->
+        if (event.key == Key.Enter && uiState !is LoginUiState.Loading) {
+            viewModel.login()
+            true
+        } else false
     }
 
     BoxWithConstraints(
@@ -127,7 +159,7 @@ fun LoginScreen(
             // ── Card (branding intégré) ─────────────────────────
             Surface(
                 modifier = Modifier.width(cardW).alpha(contentAlpha),
-                shape = RoundedCornerShape(4.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = Color.White.copy(alpha = 0.95f),
                 border = BorderStroke(1.dp, border),
                 shadowElevation = 1.dp
@@ -176,31 +208,42 @@ fun LoginScreen(
 
                     Spacer(Modifier.height(28.dp))
 
-                    // Email
+                    // ── Email field ──────────────────────────────
                     OutlinedTextField(
                         value = email,
-                        onValueChange = viewModel::onEmailChange,
+                        onValueChange = ::onEmailChange,
                         label = { Text("Adresse email", fontSize = 13.sp) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth()
+                            .focusRequester(emailFocusReq)
+                            .then(enterModifier),
                         singleLine = true,
-                        shape = RoundedCornerShape(4.dp),
+                        shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             unfocusedBorderColor = border,
                             focusedBorderColor = navy,
                             unfocusedLabelColor = label,
                             focusedLabelColor = navy
+                        ),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            imeAction = androidx.compose.ui.text.input.ImeAction.Next
+                        ),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                            onNext = { focusManager.moveFocus(FocusDirection.Down) }
                         )
                     )
 
                     Spacer(Modifier.height(12.dp))
 
-                    // Password
+                    // ── Password field ──────────────────────────
                     OutlinedTextField(
                         value = password,
-                        onValueChange = viewModel::onPasswordChange,
+                        onValueChange = ::onPasswordChange,
                         label = { Text("Mot de passe", fontSize = 13.sp) },
                         trailingIcon = {
-                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            IconButton(
+                                onClick = { passwordVisible = !passwordVisible },
+                                modifier = Modifier.pointerHoverIcon(HandCursorIcon)
+                            ) {
                                 Icon(
                                     if (passwordVisible) Icons.Default.VisibilityOff
                                     else Icons.Default.Visibility,
@@ -210,20 +253,28 @@ fun LoginScreen(
                         },
                         visualTransformation = if (passwordVisible) VisualTransformation.None
                                                else PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth()
+                            .focusRequester(passFocusReq)
+                            .then(enterModifier),
                         singleLine = true,
-                        shape = RoundedCornerShape(4.dp),
+                        shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             unfocusedBorderColor = border,
                             focusedBorderColor = navy,
                             unfocusedLabelColor = label,
                             focusedLabelColor = navy
+                        ),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                        ),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                            onDone = { if (uiState !is LoginUiState.Loading) viewModel.login() }
                         )
                     )
 
                     Spacer(Modifier.height(16.dp))
 
-                    // Se souvenir + Mot de passe oublié
+                    // ── Remember me + Forgot password ────────────
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -231,18 +282,18 @@ fun LoginScreen(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.offset(x = (-12).dp)
+                            modifier = Modifier.offset(x = (-12).dp).pointerHoverIcon(HandCursorIcon)
                         ) {
                             Checkbox(
                                 checked = rememberMe,
-                                onCheckedChange = { rememberMe = it },
+                                onCheckedChange = { viewModel.onRememberMeChange(it) },
                                 colors = CheckboxDefaults.colors(checkedColor = navy)
                             )
                             Text("Se souvenir de moi", fontSize = 12.sp, color = label)
                         }
                         TextButton(
                             onClick = {},
-                            modifier = Modifier.pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR))),
+                            modifier = Modifier.pointerHoverIcon(HandCursorIcon),
                             contentPadding = PaddingValues(0.dp)
                         ) {
                             Text(
@@ -254,7 +305,7 @@ fun LoginScreen(
 
                     Spacer(Modifier.height(8.dp))
 
-                    // Error
+                    // ── Error banner ─────────────────────────────
                     AnimatedVisibility(
                         visible = uiState is LoginUiState.Error,
                         enter = fadeIn(animationSpec = tween(300)),
@@ -302,16 +353,19 @@ fun LoginScreen(
                         }
                     }
 
-                    // Button
+                    // ── Login button ────────────────────────────
                     Button(
                         onClick = { viewModel.login() },
                         enabled = uiState !is LoginUiState.Loading,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(44.dp)
-                            .pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR))),
-                        shape = RoundedCornerShape(4.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = navy),
+                            .pointerHoverIcon(HandCursorIcon),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = navy,
+                            disabledContainerColor = navy.copy(alpha = 0.5f)
+                        ),
                         elevation = ButtonDefaults.buttonElevation(2.dp, 4.dp, 0.dp),
                         contentPadding = PaddingValues(vertical = 0.dp)
                     ) {

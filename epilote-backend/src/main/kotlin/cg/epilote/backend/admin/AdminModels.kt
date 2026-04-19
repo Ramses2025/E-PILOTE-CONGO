@@ -22,6 +22,7 @@ data class DashboardStatsResponse(
     val invoicesOverdue: Long = 0,
     val plans: List<PlanResponse>,
     val categories: List<CategorieInfo>,
+    val groupesActifs: Long = 0,
     val groupesByProvince: List<ProvinceStats> = emptyList(),
     val planDistribution: List<PlanDistribution> = emptyList(),
     val subscriptionsByStatus: Map<String, Long> = emptyMap(),
@@ -74,16 +75,36 @@ class SubscriptionExpiredException(message: String) : RuntimeException(message)
 // ── Groupe Scolaire ─────────────────────────────────────────────
 data class CreateGroupeRequest(
     @field:NotBlank val nom: String,
-    @field:NotBlank val province: String,
-    @field:NotBlank val planId: String
+    @field:NotBlank val planId: String,
+    @field:Email val email: String? = null,
+    val phone: String? = null,
+    val department: String? = null,
+    val city: String? = null,
+    val address: String? = null,
+    @field:Size(max = 3_000_000) val logo: String? = null,
+    val description: String? = null,
+    val foundedYear: Int? = null,
+    val website: String? = null
 )
 
 data class GroupeResponse(
     val id: String,
     val nom: String,
-    val province: String,
+    val slug: String,
+    val email: String?,
+    val phone: String?,
+    val department: String?,
+    val city: String?,
+    val address: String?,
+    val country: String,
+    val logo: String?,
+    val description: String?,
+    val foundedYear: Int?,
+    val website: String?,
     val planId: String,
     val ecolesCount: Int,
+    val usersCount: Int,
+    val isActive: Boolean,
     val createdAt: Long
 )
 
@@ -137,6 +158,63 @@ data class UserResponse(
     val role: String,
     val isActive: Boolean,
     val createdAt: Long
+)
+
+data class CreateAdminRequest(
+    @field:NotBlank val role: String,
+    @field:NotBlank @field:Size(min = 8) val password: String,
+    @field:NotBlank val nom: String,
+    @field:NotBlank val prenom: String,
+    @field:NotBlank @field:Email val email: String,
+    val phone: String? = null,
+    val gender: String? = null,
+    val dateOfBirth: String? = null,
+    val address: String? = null,
+    val birthPlace: String? = null,
+    val avatar: String? = null,
+    val groupId: String? = null,
+    val mustChangePassword: Boolean = true
+)
+
+data class UpdateAdminRequest(
+    val nom: String? = null,
+    val prenom: String? = null,
+    val email: String? = null,
+    val phone: String? = null,
+    val gender: String? = null,
+    val dateOfBirth: String? = null,
+    val address: String? = null,
+    val birthPlace: String? = null,
+    val avatar: String? = null,
+    val mustChangePassword: Boolean? = null
+)
+
+data class AdminUserResponse(
+    val id: String,
+    val username: String,
+    val firstName: String,
+    val lastName: String,
+    val email: String,
+    val phone: String?,
+    val role: String,
+    val status: String,
+    val gender: String?,
+    val dateOfBirth: String?,
+    val groupId: String?,
+    val schoolId: String?,
+    val avatar: String?,
+    val address: String?,
+    val birthPlace: String?,
+    val mustChangePassword: Boolean,
+    val lastLoginAt: Long?,
+    val loginAttempts: Int,
+    val isActive: Boolean,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+data class ToggleAdminStatusRequest(
+    val status: String
 )
 
 data class AssignProfilRequest(
@@ -231,7 +309,15 @@ data class UpdateModuleRequest(
 // ── Groupe (update / lifecycle) ──────────────────────────────────
 data class UpdateGroupeRequest(
     val nom: String? = null,
-    val province: String? = null,
+    @field:Email val email: String? = null,
+    val phone: String? = null,
+    val department: String? = null,
+    val city: String? = null,
+    val address: String? = null,
+    @field:Size(max = 3_000_000) val logo: String? = null,
+    val description: String? = null,
+    val foundedYear: Int? = null,
+    val website: String? = null,
     val planId: String? = null,
     val isActive: Boolean? = null
 )

@@ -22,7 +22,8 @@ data class UserSession(
     val accessToken: String,
     val refreshToken: String,
     val offlineToken: String,
-    val offlineTokenExpiresAt: Long = 0L
+    val offlineTokenExpiresAt: Long = 0L,
+    val rememberMe: Boolean = false
 ) {
     fun hasModule(slug: String): Boolean =
         permissions.any { it.moduleSlug == slug && it.canRead }

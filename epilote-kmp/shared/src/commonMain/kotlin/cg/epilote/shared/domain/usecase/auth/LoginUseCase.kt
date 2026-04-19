@@ -18,7 +18,7 @@ class LoginUseCase(
     private val syncManager: SyncManager,
     private val context: Any?
 ) {
-    suspend fun execute(email: String, password: String): LoginResult {
+    suspend fun execute(email: String, password: String, rememberMe: Boolean = false): LoginResult {
         return try {
             val dto = authApi.login(email, password)
 
@@ -34,6 +34,7 @@ class LoginUseCase(
                 refreshToken         = dto.refreshToken,
                 offlineToken         = dto.offlineToken,
                 offlineTokenExpiresAt = dto.offlineTokenExpiresAt,
+                rememberMe           = rememberMe,
                 permissions          = dto.permissions.map { p ->
                     cg.epilote.shared.domain.model.ModulePermission(
                         moduleSlug = p.moduleSlug,

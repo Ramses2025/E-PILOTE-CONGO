@@ -1,20 +1,23 @@
 package cg.epilote.desktop.ui.components
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -88,7 +91,7 @@ fun BarChart(
     }
 }
 
-// ── Donut / Pie Chart ──────────────────────────────────────────────
+// ── Donut / Pie Chart (Animé) ─────────────────────────────────────
 
 @Composable
 fun DonutChart(
@@ -103,15 +106,28 @@ fun DonutChart(
         return
     }
     val total = entries.sumOf { it.value.toDouble() }.toFloat().coerceAtLeast(1f)
+    val animProgress by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing)
+    )
 
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Canvas(modifier = Modifier.size(120.dp)) {
             val diameter = min(size.width, size.height) - strokeWidth
             val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
 
+            // Track gris de fond
+            drawArc(
+                color = Color(0xFFF1F5F9),
+                startAngle = 0f, sweepAngle = 360f,
+                useCenter = false, topLeft = topLeft,
+                size = Size(diameter, diameter),
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            )
+
             var startAngle = -90f
             entries.forEach { entry ->
-                val sweep = (entry.value / total) * 360f
+                val sweep = (entry.value / total) * 360f * animProgress
                 drawArc(
                     color = entry.color,
                     startAngle = startAngle,
@@ -119,7 +135,7 @@ fun DonutChart(
                     useCenter = false,
                     topLeft = topLeft,
                     size = Size(diameter, diameter),
-                    style = Stroke(width = strokeWidth)
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
                 startAngle += sweep
             }
@@ -148,6 +164,54 @@ fun DonutChart(
                 }
             }
         }
+    }
+}
+
+// ── Progress Ring (anneau de progression) ─────────────────────────
+
+@Composable
+fun ProgressRing(
+    progress: Float,
+    label: String,
+    value: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    trackColor: Color = Color(0xFFF1F5F9),
+    strokeWidth: Float = 10f
+) {
+    val animProg by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(1200, easing = FastOutSlowInEasing)
+    )
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Canvas(modifier = Modifier.size(72.dp)) {
+                val diameter = min(size.width, size.height) - strokeWidth
+                val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
+                drawArc(
+                    color = trackColor, startAngle = 0f, sweepAngle = 360f,
+                    useCenter = false, topLeft = topLeft,
+                    size = Size(diameter, diameter),
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+                drawArc(
+                    color = color, startAngle = -90f,
+                    sweepAngle = 360f * animProg,
+                    useCenter = false, topLeft = topLeft,
+                    size = Size(diameter, diameter),
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+            }
+            Text(
+                value, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                color = color, textAlign = TextAlign.Center
+            )
+        }
+        Text(label, fontSize = 10.sp, color = Color(0xFF64748B), textAlign = TextAlign.Center)
     }
 }
 

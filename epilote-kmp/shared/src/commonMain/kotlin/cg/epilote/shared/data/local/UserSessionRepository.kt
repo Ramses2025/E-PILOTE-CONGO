@@ -28,6 +28,7 @@ class UserSessionRepository(private val db: Database) {
             setString("offlineToken",         session.offlineToken)
             setLong("offlineTokenExpiresAt",  session.offlineTokenExpiresAt)
             setLong("savedAt",                System.currentTimeMillis())
+            setBoolean("rememberMe",           session.rememberMe)
 
             val permsArray = MutableArray()
             session.permissions.forEach { perm ->
@@ -80,6 +81,7 @@ class UserSessionRepository(private val db: Database) {
             refreshToken          = refreshToken,
             offlineToken          = offlineToken,
             offlineTokenExpiresAt = doc.getLong("offlineTokenExpiresAt"),
+            rememberMe            = doc.getBoolean("rememberMe"),
             permissions           = perms
         )
     }

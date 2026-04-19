@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cg.epilote.desktop.ui.theme.*
+import cg.epilote.desktop.ui.theme.cursorHand
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -74,7 +75,7 @@ fun AdminModulesScreen(
                 Text("Modules & Catégories", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 Text("Référentiel des 30 modules réels — 6 catégories", fontSize = 13.sp, color = EpiloteTextMuted)
             }
-            FilledTonalButton(onClick = onRefresh, shape = RoundedCornerShape(10.dp)) {
+            FilledTonalButton(onClick = onRefresh, shape = RoundedCornerShape(10.dp), modifier = Modifier.cursorHand()) {
                 Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("Actualiser")

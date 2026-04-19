@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cg.epilote.desktop.ui.theme.*
+import cg.epilote.desktop.ui.theme.cursorHand
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -32,6 +33,31 @@ data class UserDto(
     val role: String = "USER",
     val isActive: Boolean = true,
     val createdAt: Long = 0
+)
+
+@Serializable
+data class AdminUserDto(
+    val id: String = "",
+    val username: String = "",
+    val firstName: String = "",
+    val lastName: String = "",
+    val email: String = "",
+    val phone: String? = null,
+    val role: String = "USER",
+    val status: String = "active",
+    val gender: String? = null,
+    val dateOfBirth: String? = null,
+    val groupId: String? = null,
+    val schoolId: String? = null,
+    val avatar: String? = null,
+    val address: String? = null,
+    val birthPlace: String? = null,
+    val mustChangePassword: Boolean = false,
+    val lastLoginAt: Long? = null,
+    val loginAttempts: Int = 0,
+    val isActive: Boolean = true,
+    val createdAt: Long = 0,
+    val updatedAt: Long = 0
 )
 
 @Composable
@@ -58,7 +84,7 @@ fun AdminUsersScreen(
                 Text("Utilisateurs", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 Text("Gestion des comptes utilisateurs du système", fontSize = 13.sp, color = EpiloteTextMuted)
             }
-            FilledTonalButton(onClick = onRefresh, shape = RoundedCornerShape(10.dp)) {
+            FilledTonalButton(onClick = onRefresh, shape = RoundedCornerShape(10.dp), modifier = Modifier.cursorHand()) {
                 Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("Actualiser")

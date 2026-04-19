@@ -3,7 +3,6 @@
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -12,20 +11,40 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cg.epilote.desktop.data.CreateGroupeDto
+import cg.epilote.desktop.data.UpdateGroupeDto
+import cg.epilote.desktop.ui.screens.superadmin.KpiCard
 import cg.epilote.desktop.ui.theme.*
+import cg.epilote.desktop.ui.theme.AnimatedCardEntrance
+import cg.epilote.desktop.ui.theme.PulsingLoadingBar
+import cg.epilote.desktop.ui.theme.cursorHand
 import kotlinx.serialization.Serializable
 
 @Serializable
 data class GroupeDto(
     val id: String = "",
     val nom: String = "",
-    val province: String = "",
+    val slug: String = "",
+    val email: String? = null,
+    val phone: String? = null,
+    val department: String? = null,
+    val city: String? = null,
+    val address: String? = null,
+    val country: String = "Congo",
+    val logo: String? = null,
+    val description: String? = null,
+    val foundedYear: Int? = null,
+    val website: String? = null,
     val planId: String = "",
     val ecolesCount: Int = 0,
+    val usersCount: Int = 0,
+    val isActive: Boolean = true,
     val createdAt: Long = 0
 )
 
@@ -33,304 +52,309 @@ data class GroupeDto(
 fun AdminGroupesScreen(
     groupes: List<GroupeDto>,
     adminGroupesByGroup: Map<String, List<UserDto>>,
+    plans: List<PlanDto>,
+    totalEcoles: Int,
+    totalUtilisateurs: Int,
     isLoading: Boolean,
-    onCreateGroupe: (nom: String, province: String, planId: String) -> Unit,
-    onCreateAdminGroupe: (groupId: String, password: String, nom: String, prenom: String, email: String) -> Unit,
+    onCreateGroupe: (CreateGroupeDto, (Boolean, String?) -> Unit) -> Unit,
+    onUpdateGroupe: (groupId: String, UpdateGroupeDto, (Boolean, String?) -> Unit) -> Unit,
+    onDeleteGroupe: (groupId: String, (Boolean, String?) -> Unit) -> Unit,
+    onToggleGroupeStatus: (groupId: String, isActive: Boolean, (Boolean, String?) -> Unit) -> Unit,
+    onCreateAdminGroupe: (groupId: String, password: String, nom: String, prenom: String, email: String, (Boolean, String?) -> Unit) -> Unit,
     onRefresh: () -> Unit
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
+    var selectedGroupeForEdit by remember { mutableStateOf<GroupeDto?>(null) }
     var selectedGroupeForAdmin by remember { mutableStateOf<GroupeDto?>(null) }
+    var selectedGroupeForDetail by remember { mutableStateOf<GroupeDto?>(null) }
+    var selectedGroupeForDelete by remember { mutableStateOf<GroupeDto?>(null) }
+    var selectedGroupeForStatusAction by remember { mutableStateOf<GroupeDto?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+    var filterStatus by remember { mutableStateOf("all") }
+    var sortBy by remember { mutableStateOf("recent") }
+    var viewMode by remember { mutableStateOf("card") }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var submitError by remember { mutableStateOf<String?>(null) }
+    var isDeleteSubmitting by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
+    var isStatusSubmitting by remember { mutableStateOf(false) }
+    var statusError by remember { mutableStateOf<String?>(null) }
+    var isAdminSubmitting by remember { mutableStateOf(false) }
+    var adminSubmitError by remember { mutableStateOf<String?>(null) }
+    var actionFeedback by remember { mutableStateOf<AdminFeedbackMessage?>(null) }
     val scrollState = rememberScrollState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(32.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    val groupesActifs = groupes.count { it.isActive }
+    val filtered = groupes
+        .filter { g ->
+            val matchSearch = searchQuery.isBlank() ||
+                g.nom.contains(searchQuery, ignoreCase = true) ||
+                g.slug.contains(searchQuery, ignoreCase = true) ||
+                (g.department?.contains(searchQuery, ignoreCase = true) == true) ||
+                (g.city?.contains(searchQuery, ignoreCase = true) == true) ||
+                (g.email?.contains(searchQuery, ignoreCase = true) == true)
+            val matchStatus = when (filterStatus) {
+                "actif" -> g.isActive
+                "inactif" -> !g.isActive
+                else -> true
+            }
+            matchSearch && matchStatus
+        }
+        .let { list ->
+            when (sortBy) {
+                "recent" -> list.sortedByDescending { it.createdAt }
+                "nom" -> list.sortedBy { it.nom.lowercase() }
+                "ecoles" -> list.sortedByDescending { it.ecolesCount }
+                else -> list
+            }
+        }
+
+    val byDepartment = groupes.groupBy { it.department?.ifBlank { null } ?: "Non renseigné" }
+    val byPlan = groupes.groupBy { g ->
+        when {
+            g.planId.contains("institutionnel", true) -> "Institutionnel"
+            g.planId.contains("pro", true) -> "Pro"
+            g.planId.contains("premium", true) -> "Premium"
+            g.planId.isNotBlank() -> "Gratuit"
+            else -> "Non défini"
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF0F4F8))) {
+        Column(
+            modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(horizontal = 28.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            Column {
-                Text("Groupes Scolaires", fontSize = 24.sp, fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground)
-                Text("Gérer les groupes d'établissements scolaires", fontSize = 13.sp, color = EpiloteTextMuted)
+            actionFeedback?.let {
+                AdminFeedbackBanner(
+                    feedback = it,
+                    onDismiss = { actionFeedback = null }
+                )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = onRefresh, shape = RoundedCornerShape(10.dp)) {
-                    Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Actualiser")
-                }
-                Button(
-                    onClick = { showCreateDialog = true },
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A9D8F))
-                ) {
-                    Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Nouveau Groupe")
-                }
-            }
-        }
 
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = EpiloteGreen)
-            }
-        }
+            GroupesKpiRow(groupes.size, groupesActifs, totalEcoles, totalUtilisateurs)
 
-        if (groupes.isEmpty() && !isLoading) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
-            ) {
-                Box(modifier = Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.Business, null, tint = EpiloteTextMuted, modifier = Modifier.size(48.dp))
-                        Text("Aucun groupe scolaire", fontWeight = FontWeight.SemiBold, color = EpiloteTextMuted)
-                        Text("Créez votre premier groupe pour commencer", fontSize = 12.sp, color = EpiloteTextMuted)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth < 980.dp) {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        GroupeDepartmentDistribution(byDepartment, Modifier.fillMaxWidth())
+                        GroupePlanDistributionChart(byPlan, Modifier.fillMaxWidth())
+                    }
+                } else {
+                    Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(16.dp)) {
+                        GroupeDepartmentDistribution(byDepartment, Modifier.weight(1f))
+                        GroupePlanDistributionChart(byPlan, Modifier.weight(1f))
                     }
                 }
             }
-        }
 
-        groupes.forEach { groupe ->
-            val admins = adminGroupesByGroup[groupe.id].orEmpty()
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(1.dp)
-            ) {
-                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier.size(48.dp).background(Color(0xFF2A9D8F).copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Default.Business, null, tint = Color(0xFF2A9D8F), modifier = Modifier.size(24.dp))
-                            }
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(groupe.nom, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                Text("Province : ${groupe.province}", fontSize = 12.sp, color = EpiloteTextMuted)
-                            }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("${groupe.ecolesCount}", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF1D3557))
-                                Text("écoles", fontSize = 11.sp, color = EpiloteTextMuted)
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = when {
-                                    groupe.planId.contains("pro") -> Color(0xFFE9C46A).copy(alpha = 0.15f)
-                                    groupe.planId.contains("premium") -> Color(0xFF1D3557).copy(alpha = 0.1f)
-                                    else -> Color(0xFF2A9D8F).copy(alpha = 0.1f)
-                                }
-                            ) {
-                                Text(
-                                    when {
-                                        groupe.planId.contains("pro") -> "PRO"
-                                        groupe.planId.contains("premium") -> "PREMIUM"
-                                        else -> "GRATUIT"
-                                    },
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = when {
-                                        groupe.planId.contains("pro") -> Color(0xFFE9C46A)
-                                        groupe.planId.contains("premium") -> Color(0xFF1D3557)
-                                        else -> Color(0xFF2A9D8F)
-                                    }
-                                )
-                            }
-                            FilledTonalButton(
-                                onClick = { selectedGroupeForAdmin = groupe },
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Icon(Icons.Default.PersonAdd, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Admin Groupe")
-                            }
-                        }
-                    }
+            GroupesToolbar(
+                searchQuery = searchQuery,
+                onSearchChange = { searchQuery = it },
+                filterStatus = filterStatus,
+                onFilterChange = { filterStatus = it },
+                sortBy = sortBy,
+                onSortChange = { sortBy = it },
+                viewMode = viewMode,
+                onViewModeChange = { viewMode = it },
+                onRefresh = onRefresh,
+                onNewGroupe = {
+                    submitError = null
+                    showCreateDialog = true
+                },
+                totalResults = filtered.size
+            )
 
-                    Divider(color = Color(0xFFE9EEF5))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Admins du groupe", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Color(0xFF1D3557))
-
-                        if (admins.isEmpty()) {
-                            Text(
-                                "Aucun admin groupe défini pour ce tenant.",
-                                fontSize = 12.sp,
-                                color = EpiloteTextMuted
-                            )
-                        } else {
-                            admins.forEach { admin ->
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = Color(0xFFF7FAFC)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                            Text("${admin.firstName} ${admin.lastName}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                            Text(admin.email.ifBlank { admin.username }, fontSize = 11.sp, color = EpiloteTextMuted)
-                                        }
-                                        Surface(shape = RoundedCornerShape(999.dp), color = Color(0xFF6C5CE7).copy(alpha = 0.12f)) {
-                                            Text(
-                                                "ADMIN GROUPE",
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color(0xFF6C5CE7)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+            if (isLoading && groupes.isEmpty()) {
+                Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), Arrangement.spacedBy(12.dp), Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = EpiloteGreen, strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
+                    Text("Chargement des groupes…", fontSize = 13.sp, color = EpiloteTextMuted)
+                    PulsingLoadingBar(Modifier.padding(horizontal = 40.dp))
                 }
+            }
+            if (isLoading && groupes.isNotEmpty()) {
+                PulsingLoadingBar()
+            }
+
+            if (filtered.isEmpty() && !isLoading) {
+                EmptyGroupesState(searchQuery.isNotBlank())
+            }
+
+            when (viewMode) {
+                "table" -> GroupeTableView(
+                    groupes = filtered,
+                    onEdit = { submitError = null; selectedGroupeForEdit = it },
+                    onAddAdmin = { adminSubmitError = null; selectedGroupeForAdmin = it },
+                    onViewDetail = { selectedGroupeForDetail = it }
+                )
+                else -> GroupeCardGrid(
+                    groupes = filtered,
+                    adminGroupesByGroup = adminGroupesByGroup,
+                    onEdit = { submitError = null; selectedGroupeForEdit = it },
+                    onAddAdmin = { adminSubmitError = null; selectedGroupeForAdmin = it },
+                    onViewDetail = { selectedGroupeForDetail = it }
+                )
             }
         }
     }
 
+    // ── Create dialog ──
     if (showCreateDialog) {
         CreateGroupeDialog(
-            onDismiss = { showCreateDialog = false },
-            onCreate = { nom, province, planId ->
-                onCreateGroupe(nom, province, planId)
-                showCreateDialog = false
-            }
+            onDismiss = { if (!isSubmitting) showCreateDialog = false },
+            onSubmit = { dto ->
+                isSubmitting = true
+                submitError = null
+                onCreateGroupe(dto) { success, error ->
+                    isSubmitting = false
+                    if (success) {
+                        showCreateDialog = false
+                        actionFeedback = AdminFeedbackMessage("Groupe créé avec succès.")
+                    } else {
+                        submitError = error
+                    }
+                }
+            },
+            availablePlans = plans,
+            isSubmitting = isSubmitting,
+            submitError = submitError
         )
     }
 
+    // ── Edit dialog ──
+    selectedGroupeForEdit?.let { groupe ->
+        CreateGroupeDialog(
+            onDismiss = { if (!isSubmitting) selectedGroupeForEdit = null },
+            onSubmit = { dto ->
+                isSubmitting = true
+                submitError = null
+                onUpdateGroupe(groupe.id, dto.toUpdateGroupeDto(dto.isActive)) { success, error ->
+                    isSubmitting = false
+                    if (success) {
+                        selectedGroupeForEdit = null
+                        selectedGroupeForDetail = null
+                        actionFeedback = AdminFeedbackMessage("Groupe mis à jour avec succès.")
+                    } else {
+                        submitError = error
+                    }
+                }
+            },
+            availablePlans = plans,
+            initialData = groupe.toGroupeFormInitialData(),
+            title = "Modifier le groupe",
+            subtitle = "Mettez à jour les informations, le plan et le logo du groupe scolaire",
+            submitLabel = "Enregistrer les modifications",
+            includeBlankOptionalFields = true,
+            isSubmitting = isSubmitting,
+            submitError = submitError
+        )
+    }
+
+    // ── Detail dialog ──
+    selectedGroupeForDetail?.let { groupe ->
+        val admins = adminGroupesByGroup[groupe.id].orEmpty()
+        GroupeDetailDialog(
+            groupe = groupe,
+            admins = admins,
+            onDismiss = { selectedGroupeForDetail = null },
+            onEdit = { submitError = null; selectedGroupeForEdit = groupe },
+            onDelete = { deleteError = null; selectedGroupeForDelete = groupe },
+            onToggleStatus = { statusError = null; selectedGroupeForStatusAction = groupe },
+            onAddAdmin = { adminSubmitError = null; selectedGroupeForAdmin = groupe }
+        )
+    }
+
+    // ── Admin dialog ──
     selectedGroupeForAdmin?.let { groupe ->
         CreateAdminGroupeDialog(
             groupe = groupe,
-            onDismiss = { selectedGroupeForAdmin = null },
+            onDismiss = {
+                if (!isAdminSubmitting) {
+                    adminSubmitError = null
+                    selectedGroupeForAdmin = null
+                }
+            },
             onCreate = { password, nom, prenom, email ->
-                onCreateAdminGroupe(groupe.id, password, nom, prenom, email)
-                selectedGroupeForAdmin = null
-            }
-        )
-    }
-}
-
-@Composable
-private fun CreateGroupeDialog(
-    onDismiss: () -> Unit,
-    onCreate: (nom: String, province: String, planId: String) -> Unit
-) {
-    var nom by remember { mutableStateOf("") }
-    var province by remember { mutableStateOf("") }
-    var selectedPlan by remember { mutableStateOf("plan::gratuit") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Nouveau Groupe Scolaire", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedTextField(
-                    value = nom,
-                    onValueChange = { nom = it },
-                    label = { Text("Nom du groupe") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp)
-                )
-                OutlinedTextField(
-                    value = province,
-                    onValueChange = { province = it },
-                    label = { Text("Province") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp)
-                )
-                Text("Plan d'abonnement", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(
-                        Triple("plan::gratuit", "Gratuit", Color(0xFF2A9D8F)),
-                        Triple("plan::premium", "Premium", Color(0xFF1D3557)),
-                        Triple("plan::pro", "Pro", Color(0xFFE9C46A))
-                    ).forEach { (planId, label, color) ->
-                        FilterChip(
-                            selected = selectedPlan == planId,
-                            onClick = { selectedPlan = planId },
-                            label = { Text(label, fontSize = 12.sp) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = color.copy(alpha = 0.15f),
-                                selectedLabelColor = color
-                            )
-                        )
+                isAdminSubmitting = true
+                adminSubmitError = null
+                onCreateAdminGroupe(groupe.id, password, nom, prenom, email) { success, error ->
+                    isAdminSubmitting = false
+                    if (success) {
+                        selectedGroupeForAdmin = null
+                        selectedGroupeForDetail = null
+                        actionFeedback = AdminFeedbackMessage("Administrateur du groupe créé avec succès.")
+                    } else {
+                        adminSubmitError = error
                     }
                 }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { if (nom.isNotBlank() && province.isNotBlank()) onCreate(nom, province, selectedPlan) },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A9D8F)),
-                shape = RoundedCornerShape(10.dp)
-            ) { Text("Créer") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Annuler") }
-        }
-    )
-}
+            },
+            isSubmitting = isAdminSubmitting,
+            submitError = adminSubmitError
+        )
+    }
 
-@Composable
-private fun CreateAdminGroupeDialog(
-    groupe: GroupeDto,
-    onDismiss: () -> Unit,
-    onCreate: (password: String, nom: String, prenom: String, email: String) -> Unit
-) {
-    var password by remember { mutableStateOf("") }
-    var nom by remember { mutableStateOf("") }
-    var prenom by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Nouvel Admin Groupe", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Groupe : ${groupe.nom}", fontSize = 12.sp, color = EpiloteTextMuted)
-                OutlinedTextField(value = prenom, onValueChange = { prenom = it }, label = { Text("Prénom") }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(10.dp))
-                OutlinedTextField(value = nom, onValueChange = { nom = it }, label = { Text("Nom") }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(10.dp))
-                OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(10.dp))
-                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Mot de passe") }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(10.dp))
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (password.length >= 8 && nom.isNotBlank() && prenom.isNotBlank() && email.isNotBlank()) {
-                        onCreate(password, nom, prenom, email)
+    selectedGroupeForStatusAction?.let { groupe ->
+        AdminConfirmationDialog(
+            title = if (groupe.isActive) "Suspendre le groupe" else "Réactiver le groupe",
+            subtitle = if (groupe.isActive) "Cette action désactivera temporairement l'accès au groupe." else "Cette action rétablira l'accès au groupe.",
+            message = if (groupe.isActive) "Voulez-vous vraiment suspendre « ${groupe.nom} » ? Les utilisateurs du groupe ne pourront plus accéder à leurs espaces tant que le groupe restera suspendu." else "Voulez-vous vraiment réactiver « ${groupe.nom} » ? Les utilisateurs du groupe retrouveront immédiatement l'accès à leurs espaces.",
+            confirmLabel = if (groupe.isActive) "Suspendre" else "Réactiver",
+            onDismiss = {
+                if (!isStatusSubmitting) {
+                    statusError = null
+                    selectedGroupeForStatusAction = null
+                }
+            },
+            onConfirm = {
+                isStatusSubmitting = true
+                statusError = null
+                onToggleGroupeStatus(groupe.id, !groupe.isActive) { success, error ->
+                    isStatusSubmitting = false
+                    if (success) {
+                        selectedGroupeForStatusAction = null
+                        selectedGroupeForDetail = null
+                        actionFeedback = AdminFeedbackMessage(if (groupe.isActive) "Groupe suspendu avec succès." else "Groupe réactivé avec succès.")
+                    } else {
+                        statusError = error
                     }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C5CE7)),
-                shape = RoundedCornerShape(10.dp)
-            ) { Text("Créer") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Annuler") }
-        }
-    )
+                }
+            },
+            confirmContainerColor = if (groupe.isActive) Color(0xFFB45309) else Color(0xFF15803D),
+            isSubmitting = isStatusSubmitting,
+            errorMessage = statusError
+        )
+    }
+
+    // ── Delete confirmation ──
+    selectedGroupeForDelete?.let { groupe ->
+        AdminConfirmationDialog(
+            title = "Supprimer le groupe",
+            subtitle = "Cette action est irréversible et supprimera les données associées.",
+            message = "Voulez-vous vraiment supprimer « ${groupe.nom} » ? Cette suppression retirera définitivement le groupe de la plateforme.",
+            confirmLabel = "Supprimer définitivement",
+            onDismiss = {
+                if (!isDeleteSubmitting) {
+                    deleteError = null
+                    selectedGroupeForDelete = null
+                }
+            },
+            onConfirm = {
+                isDeleteSubmitting = true
+                deleteError = null
+                onDeleteGroupe(groupe.id) { success, error ->
+                    isDeleteSubmitting = false
+                    if (success) {
+                        selectedGroupeForDelete = null
+                        selectedGroupeForDetail = null
+                        actionFeedback = AdminFeedbackMessage("Groupe supprimé avec succès.")
+                    } else {
+                        deleteError = error
+                    }
+                }
+            },
+            confirmContainerColor = Color(0xFFB3261E),
+            isSubmitting = isDeleteSubmitting,
+            errorMessage = deleteError
+        )
+    }
 }

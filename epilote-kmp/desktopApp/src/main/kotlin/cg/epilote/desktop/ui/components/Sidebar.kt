@@ -2,6 +2,7 @@ package cg.epilote.desktop.ui.components
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -12,15 +13,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.loadSvgPainter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cg.epilote.desktop.ui.theme.*
+import cg.epilote.desktop.ui.theme.cursorHand
 import cg.epilote.shared.domain.model.UserSession
 
 enum class DesktopScreen(
@@ -42,7 +49,7 @@ enum class DesktopScreen(
     ADMIN_MODULES        ("Modules",             Icons.Default.Extension,          null, SidebarSection.SA_CONFIGURATION,  "SUPER_ADMIN"),
 
     // ── 4. Monétisation ─────────────────────────────────────────
-    ADMIN_PLANS          ("Plans",               Icons.Default.CreditCard,         null, SidebarSection.SA_MONETISATION,   "SUPER_ADMIN"),
+    ADMIN_PLANS          ("Plans & Tarifs",      Icons.Default.CreditCard,         null, SidebarSection.SA_MONETISATION,   "SUPER_ADMIN"),
     ADMIN_SUBSCRIPTIONS  ("Abonnements",         Icons.Default.Subscriptions,      null, SidebarSection.SA_MONETISATION,   "SUPER_ADMIN"),
     ADMIN_INVOICES       ("Factures",            Icons.Default.Receipt,            null, SidebarSection.SA_MONETISATION,   "SUPER_ADMIN"),
 
@@ -52,10 +59,10 @@ enum class DesktopScreen(
     ADMIN_ANNOUNCEMENTS  ("Annonces",            Icons.Default.Campaign,           null, SidebarSection.SA_COMMUNICATION,  "SUPER_ADMIN"),
 
     // ── 6. Support ──────────────────────────────────────────────
-    ADMIN_TICKETS        ("Signalements",        Icons.Default.ReportProblem,      null, SidebarSection.SA_SUPPORT,        "SUPER_ADMIN"),
+    ADMIN_TICKETS        ("Support",             Icons.Default.SupportAgent,       null, SidebarSection.SA_SUPPORT,        "SUPER_ADMIN"),
 
     // ── 7. Audit ────────────────────────────────────────────────
-    ADMIN_AUDIT_LOG      ("Journal d'activité",  Icons.Default.History,            null, SidebarSection.SA_AUDIT,          "SUPER_ADMIN"),
+    ADMIN_AUDIT_LOG      ("Journal d'audit",     Icons.Default.History,            null, SidebarSection.SA_AUDIT,          "SUPER_ADMIN"),
 
     // ── Admin Groupe : Gestion de son tenant ────────────────────
     GROUPE_DASHBOARD     ("Dashboard Groupe",    Icons.Default.Dashboard,          null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
@@ -102,7 +109,6 @@ fun Sidebar(
     session: UserSession,
     currentScreen: DesktopScreen,
     onScreenSelected: (DesktopScreen) -> Unit,
-    onLogout: () -> Unit,
     isExpanded: Boolean = true,
     onToggleExpanded: () -> Unit = {}
 ) {
@@ -141,13 +147,26 @@ fun Sidebar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(EpiloteGreen, RoundedCornerShape(10.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("EP", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                    val density = LocalDensity.current
+                    val logoPainter = remember {
+                        Thread.currentThread().contextClassLoader
+                            .getResourceAsStream("logo.svg")
+                            ?.let { loadSvgPainter(it, density) }
+                    }
+                    if (logoPainter != null) {
+                        Image(
+                            painter = logoPainter,
+                            contentDescription = "E-Pilote Congo",
+                            modifier = Modifier.size(36.dp)
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.size(36.dp)
+                                .background(EpiloteGreen, RoundedCornerShape(10.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("EP", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                        }
                     }
                     if (isExpanded) {
                         Column {
@@ -159,7 +178,7 @@ fun Sidebar(
                 // Toggle button
                 IconButton(
                     onClick = onToggleExpanded,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(28.dp).cursorHand()
                 ) {
                     Icon(
                         if (isExpanded) Icons.Default.ChevronLeft else Icons.Default.ChevronRight,
@@ -199,77 +218,17 @@ fun Sidebar(
             }
         }
 
-        Column {
+        // ── Footer version ──
+        Column(
+            modifier = Modifier.padding(horizontal = if (isExpanded) 16.dp else 4.dp, vertical = 8.dp),
+            horizontalAlignment = if (isExpanded) Alignment.Start else Alignment.CenterHorizontally
+        ) {
             HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
             Spacer(Modifier.height(8.dp))
-
             if (isExpanded) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(EpiloteGreenDark, RoundedCornerShape(8.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            session.firstName.take(1).uppercase() + session.lastName.take(1).uppercase(),
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "${session.firstName} ${session.lastName}",
-                            color = EpiloteTextOnDark,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1
-                        )
-                        Text(session.role, color = EpiloteTextMuted, fontSize = 10.sp)
-                    }
-                }
+                Text("v1.0.0", color = EpiloteTextMuted, fontSize = 10.sp)
             } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(EpiloteGreenDark, RoundedCornerShape(8.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            session.firstName.take(1).uppercase() + session.lastName.take(1).uppercase(),
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onLogout() }
-                    .padding(horizontal = if (isExpanded) 12.dp else 0.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = if (isExpanded) Arrangement.spacedBy(8.dp) else Arrangement.Center
-            ) {
-                Icon(Icons.Default.Logout, null, tint = EpiloteTextMuted, modifier = Modifier.size(16.dp))
-                if (isExpanded) {
-                    Text("Déconnexion", color = EpiloteTextMuted, fontSize = 12.sp)
-                }
+                Text("v1", color = EpiloteTextMuted, fontSize = 9.sp)
             }
         }
     }
@@ -291,6 +250,7 @@ private fun SidebarItem(
                     if (isSelected) EpiloteSidebarSelected else Color.Transparent,
                     RoundedCornerShape(8.dp)
                 )
+                .pointerHoverIcon(PointerIcon.Hand)
                 .clickable { onClick() }
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -327,6 +287,7 @@ private fun SidebarItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 2.dp)
+                .pointerHoverIcon(PointerIcon.Hand)
                 .clickable { onClick() },
             contentAlignment = Alignment.Center
         ) {

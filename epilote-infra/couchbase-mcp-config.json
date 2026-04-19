@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "couchbase": {
+      "command": "uvx",
+      "args": [
+        "couchbase-mcp-server"
+      ],
+      "env": {
+        "CB_CONNECTION_STRING": "${env:CB_CONNECTION_STRING}",
+        "CB_USERNAME": "${env:CB_USERNAME}",
+        "CB_PASSWORD": "${env:CB_PASSWORD}"
+      }
+    }
+  }
+}

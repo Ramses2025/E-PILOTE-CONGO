@@ -27,6 +27,7 @@ class AdminController(
     @GetMapping("/api/super-admin/dashboard-stats")
     fun getDashboardStats(): ResponseEntity<DashboardStatsResponse> = runBlocking {
         val groupes    = repo.countGroupes()
+        val groupesActifs = repo.countGroupesActifs()
         val ecoles     = repo.countEcoles()
         val users      = repo.countUsers()
         val modules    = repo.countModules()
@@ -59,6 +60,7 @@ class AdminController(
                 invoicesOverdue      = invOverdue,
                 plans                = plans,
                 categories           = categories,
+                groupesActifs        = groupesActifs,
                 groupesByProvince    = byProvince,
                 planDistribution     = planDist,
                 subscriptionsByStatus = subsByStatus,
@@ -146,7 +148,7 @@ class AdminController(
         @PathVariable groupeId: String,
         @Valid @RequestBody req: CreateAdminGroupeRequest
     ): ResponseEntity<UserResponse> = runBlocking {
-        val groupe = repo.getGroupeById(groupeId)
+        repo.getGroupeById(groupeId)
             ?: return@runBlocking ResponseEntity.notFound().build()
         val hash = passwordEncoder.encode(req.password)
         val admin = repo.createAdminGroupe(groupeId, req, hash)
@@ -166,6 +168,12 @@ class AdminController(
     ): ResponseEntity<GroupeResponse> = runBlocking {
         repo.updateGroupe(groupeId, req)?.let { ResponseEntity.ok(it) }
             ?: ResponseEntity.notFound().build()
+    }
+
+    @DeleteMapping("/api/super-admin/groupes/{groupeId}")
+    fun deleteGroupe(@PathVariable groupeId: String): ResponseEntity<Any> = runBlocking {
+        if (repo.deleteGroupe(groupeId)) ResponseEntity.noContent().build<Any>()
+        else ResponseEntity.notFound().build()
     }
 
     // ── Super Admin : Abonnements ────────────────────────────────
@@ -310,5 +318,58 @@ class AdminController(
             ?: return@runBlocking ResponseEntity.badRequest().body(mapOf("error" to "Profil introuvable"))
         repo.assignProfilToUser(userId, req.profilId, profil.permissions)
         ResponseEntity.ok(mapOf("message" to "Profil assign\u00e9", "profilId" to req.profilId))
+    }
+
+    // ── Super Admin : Administrateurs ────────────────────────────
+
+    @GetMapping("/api/super-admin/admins")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun listAllAdmins(): ResponseEntity<List<AdminUserResponse>> =
+        runBlocking { ResponseEntity.ok(repo.listAllAdmins()) }
+
+    @PostMapping("/api/super-admin/admins")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun createAdmin(
+        @Valid @RequestBody req: CreateAdminRequest
+    ): ResponseEntity<AdminUserResponse> = runBlocking {
+        val hash = passwordEncoder.encode(req.password)
+        val admin = repo.createAdmin(req, hash)
+        if (admin.role == "ADMIN_GROUPE" && admin.groupId != null) {
+            runCatching { sgClient.provisionUser(admin.id, admin.groupId, emptyList(), "ADMIN_GROUPE") }
+        }
+        ResponseEntity.status(HttpStatus.CREATED).body(admin)
+    }
+
+    @PutMapping("/api/super-admin/admins/{userId}")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun updateAdmin(
+        @PathVariable userId: String,
+        @Valid @RequestBody req: UpdateAdminRequest
+    ): ResponseEntity<AdminUserResponse> = runBlocking {
+        repo.updateAdmin(userId, req)
+            ?.let { ResponseEntity.ok(it) }
+            ?: ResponseEntity.notFound().build()
+    }
+
+    @DeleteMapping("/api/super-admin/admins/{userId}")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun deleteAdmin(@PathVariable userId: String): ResponseEntity<Any> = runBlocking {
+        if (repo.deleteAdmin(userId)) {
+            runCatching { sgClient.disableUser(userId) }
+            ResponseEntity.noContent().build<Any>()
+        } else {
+            ResponseEntity.notFound().build()
+        }
+    }
+
+    @PutMapping("/api/super-admin/admins/{userId}/status")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun toggleAdminStatus(
+        @PathVariable userId: String,
+        @Valid @RequestBody req: ToggleAdminStatusRequest
+    ): ResponseEntity<AdminUserResponse> = runBlocking {
+        repo.toggleAdminStatus(userId, req.status)
+            ?.let { ResponseEntity.ok(it) }
+            ?: ResponseEntity.notFound().build()
     }
 }

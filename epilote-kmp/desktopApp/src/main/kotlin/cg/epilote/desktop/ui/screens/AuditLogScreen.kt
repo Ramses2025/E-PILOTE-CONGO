@@ -118,6 +118,7 @@ fun AuditLogScreen() {
                     placeholder = { Text("Rechercher…", fontSize = 12.sp) },
                     modifier = Modifier.weight(1f).height(44.dp),
                     singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
                     textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
                     leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(16.dp)) }
                 )

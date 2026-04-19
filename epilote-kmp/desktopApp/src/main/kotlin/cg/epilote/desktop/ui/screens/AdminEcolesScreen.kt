@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cg.epilote.desktop.ui.theme.*
@@ -61,7 +62,7 @@ fun AdminEcolesScreen(
                 Text("Gestion des établissements scolaires", fontSize = 13.sp, color = EpiloteTextMuted)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = onRefresh, shape = RoundedCornerShape(10.dp)) {
+                FilledTonalButton(onClick = onRefresh, shape = RoundedCornerShape(10.dp), modifier = Modifier.cursorHand()) {
                     Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Actualiser")
@@ -70,7 +71,8 @@ fun AdminEcolesScreen(
                     onClick = { showCreateDialog = true },
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D3557)),
-                    enabled = groupes.isNotEmpty()
+                    enabled = groupes.isNotEmpty(),
+                    modifier = Modifier.cursorHand()
                 ) {
                     Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
@@ -154,6 +156,7 @@ fun AdminEcolesScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CreateEcoleDialog(
     groupes: List<GroupeDto>,
@@ -164,51 +167,54 @@ private fun CreateEcoleDialog(
     var province by remember { mutableStateOf("") }
     var territoire by remember { mutableStateOf("") }
     var selectedGroupeId by remember { mutableStateOf(groupes.firstOrNull()?.id ?: "") }
+    val isValid = nom.isNotBlank() && province.isNotBlank()
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Nouvelle École", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Groupe scolaire", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    groupes.forEach { g ->
-                        FilterChip(
-                            selected = selectedGroupeId == g.id,
-                            onClick = { selectedGroupeId = g.id },
-                            label = { Text(g.nom, fontSize = 11.sp) }
-                        )
-                    }
+    AdminDialogWindow(
+        title = "Nouvelle École",
+        subtitle = "Ajoutez un établissement à un groupe scolaire existant",
+        onDismiss = onDismiss,
+        size = DpSize(700.dp, 470.dp),
+        content = {
+            Text("Groupe scolaire", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                groupes.forEach { g ->
+                    FilterChip(
+                        selected = selectedGroupeId == g.id,
+                        onClick = { selectedGroupeId = g.id },
+                        label = { Text(g.nom, fontSize = 11.sp) },
+                        modifier = Modifier.cursorHand()
+                    )
                 }
-                OutlinedTextField(
-                    value = nom, onValueChange = { nom = it },
-                    label = { Text("Nom de l'école") },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true,
-                    shape = RoundedCornerShape(10.dp)
-                )
-                OutlinedTextField(
-                    value = province, onValueChange = { province = it },
-                    label = { Text("Province") },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true,
-                    shape = RoundedCornerShape(10.dp)
-                )
-                OutlinedTextField(
-                    value = territoire, onValueChange = { territoire = it },
-                    label = { Text("Territoire / Ville") },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true,
-                    shape = RoundedCornerShape(10.dp)
-                )
             }
+            OutlinedTextField(
+                value = nom, onValueChange = { nom = it },
+                label = { Text("Nom de l'école") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true,
+                shape = RoundedCornerShape(12.dp)
+            )
+            OutlinedTextField(
+                value = province, onValueChange = { province = it },
+                label = { Text("Province") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true,
+                shape = RoundedCornerShape(12.dp)
+            )
+            OutlinedTextField(
+                value = territoire, onValueChange = { territoire = it },
+                label = { Text("Territoire / Ville") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true,
+                shape = RoundedCornerShape(12.dp)
+            )
         },
-        confirmButton = {
+        actions = {
+            TextButton(onClick = onDismiss, modifier = Modifier.cursorHand()) { Text("Annuler") }
+            Spacer(Modifier.width(12.dp))
             Button(
-                onClick = { if (nom.isNotBlank() && province.isNotBlank()) onCreate(selectedGroupeId, nom, province, territoire) },
+                onClick = { if (isValid) onCreate(selectedGroupeId, nom, province, territoire) },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D3557)),
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(10.dp),
+                enabled = isValid,
+                modifier = Modifier.cursorHand()
             ) { Text("Créer") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Annuler") }
         }
     )
 }

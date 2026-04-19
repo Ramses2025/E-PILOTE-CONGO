@@ -29,14 +29,33 @@ class AdminRepository(private val bucket: Bucket) {
 
     // ── Groupes ──────────────────────────────────────────────────
 
+    private fun generateSlug(): String {
+        val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        val suffix = (1..7).map { chars.random() }.joinToString("")
+        return "E-PILOT-$suffix"
+    }
+
     suspend fun createGroupe(req: CreateGroupeRequest, createdBy: String): GroupeResponse {
         val id = newId("groupe")
+        val slug = generateSlug()
+        val normalizedLogo = req.logo?.trim()?.takeIf { it.isNotEmpty() }
         val doc = mapOf(
-            "type"        to "groupe",
+            "type"        to "school_group",
             "nom"         to req.nom,
-            "province"    to req.province,
+            "slug"        to slug,
+            "email"       to req.email,
+            "phone"       to req.phone,
+            "department"  to req.department,
+            "city"        to req.city,
+            "address"     to req.address,
+            "country"     to "Congo",
+            "logo"        to normalizedLogo,
+            "description" to req.description,
+            "foundedYear" to req.foundedYear,
+            "website"     to req.website,
             "planId"      to req.planId,
             "ecolesCount" to 0,
+            "isActive"    to true,
             "adminIds"    to emptyList<String>(),
             "createdBy"   to createdBy,
             "createdAt"   to now(),
@@ -44,22 +63,46 @@ class AdminRepository(private val bucket: Bucket) {
         )
         col(GROUPS_COLLECTION).upsert(id, doc)
         createDefaultProfils(id, req.planId)
-        return GroupeResponse(id, req.nom, req.province, req.planId, 0, now())
+        return GroupeResponse(
+            id = id, nom = req.nom, slug = slug,
+            email = req.email, phone = req.phone,
+            department = req.department, city = req.city, address = req.address,
+            country = "Congo", logo = normalizedLogo, description = req.description,
+            foundedYear = req.foundedYear, website = req.website,
+            planId = req.planId, ecolesCount = 0, usersCount = 0,
+            isActive = true, createdAt = now()
+        )
+    }
+
+    private fun mapToGroupeResponse(id: String, inner: Map<*, *>): GroupeResponse {
+        return GroupeResponse(
+            id          = id,
+            nom         = inner["nom"] as? String ?: inner["name"] as? String ?: "",
+            slug        = inner["slug"] as? String ?: "",
+            email       = inner["email"] as? String,
+            phone       = inner["phone"] as? String,
+            department  = inner["department"] as? String ?: inner["province"] as? String,
+            city        = inner["city"] as? String,
+            address     = inner["address"] as? String,
+            country     = inner["country"] as? String ?: "Congo",
+            logo        = inner["logo"] as? String,
+            description = inner["description"] as? String,
+            foundedYear = (inner["foundedYear"] as? Number)?.toInt() ?: (inner["founded_year"] as? Number)?.toInt(),
+            website     = inner["website"] as? String,
+            planId      = inner["planId"] as? String ?: "",
+            ecolesCount = (inner["ecolesCount"] as? Number)?.toInt() ?: 0,
+            usersCount  = 0,
+            isActive    = inner["isActive"] as? Boolean ?: inner["is_active"] as? Boolean ?: true,
+            createdAt   = (inner["createdAt"] as? Number)?.toLong() ?: 0L
+        )
     }
 
     suspend fun listGroupes(): List<GroupeResponse> {
-        val result = scope.query("SELECT META().id, * FROM `${GROUPS_COLLECTION}` WHERE `type` = 'groupe'").execute()
+        val result = scope.query("SELECT META().id, * FROM `${GROUPS_COLLECTION}` WHERE `type` IN ['school_group', 'groupe']").execute()
         return result.rows.map { row ->
             val d = row.contentAs<Map<String, Any>>()
             val inner = d[GROUPS_COLLECTION] as? Map<*, *> ?: d[LEGACY_GROUPS_COLLECTION] as? Map<*, *> ?: d
-            GroupeResponse(
-                id          = d["id"] as? String ?: "",
-                nom         = inner["nom"] as? String ?: "",
-                province    = inner["province"] as? String ?: "",
-                planId      = inner["planId"] as? String ?: "",
-                ecolesCount = (inner["ecolesCount"] as? Number)?.toInt() ?: 0,
-                createdAt   = (inner["createdAt"] as? Number)?.toLong() ?: 0L
-            )
+            mapToGroupeResponse(d["id"] as? String ?: "", inner)
         }
     }
 
@@ -80,14 +123,7 @@ class AdminRepository(private val bucket: Bucket) {
 
     suspend fun getGroupeById(groupeId: String): GroupeResponse? = runCatching {
         val doc = col(GROUPS_COLLECTION).get(groupeId).contentAs<Map<String, Any>>()
-        GroupeResponse(
-            id          = groupeId,
-            nom         = doc["nom"] as? String ?: "",
-            province    = doc["province"] as? String ?: "",
-            planId      = doc["planId"] as? String ?: "",
-            ecolesCount = (doc["ecolesCount"] as? Number)?.toInt() ?: 0,
-            createdAt   = (doc["createdAt"] as? Number)?.toLong() ?: 0L
-        )
+        mapToGroupeResponse(groupeId, doc)
     }.getOrNull()
 
     suspend fun getModulesDisponibles(groupeId: String): List<ModuleResponse> {
@@ -102,8 +138,6 @@ class AdminRepository(private val bucket: Bucket) {
         val planModules = plan?.modulesIncluded?.toSet() ?: emptySet()
 
         data class DefaultProfil(val code: String, val nom: String, val writeModules: List<String>)
-
-        val allPlan = planModules.map { ProfilPermission(it, canRead = true, canWrite = true, canDelete = false, canExport = true) }
 
         fun perms(vararg slugs: String) = slugs
             .filter { it in planModules }
@@ -277,8 +311,7 @@ class AdminRepository(private val bucket: Bucket) {
             ?.toMutableSet()
             ?: mutableSetOf()
         currentAdminIds += id
-        @Suppress("UNCHECKED_CAST")
-        val updatedGroupe = (groupeDoc as Map<String, Any>).toMutableMap()
+        val updatedGroupe = groupeDoc.toMutableMap()
         updatedGroupe["adminIds"] = currentAdminIds.toList()
         updatedGroupe["updatedAt"] = now()
         groupeCollection.upsert(groupeId, updatedGroupe)
@@ -448,7 +481,7 @@ class AdminRepository(private val bucket: Bucket) {
     // ── Dashboard Stats ─────────────────────────────────────────
 
     suspend fun countGroupes(): Long {
-        val result = scope.query("SELECT COUNT(*) AS cnt FROM `${GROUPS_COLLECTION}` WHERE `type` = 'groupe'").execute()
+        val result = scope.query("SELECT COUNT(*) AS cnt FROM `${GROUPS_COLLECTION}` WHERE `type` IN ['school_group', 'groupe']").execute()
         return result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
             (it["cnt"] as? Number)?.toLong() ?: 0L
         } ?: 0L
@@ -625,14 +658,36 @@ class AdminRepository(private val bucket: Bucket) {
     suspend fun updateGroupe(groupeId: String, req: UpdateGroupeRequest): GroupeResponse? {
         val existing = runCatching { col(GROUPS_COLLECTION).get(groupeId).contentAs<Map<String, Any>>() }.getOrNull() ?: return null
         val doc = existing.toMutableMap().apply {
-            req.nom?.let { put("nom", it) }
-            req.province?.let { put("province", it) }
+            req.nom?.let { put("nom", it.trim()) }
+            req.email?.let { value -> value.trim().takeIf { it.isNotEmpty() }?.let { put("email", it) } ?: remove("email") }
+            req.phone?.let { value -> value.trim().takeIf { it.isNotEmpty() }?.let { put("phone", it) } ?: remove("phone") }
+            req.department?.let { value -> value.trim().takeIf { it.isNotEmpty() }?.let { put("department", it) } ?: remove("department") }
+            req.city?.let { value -> value.trim().takeIf { it.isNotEmpty() }?.let { put("city", it) } ?: remove("city") }
+            req.address?.let { value -> value.trim().takeIf { it.isNotEmpty() }?.let { put("address", it) } ?: remove("address") }
+            req.logo?.let { value -> value.trim().takeIf { it.isNotEmpty() }?.let { put("logo", it) } ?: remove("logo") }
+            req.description?.let { value -> value.trim().takeIf { it.isNotEmpty() }?.let { put("description", it) } ?: remove("description") }
+            req.foundedYear?.let { put("foundedYear", it) }
+            req.website?.let { value -> value.trim().takeIf { it.isNotEmpty() }?.let { put("website", it) } ?: remove("website") }
             req.planId?.let { put("planId", it) }
             req.isActive?.let { put("isActive", it) }
             put("updatedAt", now())
         }
         col(GROUPS_COLLECTION).upsert(groupeId, doc)
         return getGroupeById(groupeId)
+    }
+
+    suspend fun deleteGroupe(groupeId: String): Boolean = runCatching {
+        col(GROUPS_COLLECTION).remove(groupeId)
+        true
+    }.getOrDefault(false)
+
+    suspend fun countGroupesActifs(): Long {
+        return runCatching {
+            val result = scope.query("SELECT COUNT(*) AS cnt FROM `${GROUPS_COLLECTION}` WHERE `type` IN ['school_group', 'groupe'] AND (`isActive` = true OR `is_active` = true)").execute()
+            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
+                (it["cnt"] as? Number)?.toLong() ?: 0L
+            } ?: 0L
+        }.getOrDefault(0L)
     }
 
     // ── Abonnements ─────────────────────────────────────────
@@ -843,7 +898,7 @@ class AdminRepository(private val bucket: Bucket) {
             val gid = d["groupId"] as? String ?: d["groupeId"] as? String ?: ""
             if (gid.isNotEmpty()) ecolesByGroupe[gid] = (ecolesByGroupe[gid] ?: 0) + 1
         }
-        return groupes.groupBy { it.province.ifBlank { "Non renseigné" } }.map { (prov, gs) ->
+        return groupes.groupBy { (it.department ?: "Non renseigné").ifBlank { "Non renseigné" } }.map { (prov, gs) ->
             ProvinceStats(
                 province = prov,
                 groupesCount = gs.size.toLong(),
@@ -907,18 +962,11 @@ class AdminRepository(private val bucket: Bucket) {
     }
 
     suspend fun recentGroupes(limit: Int = 5): List<GroupeResponse> {
-        val result = scope.query("SELECT META().id, * FROM `${GROUPS_COLLECTION}` WHERE `type` = 'groupe' ORDER BY `createdAt` DESC LIMIT $limit").execute()
+        val result = scope.query("SELECT META().id, * FROM `${GROUPS_COLLECTION}` WHERE `type` IN ['school_group', 'groupe'] ORDER BY `createdAt` DESC LIMIT $limit").execute()
         return result.rows.map { row ->
             val d = row.contentAs<Map<String, Any>>()
             val inner = d[GROUPS_COLLECTION] as? Map<*, *> ?: d[LEGACY_GROUPS_COLLECTION] as? Map<*, *> ?: d
-            GroupeResponse(
-                id          = d["id"] as? String ?: "",
-                nom         = inner["nom"] as? String ?: "",
-                province    = inner["province"] as? String ?: "",
-                planId      = inner["planId"] as? String ?: "",
-                ecolesCount = (inner["ecolesCount"] as? Number)?.toInt() ?: 0,
-                createdAt   = (inner["createdAt"] as? Number)?.toLong() ?: 0L
-            )
+            mapToGroupeResponse(d["id"] as? String ?: "", inner)
         }
     }
 
@@ -940,5 +988,115 @@ class AdminRepository(private val bucket: Bucket) {
                 notes            = inner["notes"] as? String ?: ""
             )
         }
+    }
+
+    // ── Admin Users (Super Admin scope) ──────────────────────────
+
+    private fun mapToAdminUserResponse(id: String, inner: Map<*, *>): AdminUserResponse {
+        val ts = fun(field: String): Long? = (inner[field] as? Number)?.toLong()
+        return AdminUserResponse(
+            id                = id,
+            username          = inner["username"] as? String ?: "",
+            firstName         = inner["prenom"] as? String ?: inner["firstName"] as? String ?: "",
+            lastName          = inner["nom"] as? String ?: inner["lastName"] as? String ?: "",
+            email             = inner["email"] as? String ?: "",
+            phone             = inner["phone"] as? String,
+            role              = inner["role"] as? String ?: "USER",
+            status            = inner["status"] as? String ?: if (inner["isActive"] as? Boolean != false) "active" else "suspended",
+            gender            = inner["gender"] as? String,
+            dateOfBirth       = inner["dateOfBirth"] as? String ?: inner["date_of_birth"] as? String,
+            groupId           = inner["groupId"] as? String ?: inner["groupeId"] as? String,
+            schoolId          = inner["schoolId"] as? String ?: inner["ecoleId"] as? String,
+            avatar            = inner["avatar"] as? String,
+            address           = inner["address"] as? String,
+            birthPlace        = inner["birthPlace"] as? String ?: inner["birth_place"] as? String,
+            mustChangePassword = inner["mustChangePassword"] as? Boolean ?: inner["must_change_password"] as? Boolean ?: false,
+            lastLoginAt       = ts("lastLoginAt") ?: ts("last_login_at"),
+            loginAttempts     = (inner["loginAttempts"] as? Number)?.toInt() ?: (inner["login_attempts"] as? Number)?.toInt() ?: 0,
+            isActive          = inner["isActive"] as? Boolean ?: true,
+            createdAt         = ts("createdAt") ?: 0L,
+            updatedAt         = ts("updatedAt") ?: ts("updated_at") ?: 0L
+        )
+    }
+
+    suspend fun listAllAdmins(): List<AdminUserResponse> {
+        val result = scope.query(
+            "SELECT META().id, * FROM `users` WHERE `type` = 'user' AND `role` IN ['ADMIN_GROUPE', 'SUPER_ADMIN', 'admin_groupe', 'super_admin']"
+        ).execute()
+        return result.rows.map { row ->
+            val d = row.contentAs<Map<String, Any>>()
+            val inner = d["users"] as? Map<*, *> ?: d
+            mapToAdminUserResponse(d["id"] as? String ?: "", inner)
+        }
+    }
+
+    suspend fun createAdmin(req: CreateAdminRequest, passwordHash: String): AdminUserResponse {
+        val id = newId("user")
+        val username = req.email.substringBefore("@").ifBlank { "admin_${System.currentTimeMillis()}" }
+        val roleNorm = req.role.uppercase()
+        val doc = mutableMapOf<String, Any?>(
+            "type"               to "user",
+            "username"           to username,
+            "passwordHash"       to passwordHash,
+            "nom"                to req.nom,
+            "prenom"             to req.prenom,
+            "email"              to req.email,
+            "role"               to roleNorm,
+            "isActive"           to true,
+            "status"             to "active",
+            "mustChangePassword" to req.mustChangePassword,
+            "loginAttempts"      to 0,
+            "createdAt"          to now(),
+            "updatedAt"          to now()
+        )
+        req.phone?.let { doc["phone"] = it }
+        req.gender?.let { doc["gender"] = it }
+        req.dateOfBirth?.let { doc["dateOfBirth"] = it }
+        req.address?.let { doc["address"] = it }
+        req.birthPlace?.let { doc["birthPlace"] = it }
+        req.avatar?.let { doc["avatar"] = it }
+        if (roleNorm == "ADMIN_GROUPE" && req.groupId != null) {
+            doc["groupId"] = req.groupId
+        }
+        col("users").upsert(id, doc)
+        return AdminUserResponse(
+            id = id, username = username, firstName = req.prenom, lastName = req.nom,
+            email = req.email, phone = req.phone, role = roleNorm, status = "active",
+            gender = req.gender, dateOfBirth = req.dateOfBirth, groupId = req.groupId,
+            schoolId = null, avatar = req.avatar, address = req.address, birthPlace = req.birthPlace,
+            mustChangePassword = req.mustChangePassword, lastLoginAt = null, loginAttempts = 0,
+            isActive = true, createdAt = now(), updatedAt = now()
+        )
+    }
+
+    suspend fun updateAdmin(userId: String, req: UpdateAdminRequest): AdminUserResponse? {
+        val existing = runCatching { col("users").get(userId).contentAs<MutableMap<String, Any?>>() }.getOrNull() ?: return null
+        req.nom?.let { existing["nom"] = it }
+        req.prenom?.let { existing["prenom"] = it }
+        req.email?.let { existing["email"] = it }
+        req.phone?.let { existing["phone"] = it }
+        req.gender?.let { existing["gender"] = it }
+        req.dateOfBirth?.let { existing["dateOfBirth"] = it }
+        req.address?.let { existing["address"] = it }
+        req.birthPlace?.let { existing["birthPlace"] = it }
+        req.avatar?.let { existing["avatar"] = it }
+        req.mustChangePassword?.let { existing["mustChangePassword"] = it }
+        existing["updatedAt"] = now()
+        col("users").upsert(userId, existing)
+        val inner = existing
+        return mapToAdminUserResponse(userId, inner)
+    }
+
+    suspend fun deleteAdmin(userId: String): Boolean {
+        return runCatching { col("users").remove(userId) }.isSuccess
+    }
+
+    suspend fun toggleAdminStatus(userId: String, newStatus: String): AdminUserResponse? {
+        val existing = runCatching { col("users").get(userId).contentAs<MutableMap<String, Any?>>() }.getOrNull() ?: return null
+        existing["status"] = newStatus
+        existing["isActive"] = newStatus == "active"
+        existing["updatedAt"] = now()
+        col("users").upsert(userId, existing)
+        return mapToAdminUserResponse(userId, existing)
     }
 }
