@@ -1,6 +1,9 @@
 package cg.epilote.backend.admin
 
 import jakarta.validation.Valid
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -13,9 +16,14 @@ import org.springframework.security.crypto.password.PasswordEncoder
 @RestController
 class AdminController(
     private val repo: AdminRepository,
+    private val categoryRepo: AdminCategoryRepository,
+    private val planRepo: AdminPlanRepository,
+    private val subscriptionRepo: AdminSubscriptionRepository,
+    private val moduleRepo: AdminModuleRepository,
     private val passwordEncoder: PasswordEncoder,
     private val sgClient: AppServicesClient
 ) {
+    private val allowedInvoiceStatuses = setOf("draft", "sent", "paid", "overdue", "cancelled")
 
     private fun Authentication.userId() = principal as String
 
@@ -26,48 +34,56 @@ class AdminController(
 
     @GetMapping("/api/super-admin/dashboard-stats")
     fun getDashboardStats(): ResponseEntity<DashboardStatsResponse> = runBlocking {
-        val groupes    = repo.countGroupes()
-        val groupesActifs = repo.countGroupesActifs()
-        val ecoles     = repo.countEcoles()
-        val users      = repo.countUsers()
-        val modules    = repo.countModules()
-        val plans      = repo.listPlans()
-        val categories = repo.listCategories()
-        val totalSubs       = repo.countSubscriptions()
-        val activeSubs      = repo.countActiveSubscriptions()
-        val totalInv        = repo.countInvoices()
-        val revTotal        = repo.revenueTotal()
-        val revPaid         = repo.revenuePaid()
-        val invOverdue      = repo.countInvoicesOverdue()
-        val byProvince      = repo.groupesByProvince()
-        val planDist        = repo.planDistribution()
-        val subsByStatus    = repo.subscriptionsByStatus()
-        val recentG         = repo.recentGroupes(5)
-        val recentI         = repo.recentInvoices(5)
-        ResponseEntity.ok(
-            DashboardStatsResponse(
-                totalGroupes         = groupes,
-                totalEcoles          = ecoles,
-                totalUtilisateurs    = users,
-                totalModules         = modules,
-                totalPlans           = plans.size.toLong(),
-                totalCategories      = categories.size.toLong(),
-                totalSubscriptions   = totalSubs,
-                activeSubscriptions  = activeSubs,
-                totalInvoices        = totalInv,
-                revenueTotal         = revTotal,
-                revenuePaid          = revPaid,
-                invoicesOverdue      = invOverdue,
-                plans                = plans,
-                categories           = categories,
-                groupesActifs        = groupesActifs,
-                groupesByProvince    = byProvince,
-                planDistribution     = planDist,
-                subscriptionsByStatus = subsByStatus,
-                recentGroupes        = recentG,
-                recentInvoices       = recentI
+        coroutineScope {
+            val dGroupes      = async { repo.countGroupes() }
+            val dGroupesActifs = async { repo.countGroupesActifs() }
+            val dEcoles       = async { repo.countEcoles() }
+            val dUsers        = async { repo.countUsers() }
+            val dModules      = async { moduleRepo.countModules() }
+            val dPlans        = async { planRepo.listPlans() }
+            val dCategories   = async { categoryRepo.listCategories() }
+            val dTotalSubs    = async { subscriptionRepo.countSubscriptions() }
+            val dActiveSubs   = async { subscriptionRepo.countActiveSubscriptions() }
+            val dTotalInv     = async { repo.countInvoices() }
+            val dRevTotal     = async { repo.revenueTotal() }
+            val dRevPaid      = async { repo.revenuePaid() }
+            val dInvOverdue   = async { repo.countInvoicesOverdue() }
+            val dByProvince   = async { repo.groupesByProvince() }
+            val dPlanDist     = async { repo.planDistribution() }
+            val dSubsByStatus = async { subscriptionRepo.subscriptionsByStatus() }
+            val dRecentG      = async { repo.recentGroupes(5) }
+            val dRecentI      = async { repo.recentInvoices(5) }
+
+            awaitAll(dGroupes, dGroupesActifs, dEcoles, dUsers, dModules,
+                dPlans, dCategories, dTotalSubs, dActiveSubs, dTotalInv,
+                dRevTotal, dRevPaid, dInvOverdue, dByProvince, dPlanDist,
+                dSubsByStatus, dRecentG, dRecentI)
+
+            ResponseEntity.ok(
+                DashboardStatsResponse(
+                    totalGroupes         = dGroupes.await(),
+                    totalEcoles          = dEcoles.await(),
+                    totalUtilisateurs    = dUsers.await(),
+                    totalModules         = dModules.await(),
+                    totalPlans           = dPlans.await().size.toLong(),
+                    totalCategories      = dCategories.await().size.toLong(),
+                    totalSubscriptions   = dTotalSubs.await(),
+                    activeSubscriptions  = dActiveSubs.await(),
+                    totalInvoices        = dTotalInv.await(),
+                    revenueTotal         = dRevTotal.await(),
+                    revenuePaid          = dRevPaid.await(),
+                    invoicesOverdue      = dInvOverdue.await(),
+                    plans                = dPlans.await(),
+                    categories           = dCategories.await(),
+                    groupesActifs        = dGroupesActifs.await(),
+                    groupesByProvince    = dByProvince.await(),
+                    planDistribution     = dPlanDist.await(),
+                    subscriptionsByStatus = dSubsByStatus.await(),
+                    recentGroupes        = dRecentG.await(),
+                    recentInvoices       = dRecentI.await()
+                )
             )
-        )
+        }
     }
 
     // ── Catégories (CRUD dynamique) ─────────────────────────────
@@ -75,18 +91,18 @@ class AdminController(
     @GetMapping("/api/super-admin/categories")
     @PreAuthorize("isAuthenticated()")
     fun listCategories(): ResponseEntity<List<CategorieInfo>> =
-        runBlocking { ResponseEntity.ok(repo.listCategories()) }
+        runBlocking { ResponseEntity.ok(categoryRepo.listCategories()) }
 
     @PostMapping("/api/super-admin/categories")
     fun createCategorie(@Valid @RequestBody req: CreateCategorieRequest): ResponseEntity<CategorieInfo> =
-        runBlocking { ResponseEntity.status(HttpStatus.CREATED).body(repo.createCategorie(req)) }
+        runBlocking { ResponseEntity.status(HttpStatus.CREATED).body(categoryRepo.createCategorie(req)) }
 
     @PutMapping("/api/super-admin/categories/{code}")
     fun updateCategorie(
         @PathVariable code: String,
         @Valid @RequestBody req: UpdateCategorieRequest
     ): ResponseEntity<CategorieInfo> = runBlocking {
-        repo.updateCategorie(code, req)?.let { ResponseEntity.ok(it) }
+        categoryRepo.updateCategorie(code, req)?.let { ResponseEntity.ok(it) }
             ?: ResponseEntity.notFound().build()
     }
 
@@ -94,18 +110,18 @@ class AdminController(
 
     @PostMapping("/api/super-admin/plans")
     fun createPlan(@Valid @RequestBody req: CreatePlanRequest): ResponseEntity<PlanResponse> =
-        runBlocking { ResponseEntity.status(HttpStatus.CREATED).body(repo.createPlan(req)) }
+        runBlocking { ResponseEntity.status(HttpStatus.CREATED).body(planRepo.createPlan(req)) }
 
     @GetMapping("/api/super-admin/plans")
     fun listPlans(): ResponseEntity<List<PlanResponse>> =
-        runBlocking { ResponseEntity.ok(repo.listPlans()) }
+        runBlocking { ResponseEntity.ok(planRepo.listPlans()) }
 
     @PutMapping("/api/super-admin/plans/{planId}")
     fun updatePlan(
         @PathVariable planId: String,
         @Valid @RequestBody req: UpdatePlanRequest
     ): ResponseEntity<PlanResponse> = runBlocking {
-        repo.updatePlan(planId, req)?.let { ResponseEntity.ok(it) }
+        planRepo.updatePlan(planId, req)?.let { ResponseEntity.ok(it) }
             ?: ResponseEntity.notFound().build()
     }
 
@@ -113,19 +129,19 @@ class AdminController(
 
     @PostMapping("/api/super-admin/modules")
     fun createModule(@Valid @RequestBody req: CreateModuleRequest): ResponseEntity<ModuleResponse> =
-        runBlocking { ResponseEntity.status(HttpStatus.CREATED).body(repo.createModule(req)) }
+        runBlocking { ResponseEntity.status(HttpStatus.CREATED).body(moduleRepo.createModule(req)) }
 
     @GetMapping("/api/super-admin/modules")
     @PreAuthorize("isAuthenticated()")
     fun listModules(): ResponseEntity<List<ModuleResponse>> =
-        runBlocking { ResponseEntity.ok(repo.listModules()) }
+        runBlocking { ResponseEntity.ok(moduleRepo.listModules()) }
 
     @PutMapping("/api/super-admin/modules/{moduleId}")
     fun updateModule(
         @PathVariable moduleId: String,
         @Valid @RequestBody req: UpdateModuleRequest
     ): ResponseEntity<ModuleResponse> = runBlocking {
-        repo.updateModule(moduleId, req)?.let { ResponseEntity.ok(it) }
+        moduleRepo.updateModule(moduleId, req)?.let { ResponseEntity.ok(it) }
             ?: ResponseEntity.notFound().build()
     }
 
@@ -182,21 +198,23 @@ class AdminController(
     fun createSubscription(
         @Valid @RequestBody req: CreateSubscriptionRequest
     ): ResponseEntity<SubscriptionResponse> = runBlocking {
-        val plan = repo.getPlanById(req.planId)
+        val plan = planRepo.getPlanById(req.planId)
             ?: return@runBlocking ResponseEntity.badRequest().build()
-        ResponseEntity.status(HttpStatus.CREATED).body(repo.createSubscription(req, plan))
+        subscriptionRepo.createSubscription(req.copy(planId = plan.id))
+            ?.let { ResponseEntity.status(HttpStatus.CREATED).body(it) }
+            ?: ResponseEntity.badRequest().build()
     }
 
     @GetMapping("/api/super-admin/subscriptions")
     fun listSubscriptions(): ResponseEntity<List<SubscriptionResponse>> =
-        runBlocking { ResponseEntity.ok(repo.listSubscriptions()) }
+        runBlocking { ResponseEntity.ok(subscriptionRepo.listSubscriptions()) }
 
     @PutMapping("/api/super-admin/subscriptions/{subId}/status")
     fun updateSubscriptionStatus(
         @PathVariable subId: String,
         @RequestParam statut: String
     ): ResponseEntity<SubscriptionResponse> = runBlocking {
-        repo.updateSubscriptionStatus(subId, statut)?.let { ResponseEntity.ok(it) }
+        subscriptionRepo.updateSubscriptionStatus(subId, statut)?.let { ResponseEntity.ok(it) }
             ?: ResponseEntity.notFound().build()
     }
 
@@ -206,6 +224,15 @@ class AdminController(
     fun createInvoice(
         @Valid @RequestBody req: CreateInvoiceRequest
     ): ResponseEntity<InvoiceResponse> = runBlocking {
+        val subscription = subscriptionRepo.getSubscriptionById(req.subscriptionId)
+            ?: return@runBlocking ResponseEntity.badRequest().build()
+        if (subscription.groupeId != req.groupeId) {
+            return@runBlocking ResponseEntity.badRequest().build()
+        }
+        val now = System.currentTimeMillis()
+        if (subscription.statut == "cancelled" || subscription.dateFin < now) {
+            return@runBlocking ResponseEntity.badRequest().build()
+        }
         ResponseEntity.status(HttpStatus.CREATED).body(repo.createInvoice(req))
     }
 
@@ -219,7 +246,11 @@ class AdminController(
         @RequestParam statut: String,
         @RequestParam(required = false) datePaiement: Long?
     ): ResponseEntity<InvoiceResponse> = runBlocking {
-        repo.updateInvoiceStatus(invoiceId, statut, datePaiement)?.let { ResponseEntity.ok(it) }
+        val normalizedStatus = statut.trim().lowercase()
+        if (normalizedStatus !in allowedInvoiceStatuses) {
+            return@runBlocking ResponseEntity.badRequest().build()
+        }
+        repo.updateInvoiceStatus(invoiceId, normalizedStatus, datePaiement)?.let { ResponseEntity.ok(it) }
             ?: ResponseEntity.notFound().build()
     }
 

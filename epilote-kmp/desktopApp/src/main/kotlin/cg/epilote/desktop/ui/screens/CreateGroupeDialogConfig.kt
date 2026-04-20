@@ -70,16 +70,16 @@ internal fun validateFoundedYear(foundedYear: String): String? {
 }
 
 internal fun List<PlanDto>.toPlanOptions(): List<GroupePlanOption> =
-    filter { it.id.isNotBlank() }
+    filter { it.id.isNotBlank() && it.isActive }
         .map { plan ->
             GroupePlanOption(
                 id = plan.id,
                 label = plan.nom.ifBlank { plan.id.substringAfterLast("::").replaceFirstChar { it.uppercase() } },
                 details = when {
-                    plan.maxEcoles > 0 && plan.maxUtilisateurs > 0 -> "${plan.maxEcoles} écoles · ${plan.maxUtilisateurs} utilisateurs"
-                    plan.maxEcoles > 0 -> "${plan.maxEcoles} écoles"
-                    plan.maxUtilisateurs > 0 -> "${plan.maxUtilisateurs} utilisateurs"
-                    else -> "${plan.dureeJours} jours"
+                    plan.maxStudents > 0 && plan.maxPersonnel > 0 -> "${plan.maxStudents} élèves · ${plan.maxPersonnel} personnel · ${plan.prixXAF} XAF"
+                    plan.maxStudents > 0 -> "${plan.maxStudents} élèves · ${plan.prixXAF} XAF"
+                    plan.prixXAF > 0 -> "${plan.prixXAF} XAF"
+                    else -> plan.type.replaceFirstChar { it.uppercase() }
                 },
                 color = when {
                     plan.id.contains("institution", true) || plan.nom.contains("institution", true) -> Color(0xFFE76F51)
@@ -89,3 +89,4 @@ internal fun List<PlanDto>.toPlanOptions(): List<GroupePlanOption> =
                 }
             )
         }
+        .ifEmpty { DEFAULT_PLAN_OPTIONS }

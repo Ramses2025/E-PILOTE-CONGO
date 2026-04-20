@@ -327,19 +327,14 @@ internal fun AdminAvatarPicker(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier.size(56.dp).background(Color(0xFFE2E8F0), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                if (avatarData != null) {
-                    // Show avatar preview via data URL — simplified as initials fallback
-                    Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(Color(0xFF1D3557).copy(alpha = 0.15f), CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Person, null, tint = Color(0xFF1D3557), modifier = Modifier.size(24.dp))
-                    }
-                } else {
-                    Icon(Icons.Default.Person, null, tint = Color(0xFF94A3B8), modifier = Modifier.size(24.dp))
-                }
-            }
+            AdminAvatar(
+                avatarData = avatarData,
+                firstName = "",
+                lastName = "",
+                modifier = Modifier.size(56.dp),
+                backgroundColor = Color(0xFFE2E8F0),
+                contentColor = Color(0xFF1D3557)
+            )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Surface(
                     onClick = onAvatarSelected,

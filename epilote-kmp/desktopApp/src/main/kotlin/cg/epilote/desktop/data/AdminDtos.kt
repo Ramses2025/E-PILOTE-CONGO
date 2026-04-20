@@ -57,6 +57,15 @@ data class InvoiceApiDto(
 )
 
 @Serializable
+data class CreateInvoiceDto(
+    val groupeId: String,
+    val subscriptionId: String,
+    val montantXAF: Long,
+    val dateEcheance: Long,
+    val notes: String = ""
+)
+
+@Serializable
 data class GroupeApiDto(
     val id: String = "",
     val nom: String = "",
@@ -82,12 +91,54 @@ data class GroupeApiDto(
 data class PlanApiDto(
     val id: String = "",
     val nom: String = "",
+    val type: String = "gratuit",
     val prixXAF: Long = 0,
-    val maxEcoles: Int = 0,
-    val maxUtilisateurs: Int = 0,
+    val currency: String = "XAF",
+    val maxStudents: Int = 0,
+    val maxPersonnel: Int = 0,
     val modulesIncluded: List<String> = emptyList(),
-    val categoriesIncluded: List<String> = emptyList(),
-    val dureeJours: Int = 365
+    val isActive: Boolean = true
+)
+
+@Serializable
+data class CreatePlanDto(
+    val nom: String,
+    val type: String,
+    val prixXAF: Long = 0,
+    val maxStudents: Int = 100,
+    val maxPersonnel: Int = 10,
+    val modulesIncluded: List<String> = emptyList(),
+    val isActive: Boolean = true
+)
+
+@Serializable
+data class UpdatePlanDto(
+    val nom: String? = null,
+    val type: String? = null,
+    val prixXAF: Long? = null,
+    val maxStudents: Int? = null,
+    val maxPersonnel: Int? = null,
+    val modulesIncluded: List<String>? = null,
+    val isActive: Boolean? = null
+)
+
+@Serializable
+data class SubscriptionApiDto(
+    val id: String = "",
+    val groupeId: String = "",
+    val planId: String = "",
+    val statut: String = "active",
+    val dateDebut: Long = 0,
+    val dateFin: Long = 0,
+    val renouvellementAuto: Boolean = false,
+    val createdAt: Long = 0
+)
+
+@Serializable
+data class CreateSubscriptionDto(
+    val groupeId: String,
+    val planId: String,
+    val renouvellementAuto: Boolean = false
 )
 
 @Serializable
@@ -99,7 +150,56 @@ data class ModuleApiDto(
     val description: String = "",
     val isCore: Boolean = false,
     val requiredPlan: String = "gratuit",
+    val isActive: Boolean = true,
+    val ordre: Int = 0
+)
+
+@Serializable
+data class CreateModuleDto(
+    val code: String,
+    val nom: String,
+    val categorieCode: String,
+    val description: String = "",
+    val requiredPlan: String = "gratuit",
+    val isCore: Boolean = false,
+    val ordre: Int = 0,
+    val requiredPermissions: List<String> = emptyList()
+)
+
+@Serializable
+data class UpdateModuleDto(
+    val nom: String? = null,
+    val categorieCode: String? = null,
+    val description: String? = null,
+    val requiredPlan: String? = null,
+    val isCore: Boolean? = null,
+    val ordre: Int? = null,
+    val isActive: Boolean? = null
+)
+
+@Serializable
+data class CategorieApiDto(
+    val code: String = "",
+    val nom: String = "",
+    val isCore: Boolean = false,
+    val ordre: Int = 0,
     val isActive: Boolean = true
+)
+
+@Serializable
+data class CreateCategorieDto(
+    val code: String,
+    val nom: String,
+    val isCore: Boolean = false,
+    val ordre: Int = 0
+)
+
+@Serializable
+data class UpdateCategorieDto(
+    val nom: String? = null,
+    val isCore: Boolean? = null,
+    val ordre: Int? = null,
+    val isActive: Boolean? = null
 )
 
 @Serializable

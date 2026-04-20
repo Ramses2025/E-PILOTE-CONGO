@@ -82,7 +82,7 @@ fun AdminAdminCard(
     deleteError: String?,
     isStatusSubmitting: Boolean,
     statusError: String?,
-    onEdit: (String, UpdateAdminUserDto) -> Unit,
+    onEdit: (String, UpdateAdminUserDto, (Boolean, String?) -> Unit) -> Unit,
     onDelete: (String, (Boolean, String?) -> Unit) -> Unit,
     onToggleStatus: (String, String, (Boolean, String?) -> Unit) -> Unit,
     modifier: Modifier = Modifier
@@ -211,7 +211,12 @@ fun AdminAdminCard(
             isSubmitting = isSubmitting,
             errorMessage = submitError,
             onDismiss = { showEditDialog = false },
-            onUpdate = onEdit
+            onUpdate = { userId, dto, onResult ->
+                onEdit(userId, dto) { ok, err ->
+                    if (ok) showEditDialog = false
+                    onResult(ok, err)
+                }
+            }
         )
     }
 

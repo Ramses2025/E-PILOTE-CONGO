@@ -4,11 +4,16 @@ import com.couchbase.client.kotlin.Bucket
 import com.couchbase.client.kotlin.Collection
 import com.couchbase.client.kotlin.query.execute
 import kotlinx.coroutines.runBlocking
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Repository
+import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 @Repository
-class AdminRepository(private val bucket: Bucket) {
+class AdminRepository(
+    private val bucket: Bucket,
+    private val planRepo: AdminPlanRepository
+) {
 
     private val scope by lazy { runBlocking { bucket.defaultScope() } }
 
@@ -74,7 +79,20 @@ class AdminRepository(private val bucket: Bucket) {
         )
     }
 
-    private fun mapToGroupeResponse(id: String, inner: Map<*, *>): GroupeResponse {
+    private fun parseTimestamp(raw: Any?): Long = when (raw) {
+        is Number -> raw.toLong()
+        is String -> runCatching { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull()
+            ?: raw.toLongOrNull()
+            ?: 0L
+        else -> 0L
+    }
+
+    private fun mapToGroupeResponse(
+        id: String,
+        inner: Map<*, *>,
+        ecolesCount: Int = (inner["ecolesCount"] as? Number)?.toInt() ?: 0,
+        usersCount: Int = 0
+    ): GroupeResponse {
         return GroupeResponse(
             id          = id,
             nom         = inner["nom"] as? String ?: inner["name"] as? String ?: "",
@@ -90,36 +108,57 @@ class AdminRepository(private val bucket: Bucket) {
             foundedYear = (inner["foundedYear"] as? Number)?.toInt() ?: (inner["founded_year"] as? Number)?.toInt(),
             website     = inner["website"] as? String,
             planId      = inner["planId"] as? String ?: "",
-            ecolesCount = (inner["ecolesCount"] as? Number)?.toInt() ?: 0,
-            usersCount  = 0,
+            ecolesCount = ecolesCount,
+            usersCount  = usersCount,
             isActive    = inner["isActive"] as? Boolean ?: inner["is_active"] as? Boolean ?: true,
-            createdAt   = (inner["createdAt"] as? Number)?.toLong() ?: 0L
+            createdAt   = parseTimestamp(inner["createdAt"])
         )
+    }
+
+    private suspend fun countEcolesByGroupe(): Map<String, Int> {
+        val counts = mutableMapOf<String, Int>()
+        val result = scope.query(
+            "SELECT IFMISSINGORNULL(`groupId`, `groupeId`) AS gid, COUNT(*) AS cnt FROM `schools` WHERE `type` = 'school' GROUP BY IFMISSINGORNULL(`groupId`, `groupeId`)"
+        ).execute()
+        result.rows.forEach { row ->
+            val d = row.contentAs<Map<String, Any>>()
+            val gid = d["gid"] as? String ?: return@forEach
+            counts[gid] = (d["cnt"] as? Number)?.toInt() ?: 0
+        }
+        return counts
+    }
+
+    private suspend fun countUsersByGroupe(): Map<String, Int> {
+        val counts = mutableMapOf<String, Int>()
+        val result = scope.query(
+            "SELECT IFMISSINGORNULL(`groupId`, `groupeId`) AS gid, COUNT(*) AS cnt FROM `users` WHERE `type` = 'user' GROUP BY IFMISSINGORNULL(`groupId`, `groupeId`)"
+        ).execute()
+        result.rows.forEach { row ->
+            val d = row.contentAs<Map<String, Any>>()
+            val gid = d["gid"] as? String ?: return@forEach
+            counts[gid] = (d["cnt"] as? Number)?.toInt() ?: 0
+        }
+        return counts
     }
 
     suspend fun listGroupes(): List<GroupeResponse> {
         val result = scope.query("SELECT META().id, * FROM `${GROUPS_COLLECTION}` WHERE `type` IN ['school_group', 'groupe']").execute()
+        val ecolesByGroupe = runCatching { countEcolesByGroupe() }.getOrDefault(emptyMap())
+        val usersByGroupe  = runCatching { countUsersByGroupe() }.getOrDefault(emptyMap())
         return result.rows.map { row ->
             val d = row.contentAs<Map<String, Any>>()
             val inner = d[GROUPS_COLLECTION] as? Map<*, *> ?: d[LEGACY_GROUPS_COLLECTION] as? Map<*, *> ?: d
-            mapToGroupeResponse(d["id"] as? String ?: "", inner)
+            val id = d["id"] as? String ?: ""
+            mapToGroupeResponse(
+                id = id,
+                inner = inner,
+                ecolesCount = ecolesByGroupe[id] ?: (inner["ecolesCount"] as? Number)?.toInt() ?: 0,
+                usersCount  = usersByGroupe[id] ?: 0
+            )
         }
     }
 
-    suspend fun getPlanById(planId: String): PlanResponse? = runCatching {
-        val doc = col("plans").get(planId).contentAs<Map<String, Any>>()
-        PlanResponse(
-            id                 = planId,
-            nom                = doc["nom"] as? String ?: "",
-            prixXAF            = (doc["prixXAF"] as? Number)?.toLong() ?: 0L,
-            maxEcoles          = (doc["maxEcoles"] as? Number)?.toInt() ?: 0,
-            maxUtilisateurs    = (doc["maxUtilisateurs"] as? Number)?.toInt() ?: 0,
-            modulesIncluded    = @Suppress("UNCHECKED_CAST") (doc["modulesIncluded"] as? List<String> ?: emptyList()),
-            categoriesIncluded = @Suppress("UNCHECKED_CAST") (doc["categoriesIncluded"] as? List<String> ?: emptyList()),
-            dureeJours         = (doc["dureeJours"] as? Number)?.toInt() ?: 365,
-            isActive           = doc["isActive"] as? Boolean ?: true
-        )
-    }.getOrNull()
+    suspend fun getPlanById(planId: String): PlanResponse? = planRepo.getPlanById(planId)
 
     suspend fun getGroupeById(groupeId: String): GroupeResponse? = runCatching {
         val doc = col(GROUPS_COLLECTION).get(groupeId).contentAs<Map<String, Any>>()
@@ -508,64 +547,9 @@ class AdminRepository(private val bucket: Bucket) {
         } ?: 0L
     }
 
-    // ── Plans ────────────────────────────────────────────────────
+    // ── Plans (délégué à AdminPlanRepository) ────────────────────
 
-    suspend fun createPlan(req: CreatePlanRequest): PlanResponse {
-        val id = newId("plan")
-        val doc = mapOf(
-            "type"               to "plan",
-            "nom"                to req.nom,
-            "prixXAF"            to req.prixXAF,
-            "maxEcoles"          to req.maxEcoles,
-            "maxUtilisateurs"    to req.maxUtilisateurs,
-            "modulesIncluded"    to req.modulesIncluded,
-            "categoriesIncluded" to req.categoriesIncluded,
-            "dureeJours"         to req.dureeJours,
-            "isActive"           to true,
-            "createdAt"          to now(),
-            "updatedAt"          to now()
-        )
-        col("plans").upsert(id, doc)
-        return PlanResponse(id, req.nom, req.prixXAF, req.maxEcoles, req.maxUtilisateurs,
-            req.modulesIncluded, req.categoriesIncluded, req.dureeJours, true)
-    }
-
-    suspend fun updatePlan(planId: String, req: UpdatePlanRequest): PlanResponse? {
-        val existing = getPlanById(planId) ?: return null
-        val doc = mapOf(
-            "type"               to "plan",
-            "nom"                to (req.nom ?: existing.nom),
-            "prixXAF"            to (req.prixXAF ?: existing.prixXAF),
-            "maxEcoles"          to (req.maxEcoles ?: existing.maxEcoles),
-            "maxUtilisateurs"    to (req.maxUtilisateurs ?: existing.maxUtilisateurs),
-            "modulesIncluded"    to (req.modulesIncluded ?: existing.modulesIncluded),
-            "categoriesIncluded" to (req.categoriesIncluded ?: existing.categoriesIncluded),
-            "dureeJours"         to (req.dureeJours ?: existing.dureeJours),
-            "isActive"           to (req.isActive ?: existing.isActive),
-            "updatedAt"          to now()
-        )
-        col("plans").upsert(planId, doc)
-        return getPlanById(planId)
-    }
-
-    suspend fun listPlans(): List<PlanResponse> {
-        val result = scope.query("SELECT META().id, * FROM `plans` WHERE `type` = 'plan'").execute()
-        return result.rows.map { row ->
-            val d = row.contentAs<Map<String, Any>>()
-            val inner = d["plans"] as? Map<*, *> ?: d
-            PlanResponse(
-                id                  = d["id"] as? String ?: "",
-                nom                 = inner["nom"] as? String ?: "",
-                prixXAF             = (inner["prixXAF"] as? Number)?.toLong() ?: 0L,
-                maxEcoles           = (inner["maxEcoles"] as? Number)?.toInt() ?: 0,
-                maxUtilisateurs     = (inner["maxUtilisateurs"] as? Number)?.toInt() ?: 0,
-                modulesIncluded     = @Suppress("UNCHECKED_CAST") (inner["modulesIncluded"] as? List<String> ?: emptyList()),
-                categoriesIncluded  = @Suppress("UNCHECKED_CAST") (inner["categoriesIncluded"] as? List<String> ?: emptyList()),
-                dureeJours          = (inner["dureeJours"] as? Number)?.toInt() ?: 365,
-                isActive            = inner["isActive"] as? Boolean ?: true
-            )
-        }
-    }
+    suspend fun listPlans(): List<PlanResponse> = planRepo.listPlans()
 
     // ── Catégories (CRUD dynamique) ─────────────────────────────
 
@@ -695,7 +679,7 @@ class AdminRepository(private val bucket: Bucket) {
     suspend fun createSubscription(req: CreateSubscriptionRequest, plan: PlanResponse): SubscriptionResponse {
         val id = newId("sub")
         val debut = now()
-        val fin = debut + (plan.dureeJours.toLong() * 86_400_000L)
+        val fin = debut + (365L * 86_400_000L)
         val doc = mapOf(
             "type"                to "subscription",
             "groupeId"            to req.groupeId,
@@ -774,66 +758,106 @@ class AdminRepository(private val bucket: Bucket) {
 
     // ── Factures Plateforme ───────────────────────────────────
 
+    private fun mapToInvoiceResponse(id: String, inner: Map<*, *>): InvoiceResponse {
+        return InvoiceResponse(
+            id = id,
+            groupeId = inner["groupeId"] as? String ?: "",
+            subscriptionId = inner["subscriptionId"] as? String ?: "",
+            montantXAF = (inner["montantXAF"] as? Number)?.toLong() ?: 0L,
+            statut = (inner["statut"] as? String ?: "draft").lowercase(),
+            dateEmission = parseTimestamp(inner["dateEmission"] ?: inner["createdAt"]),
+            dateEcheance = parseTimestamp(inner["dateEcheance"]),
+            datePaiement = (inner["datePaiement"] as? Number)?.toLong(),
+            reference = inner["reference"] as? String ?: "",
+            notes = inner["notes"] as? String ?: ""
+        )
+    }
+
+    private suspend fun readInvoicesFromCollection(collectionName: String): List<InvoiceResponse> {
+        val result = scope.query(
+            "SELECT META().id AS id, * FROM `${collectionName}` WHERE `type` IN ['invoice_platform', 'invoice']"
+        ).execute()
+        return result.rows.map { row ->
+            val data = row.contentAs<Map<String, Any>>()
+            val inner = data[collectionName] as? Map<*, *> ?: data
+            mapToInvoiceResponse(data["id"] as? String ?: "", inner)
+        }
+    }
+
+    private suspend fun findInvoiceDocument(id: String): Pair<String, MutableMap<String, Any?>>? {
+        val primary = runCatching {
+            INVOICES_COLLECTION to col(INVOICES_COLLECTION).get(id).contentAs<MutableMap<String, Any?>>()
+        }.getOrNull()
+        if (primary != null) return primary
+        return runCatching {
+            LEGACY_INVOICES_COLLECTION to col(LEGACY_INVOICES_COLLECTION).get(id).contentAs<MutableMap<String, Any?>>()
+        }.getOrNull()
+    }
+
     suspend fun createInvoice(req: CreateInvoiceRequest): InvoiceResponse {
+        if (getGroupeById(req.groupeId) == null) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Groupe introuvable pour la facture.")
+        }
         val id = newId("inv_plat")
         val ref = "INV-${System.currentTimeMillis().toString().takeLast(8)}"
+        val issuedAt = now()
         val doc = mapOf(
             "type"             to "invoice_platform",
             "groupeId"         to req.groupeId,
             "subscriptionId"   to req.subscriptionId,
             "montantXAF"       to req.montantXAF,
             "statut"           to "draft",
-            "dateEmission"     to now(),
+            "dateEmission"     to issuedAt,
             "dateEcheance"     to req.dateEcheance,
             "datePaiement"     to null,
             "reference"        to ref,
             "notes"            to req.notes,
-            "createdAt"        to now(),
-            "updatedAt"        to now()
+            "createdAt"        to issuedAt,
+            "updatedAt"        to issuedAt
         )
-        col("invoices_platform").upsert(id, doc)
-        return InvoiceResponse(id, req.groupeId, req.subscriptionId, req.montantXAF, "draft", now(), req.dateEcheance, null, ref, req.notes)
+        col(INVOICES_COLLECTION).upsert(id, doc)
+        return mapToInvoiceResponse(id, doc)
     }
 
     suspend fun listInvoices(): List<InvoiceResponse> {
-        val result = scope.query("SELECT META().id, * FROM `invoices_platform` WHERE `type` = 'invoice_platform'").execute()
-        return result.rows.map { row ->
-            val d = row.contentAs<Map<String, Any>>()
-            val inner = d["invoices_platform"] as? Map<*, *> ?: d
-            InvoiceResponse(
-                id               = d["id"] as? String ?: "",
-                groupeId         = inner["groupeId"] as? String ?: "",
-                subscriptionId   = inner["subscriptionId"] as? String ?: "",
-                montantXAF       = (inner["montantXAF"] as? Number)?.toLong() ?: 0L,
-                statut           = inner["statut"] as? String ?: "draft",
-                dateEmission     = (inner["dateEmission"] as? Number)?.toLong() ?: 0L,
-                dateEcheance     = (inner["dateEcheance"] as? Number)?.toLong() ?: 0L,
-                datePaiement     = (inner["datePaiement"] as? Number)?.toLong(),
-                reference        = inner["reference"] as? String ?: "",
-                notes            = inner["notes"] as? String ?: ""
-            )
-        }
+        val primary = runCatching { readInvoicesFromCollection(INVOICES_COLLECTION) }.getOrDefault(emptyList())
+        val legacy = runCatching { readInvoicesFromCollection(LEGACY_INVOICES_COLLECTION) }.getOrDefault(emptyList())
+        val currentTime = now()
+        return (primary + legacy)
+            .map { invoice ->
+                if (invoice.statut == "paid" || invoice.statut == "cancelled") {
+                    invoice
+                } else if (invoice.dateEcheance in 1 until currentTime) {
+                    invoice.copy(statut = "overdue")
+                } else {
+                    invoice
+                }
+            }
+            .distinctBy { it.id }
+            .sortedByDescending { maxOf(it.dateEmission, it.datePaiement ?: 0L) }
     }
 
     suspend fun updateInvoiceStatus(id: String, statut: String, datePaiement: Long? = null): InvoiceResponse? {
-        val existing = runCatching { col("invoices_platform").get(id).contentAs<MutableMap<String, Any?>>() }.getOrNull() ?: return null
-        existing["statut"] = statut
-        if (datePaiement != null) existing["datePaiement"] = datePaiement
+        val (collectionName, existing) = findInvoiceDocument(id) ?: return null
+        val normalizedStatus = statut.trim().lowercase()
+        val currentStatus = (existing["statut"] as? String ?: "draft").trim().lowercase()
+        if (currentStatus == "cancelled" && normalizedStatus != "cancelled") {
+            return null
+        }
+        if (currentStatus == "paid" && normalizedStatus != "paid") {
+            return null
+        }
+        existing["statut"] = normalizedStatus
+        if (normalizedStatus == "paid") {
+            existing["datePaiement"] = datePaiement ?: now()
+        } else if (normalizedStatus == "cancelled") {
+            existing["datePaiement"] = null
+        } else if (datePaiement != null) {
+            existing["datePaiement"] = datePaiement
+        }
         existing["updatedAt"] = now()
-        col("invoices_platform").upsert(id, existing)
-        val d = existing
-        return InvoiceResponse(
-            id = id,
-            groupeId = d["groupeId"] as? String ?: "",
-            subscriptionId = d["subscriptionId"] as? String ?: "",
-            montantXAF = (d["montantXAF"] as? Number)?.toLong() ?: 0L,
-            statut = statut,
-            dateEmission = (d["dateEmission"] as? Number)?.toLong() ?: 0L,
-            dateEcheance = (d["dateEcheance"] as? Number)?.toLong() ?: 0L,
-            datePaiement = datePaiement ?: (d["datePaiement"] as? Number)?.toLong(),
-            reference = d["reference"] as? String ?: "",
-            notes = d["notes"] as? String ?: ""
-        )
+        col(collectionName).upsert(id, existing)
+        return mapToInvoiceResponse(id, existing)
     }
 
     // ── Annonces Globales ─────────────────────────────────────
@@ -890,7 +914,15 @@ class AdminRepository(private val bucket: Bucket) {
     // ── Dashboard Analytics ────────────────────────────────────
 
     suspend fun groupesByProvince(): List<ProvinceStats> {
-        val groupes = listGroupes()
+        val groupesResult = scope.query(
+            "SELECT META().id AS id, CASE WHEN IFMISSINGORNULL(`department`, `province`, '') = '' THEN 'Non renseigné' ELSE IFMISSINGORNULL(`department`, `province`) END AS province FROM `${GROUPS_COLLECTION}` WHERE `type` IN ['school_group', 'groupe']"
+        ).execute()
+        val groupes = groupesResult.rows.mapNotNull { row ->
+            val d = row.contentAs<Map<String, Any>>()
+            val id = d["id"] as? String ?: return@mapNotNull null
+            val province = d["province"] as? String ?: "Non renseigné"
+            id to province
+        }
         val ecoles = scope.query("SELECT `groupId`, `groupeId`, `province` FROM `schools` WHERE `type` = 'school'").execute()
         val ecolesByGroupe = mutableMapOf<String, Int>()
         ecoles.rows.forEach { row ->
@@ -898,23 +930,28 @@ class AdminRepository(private val bucket: Bucket) {
             val gid = d["groupId"] as? String ?: d["groupeId"] as? String ?: ""
             if (gid.isNotEmpty()) ecolesByGroupe[gid] = (ecolesByGroupe[gid] ?: 0) + 1
         }
-        return groupes.groupBy { (it.department ?: "Non renseigné").ifBlank { "Non renseigné" } }.map { (prov, gs) ->
+        return groupes.groupBy({ it.second }, { it.first }).map { (prov, groupIds) ->
             ProvinceStats(
                 province = prov,
-                groupesCount = gs.size.toLong(),
-                ecolesCount = gs.sumOf { (ecolesByGroupe[it.id] ?: 0).toLong() }
+                groupesCount = groupIds.size.toLong(),
+                ecolesCount = groupIds.sumOf { (ecolesByGroupe[it] ?: 0).toLong() }
             )
         }.sortedByDescending { it.groupesCount }
     }
 
     suspend fun planDistribution(): List<PlanDistribution> {
-        val groupes = listGroupes()
-        val plans = listPlans().associateBy { it.id }
-        return groupes.groupBy { it.planId }.map { (planId, gs) ->
+        val grouped = scope.query(
+            "SELECT IFMISSINGORNULL(`planId`, '') AS planId, COUNT(*) AS cnt FROM `${GROUPS_COLLECTION}` WHERE `type` IN ['school_group', 'groupe'] GROUP BY IFMISSINGORNULL(`planId`, '')"
+        ).execute()
+        val plans = planRepo.listPlans().associateBy { it.id }
+        return grouped.rows.map { row ->
+            val d = row.contentAs<Map<String, Any>>()
+            val planId = d["planId"] as? String ?: ""
+            val groupesCount = (d["cnt"] as? Number)?.toLong() ?: 0L
             PlanDistribution(
                 planId = planId,
                 planNom = plans[planId]?.nom ?: planId,
-                groupesCount = gs.size.toLong()
+                groupesCount = groupesCount
             )
         }.sortedByDescending { it.groupesCount }
     }
@@ -932,62 +969,65 @@ class AdminRepository(private val bucket: Bucket) {
     }
 
     suspend fun countInvoices(): Long {
-        val result = scope.query("SELECT COUNT(*) AS cnt FROM `${INVOICES_COLLECTION}` WHERE (`type` = 'invoice_platform' OR `type` = 'invoice')").execute()
-        return result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
-            (it["cnt"] as? Number)?.toLong() ?: 0L
-        } ?: 0L
+        return listInvoices().size.toLong()
     }
 
     suspend fun revenueTotal(): Long {
-        val result = scope.query("SELECT IFNULL(SUM(`montantXAF`), 0) AS total FROM `${INVOICES_COLLECTION}` WHERE (`type` = 'invoice_platform' OR `type` = 'invoice')").execute()
-        return result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
-            (it["total"] as? Number)?.toLong() ?: 0L
-        } ?: 0L
+        return listInvoices().sumOf { it.montantXAF }
     }
 
     suspend fun revenuePaid(): Long {
-        val result = scope.query("SELECT IFNULL(SUM(`montantXAF`), 0) AS total FROM `${INVOICES_COLLECTION}` WHERE (`type` = 'invoice_platform' OR `type` = 'invoice') AND `statut` = 'paid'").execute()
-        return result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
-            (it["total"] as? Number)?.toLong() ?: 0L
-        } ?: 0L
+        return listInvoices()
+            .filter { it.statut == "paid" }
+            .sumOf { it.montantXAF }
     }
 
     suspend fun countInvoicesOverdue(): Long {
-        val result = scope.query(
-            "SELECT COUNT(*) AS cnt FROM `${INVOICES_COLLECTION}` WHERE (`type` = 'invoice_platform' OR `type` = 'invoice') AND `statut` = 'overdue'"
-        ).execute()
-        return result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
-            (it["cnt"] as? Number)?.toLong() ?: 0L
-        } ?: 0L
+        return listInvoices().count { it.statut == "overdue" }.toLong()
     }
 
     suspend fun recentGroupes(limit: Int = 5): List<GroupeResponse> {
-        val result = scope.query("SELECT META().id, * FROM `${GROUPS_COLLECTION}` WHERE `type` IN ['school_group', 'groupe'] ORDER BY `createdAt` DESC LIMIT $limit").execute()
+        val result = scope.query(
+            "SELECT META().id AS id, " +
+                "IFMISSINGORNULL(`nom`, `name`) AS nom, " +
+                "IFMISSINGORNULL(`slug`, '') AS slug, " +
+                "`email`, `phone`, " +
+                "IFMISSINGORNULL(`department`, `province`) AS department, " +
+                "`city`, `address`, " +
+                "IFMISSINGORNULL(`country`, 'Congo') AS country, " +
+                "IFMISSINGORNULL(`planId`, '') AS planId, " +
+                "IFMISSINGORNULL(`ecolesCount`, 0) AS ecolesCount, " +
+                "IFMISSINGORNULL(`isActive`, `is_active`, true) AS isActive, " +
+                "`createdAt` " +
+                "FROM `${GROUPS_COLLECTION}` WHERE `type` IN ['school_group', 'groupe'] ORDER BY `createdAt` DESC LIMIT $limit"
+        ).execute()
         return result.rows.map { row ->
             val d = row.contentAs<Map<String, Any>>()
-            val inner = d[GROUPS_COLLECTION] as? Map<*, *> ?: d[LEGACY_GROUPS_COLLECTION] as? Map<*, *> ?: d
-            mapToGroupeResponse(d["id"] as? String ?: "", inner)
+            GroupeResponse(
+                id = d["id"] as? String ?: "",
+                nom = d["nom"] as? String ?: "",
+                slug = d["slug"] as? String ?: "",
+                email = d["email"] as? String,
+                phone = d["phone"] as? String,
+                department = d["department"] as? String,
+                city = d["city"] as? String,
+                address = d["address"] as? String,
+                country = d["country"] as? String ?: "Congo",
+                logo = null,
+                description = null,
+                foundedYear = null,
+                website = null,
+                planId = d["planId"] as? String ?: "",
+                ecolesCount = (d["ecolesCount"] as? Number)?.toInt() ?: 0,
+                usersCount = 0,
+                isActive = d["isActive"] as? Boolean ?: true,
+                createdAt = parseTimestamp(d["createdAt"])
+            )
         }
     }
 
     suspend fun recentInvoices(limit: Int = 5): List<InvoiceResponse> {
-        val result = scope.query("SELECT META().id, * FROM `${INVOICES_COLLECTION}` WHERE (`type` = 'invoice_platform' OR `type` = 'invoice') ORDER BY `createdAt` DESC LIMIT $limit").execute()
-        return result.rows.map { row ->
-            val d = row.contentAs<Map<String, Any>>()
-            val inner = d[INVOICES_COLLECTION] as? Map<*, *> ?: d[LEGACY_INVOICES_COLLECTION] as? Map<*, *> ?: d
-            InvoiceResponse(
-                id               = d["id"] as? String ?: "",
-                groupeId         = inner["groupeId"] as? String ?: "",
-                subscriptionId   = inner["subscriptionId"] as? String ?: "",
-                montantXAF       = (inner["montantXAF"] as? Number)?.toLong() ?: 0L,
-                statut           = inner["statut"] as? String ?: "draft",
-                dateEmission     = (inner["dateEmission"] as? Number)?.toLong() ?: 0L,
-                dateEcheance     = (inner["dateEcheance"] as? Number)?.toLong() ?: 0L,
-                datePaiement     = (inner["datePaiement"] as? Number)?.toLong(),
-                reference        = inner["reference"] as? String ?: "",
-                notes            = inner["notes"] as? String ?: ""
-            )
-        }
+        return listInvoices().take(limit)
     }
 
     // ── Admin Users (Super Admin scope) ──────────────────────────

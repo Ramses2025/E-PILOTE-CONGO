@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*
 @RequestMapping("/api/provisioning")
 class ProvisioningController(
     private val adminRepo: AdminRepository,
+    private val planRepo: AdminPlanRepository,
     private val sgClient: AppServicesClient
 ) {
 
@@ -55,7 +56,7 @@ class ProvisioningController(
 
             val users   = adminRepo.listUsersByEcole(schoolId)
             val modules = adminRepo.listModules()
-            val plans   = adminRepo.listPlans()
+            val plans   = planRepo.listPlans()
 
             ResponseEntity.ok(
                 SeedPackageResponse(

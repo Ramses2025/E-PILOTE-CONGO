@@ -2,6 +2,7 @@ package cg.epilote.backend.admin
 
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.ResponseStatus
@@ -250,6 +251,9 @@ data class CreateModuleRequest(
     @field:NotBlank val nom: String,
     @field:NotBlank val categorieCode: String,
     val description: String = "",
+    val requiredPlan: String = "gratuit",
+    val isCore: Boolean = false,
+    val ordre: Int = 0,
     val requiredPermissions: List<String> = emptyList()
 )
 
@@ -261,40 +265,40 @@ data class ModuleResponse(
     val description: String,
     val isCore: Boolean,
     val requiredPlan: String,
-    val isActive: Boolean
+    val isActive: Boolean,
+    val ordre: Int = 0
 )
 
 // ── Plan ─────────────────────────────────────────────────────────
 data class CreatePlanRequest(
     @field:NotBlank val nom: String,
+    @field:NotBlank val type: String,
     val prixXAF: Long = 0,
-    val maxEcoles: Int = 100,
-    val maxUtilisateurs: Int = 1000,
+    val maxStudents: Int = 100,
+    val maxPersonnel: Int = 10,
     val modulesIncluded: List<String> = emptyList(),
-    val categoriesIncluded: List<String> = emptyList(),
-    val dureeJours: Int = 365
+    val isActive: Boolean = true
 )
 
 data class UpdatePlanRequest(
     val nom: String? = null,
+    val type: String? = null,
     val prixXAF: Long? = null,
-    val maxEcoles: Int? = null,
-    val maxUtilisateurs: Int? = null,
+    val maxStudents: Int? = null,
+    val maxPersonnel: Int? = null,
     val modulesIncluded: List<String>? = null,
-    val categoriesIncluded: List<String>? = null,
-    val dureeJours: Int? = null,
     val isActive: Boolean? = null
 )
 
 data class PlanResponse(
     val id: String,
     val nom: String,
+    val type: String,
     val prixXAF: Long,
-    val maxEcoles: Int,
-    val maxUtilisateurs: Int,
+    val currency: String = "XAF",
+    val maxStudents: Int,
+    val maxPersonnel: Int,
     val modulesIncluded: List<String>,
-    val categoriesIncluded: List<String>,
-    val dureeJours: Int,
     val isActive: Boolean = true
 )
 
@@ -303,6 +307,9 @@ data class UpdateModuleRequest(
     val nom: String? = null,
     val categorieCode: String? = null,
     val description: String? = null,
+    val requiredPlan: String? = null,
+    val isCore: Boolean? = null,
+    val ordre: Int? = null,
     val isActive: Boolean? = null
 )
 
@@ -344,8 +351,8 @@ data class SubscriptionResponse(
 data class CreateInvoiceRequest(
     @field:NotBlank val groupeId: String,
     @field:NotBlank val subscriptionId: String,
-    val montantXAF: Long,
-    val dateEcheance: Long,
+    @field:Positive val montantXAF: Long,
+    @field:Positive val dateEcheance: Long,
     val notes: String = ""
 )
 

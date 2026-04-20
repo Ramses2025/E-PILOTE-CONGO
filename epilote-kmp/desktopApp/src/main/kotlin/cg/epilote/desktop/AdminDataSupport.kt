@@ -1,12 +1,17 @@
 package cg.epilote.desktop
 
 import cg.epilote.desktop.data.CreateAdminUserDto
+import cg.epilote.desktop.data.CreateCategorieDto
 import cg.epilote.desktop.data.CreateGroupeDto
+import cg.epilote.desktop.data.CreateModuleDto
 import cg.epilote.desktop.data.DashboardStatsDto
 import cg.epilote.desktop.data.DesktopAdminClient
+import cg.epilote.desktop.data.UpdateCategorieDto
 import cg.epilote.desktop.data.UpdateAdminUserDto
 import cg.epilote.desktop.data.UpdateGroupeDto
+import cg.epilote.desktop.data.UpdateModuleDto
 import cg.epilote.desktop.ui.screens.AdminUserDto
+import cg.epilote.desktop.ui.screens.CategorieDto
 import cg.epilote.desktop.ui.screens.GroupeDto
 import cg.epilote.desktop.ui.screens.ModuleDto
 import cg.epilote.desktop.ui.screens.PlanDto
@@ -23,7 +28,8 @@ internal data class AdminDesktopSnapshot(
     val adminGroupAdmins: Map<String, List<UserDto>> = emptyMap(),
     val adminUsers: List<AdminUserDto> = emptyList(),
     val plans: List<PlanDto> = emptyList(),
-    val modules: List<ModuleDto> = emptyList()
+    val modules: List<ModuleDto> = emptyList(),
+    val categories: List<CategorieDto> = emptyList()
 )
 
 internal suspend fun DesktopAdminClient.loadAdminSnapshot(): AdminDesktopSnapshot {
@@ -51,30 +57,46 @@ internal suspend fun DesktopAdminClient.loadAdminSnapshot(): AdminDesktopSnapsho
             createdAt = it.createdAt
         )
     }
-    val adminsByGroup = groupesApi.associate { groupe ->
-        groupe.id to (runCatching { listAdminGroupes(groupe.id) }.getOrNull()?.map {
-            UserDto(
-                it.id,
-                it.username,
-                it.firstName,
-                it.lastName,
-                it.email,
-                it.schoolId ?: "",
-                it.groupId,
-                it.profilId ?: "",
-                it.role,
-                it.isActive,
-                it.createdAt
-            )
-        } ?: emptyList())
-    }
     val plans = runCatching { listPlans() }.getOrNull()?.map {
-        PlanDto(it.id, it.nom, it.maxEcoles, it.maxUtilisateurs, it.modulesIncluded, it.categoriesIncluded, it.dureeJours)
+        PlanDto(id = it.id, nom = it.nom, type = it.type, prixXAF = it.prixXAF,
+            currency = it.currency, maxStudents = it.maxStudents, maxPersonnel = it.maxPersonnel,
+            modulesIncluded = it.modulesIncluded, isActive = it.isActive)
     }.orEmpty()
     val modules = runCatching { listModules() }.getOrNull()?.map {
-        ModuleDto(it.id, it.code, it.nom, it.categorieCode, it.description, it.isCore, it.requiredPlan, it.isActive)
+        ModuleDto(it.id, it.code, it.nom, it.categorieCode, it.description, it.isCore, it.requiredPlan, it.isActive, it.ordre)
     }.orEmpty()
-    val adminUsers = runCatching { listAllAdmins() }.getOrNull()?.map {
+    val categories = runCatching { listCategories() }.getOrNull()?.map {
+        CategorieDto(
+            code = it.code,
+            nom = it.nom,
+            isCore = it.isCore,
+            ordre = it.ordre,
+            isActive = it.isActive
+        )
+    }.orEmpty()
+    val allAdminsApi = runCatching { listAllAdmins() }.getOrNull().orEmpty()
+    val adminsByGroup = groupesApi.associate { groupe ->
+        groupe.id to allAdminsApi
+            .asSequence()
+            .filter { it.role.equals("ADMIN_GROUPE", ignoreCase = true) && it.groupId == groupe.id }
+            .map {
+                UserDto(
+                    id = it.id,
+                    username = it.username,
+                    firstName = it.firstName,
+                    lastName = it.lastName,
+                    email = it.email,
+                    schoolId = it.schoolId ?: "",
+                    groupId = it.groupId ?: "",
+                    profilId = "",
+                    role = it.role,
+                    isActive = it.isActive,
+                    createdAt = it.createdAt
+                )
+            }
+            .toList()
+    }
+    val adminUsers = allAdminsApi.map {
         AdminUserDto(
             id = it.id,
             username = it.username,
@@ -98,7 +120,7 @@ internal suspend fun DesktopAdminClient.loadAdminSnapshot(): AdminDesktopSnapsho
             createdAt = it.createdAt,
             updatedAt = it.updatedAt
         )
-    }.orEmpty()
+    }
 
     return AdminDesktopSnapshot(
         dashboardStats = stats,
@@ -107,7 +129,8 @@ internal suspend fun DesktopAdminClient.loadAdminSnapshot(): AdminDesktopSnapsho
         adminGroupAdmins = adminsByGroup,
         adminUsers = adminUsers,
         plans = plans,
-        modules = modules
+        modules = modules,
+        categories = categories
     )
 }
 
@@ -189,6 +212,100 @@ internal fun CoroutineScope.createAdminGroupeAndRefresh(
         onResult(true, null)
     } else {
         onResult(false, "Impossible de créer l'administrateur du groupe.")
+    }
+}
+
+internal fun CoroutineScope.createCategoryAndRefresh(
+    client: DesktopAdminClient,
+    dto: CreateCategorieDto,
+    refresh: () -> Unit,
+    onResult: (Boolean, String?) -> Unit
+) = launch {
+    val result = runCatching { client.createCategorie(dto) }
+    if (result.isSuccess && result.getOrNull() != null) {
+        refresh()
+        onResult(true, null)
+    } else {
+        onResult(false, result.exceptionOrNull()?.message ?: "Impossible de créer la catégorie.")
+    }
+}
+
+internal fun CoroutineScope.updateCategoryAndRefresh(
+    client: DesktopAdminClient,
+    code: String,
+    dto: UpdateCategorieDto,
+    refresh: () -> Unit,
+    onResult: (Boolean, String?) -> Unit
+) = launch {
+    val result = runCatching { client.updateCategorie(code, dto) }
+    if (result.isSuccess && result.getOrNull() != null) {
+        refresh()
+        onResult(true, null)
+    } else {
+        onResult(false, result.exceptionOrNull()?.message ?: "Impossible de mettre à jour la catégorie.")
+    }
+}
+
+internal fun CoroutineScope.toggleCategoryStatusAndRefresh(
+    client: DesktopAdminClient,
+    code: String,
+    isActive: Boolean,
+    refresh: () -> Unit,
+    onResult: (Boolean, String?) -> Unit
+) = launch {
+    val result = runCatching { client.updateCategorie(code, UpdateCategorieDto(isActive = isActive)) }
+    if (result.isSuccess && result.getOrNull() != null) {
+        refresh()
+        onResult(true, null)
+    } else {
+        onResult(false, if (isActive) "Impossible de réactiver la catégorie." else "Impossible de suspendre la catégorie.")
+    }
+}
+
+internal fun CoroutineScope.createModuleAndRefresh(
+    client: DesktopAdminClient,
+    dto: CreateModuleDto,
+    refresh: () -> Unit,
+    onResult: (Boolean, String?) -> Unit
+) = launch {
+    val result = runCatching { client.createModule(dto) }
+    if (result.isSuccess && result.getOrNull() != null) {
+        refresh()
+        onResult(true, null)
+    } else {
+        onResult(false, result.exceptionOrNull()?.message ?: "Impossible de créer le module.")
+    }
+}
+
+internal fun CoroutineScope.updateModuleAndRefresh(
+    client: DesktopAdminClient,
+    moduleId: String,
+    dto: UpdateModuleDto,
+    refresh: () -> Unit,
+    onResult: (Boolean, String?) -> Unit
+) = launch {
+    val result = runCatching { client.updateModule(moduleId, dto) }
+    if (result.isSuccess && result.getOrNull() != null) {
+        refresh()
+        onResult(true, null)
+    } else {
+        onResult(false, result.exceptionOrNull()?.message ?: "Impossible de mettre à jour le module.")
+    }
+}
+
+internal fun CoroutineScope.toggleModuleStatusAndRefresh(
+    client: DesktopAdminClient,
+    moduleId: String,
+    isActive: Boolean,
+    refresh: () -> Unit,
+    onResult: (Boolean, String?) -> Unit
+) = launch {
+    val result = runCatching { client.updateModule(moduleId, UpdateModuleDto(isActive = isActive)) }
+    if (result.isSuccess && result.getOrNull() != null) {
+        refresh()
+        onResult(true, null)
+    } else {
+        onResult(false, if (isActive) "Impossible de réactiver le module." else "Impossible de suspendre le module.")
     }
 }
 

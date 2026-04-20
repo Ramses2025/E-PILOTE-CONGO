@@ -130,7 +130,20 @@ fun EpiloteDesktopApp() {
             val appScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
 
             val adminClient = remember {
-                DesktopAdminClient(desktopBackendBaseUrl) { s.accessToken }
+                DesktopAdminClient(
+                    baseUrl = desktopBackendBaseUrl,
+                    tokenProvider = buildDesktopAdminTokenProvider(sessionRepo) { session },
+                    onUnauthorized = {
+                        val refreshed = refreshDesktopAdminSession(desktopBackendBaseUrl, sessionRepo) { refreshedSession ->
+                            session = refreshedSession
+                        }
+                        if (!refreshed) {
+                            sessionRepo.clearSession()
+                            session = null
+                        }
+                        refreshed
+                    }
+                )
             }
 
             // ── Admin state ──────────────────────────────────────────
@@ -140,6 +153,7 @@ fun EpiloteDesktopApp() {
             var adminGroupAdmins by remember { mutableStateOf<Map<String, List<UserDto>>>(emptyMap()) }
             var adminPlans by remember { mutableStateOf<List<PlanDto>>(emptyList()) }
             var adminModules by remember { mutableStateOf<List<ModuleDto>>(emptyList()) }
+            var adminCategories by remember { mutableStateOf<List<CategorieDto>>(emptyList()) }
             var adminUsers by remember { mutableStateOf<List<AdminUserDto>>(emptyList()) }
             var adminLoading by remember { mutableStateOf(false) }
             var sidebarExpanded by remember { mutableStateOf(true) }
@@ -149,13 +163,30 @@ fun EpiloteDesktopApp() {
                 appScope.launch {
                     try {
                         val snapshot = adminClient.loadAdminSnapshot()
+                        println(
+                            "loadAdminData snapshot groupes=${snapshot.groupes.size}, plans=${snapshot.plans.size}, modules=${snapshot.modules.size}, admins=${snapshot.adminUsers.size}"
+                        )
                         dashboardStatsDto = snapshot.dashboardStats
                         adminStats = snapshot.adminStats
-                        adminGroupes = snapshot.groupes
-                        adminGroupAdmins = snapshot.adminGroupAdmins
-                        adminPlans = snapshot.plans
-                        adminModules = snapshot.modules
-                        adminUsers = snapshot.adminUsers
+                        val canAcceptEmptyGroupes = snapshot.dashboardStats.totalGroupes == 0L
+                        if (snapshot.groupes.isNotEmpty() || adminGroupes.isEmpty() || canAcceptEmptyGroupes) {
+                            adminGroupes = snapshot.groupes
+                        }
+                        if (snapshot.adminGroupAdmins.isNotEmpty() || adminGroupAdmins.isEmpty()) {
+                            adminGroupAdmins = snapshot.adminGroupAdmins
+                        }
+                        if (snapshot.plans.isNotEmpty() || adminPlans.isEmpty()) {
+                            adminPlans = snapshot.plans
+                        }
+                        if (snapshot.modules.isNotEmpty() || adminModules.isEmpty()) {
+                            adminModules = snapshot.modules
+                        }
+                        if (snapshot.categories.isNotEmpty() || adminCategories.isEmpty()) {
+                            adminCategories = snapshot.categories
+                        }
+                        if (snapshot.adminUsers.isNotEmpty() || adminUsers.isEmpty()) {
+                            adminUsers = snapshot.adminUsers
+                        }
                     } catch (_: Exception) {
                         // partial load failure — keep existing data
                     }
@@ -220,86 +251,25 @@ fun EpiloteDesktopApp() {
 
                     // ── Contenu de la page ──
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        when (currentScreen) {
-                            // ── Admin Screens ────────────────────────
-                            DesktopScreen.ADMIN_DASHBOARD ->
-                                SuperAdminDashboardScreen(
-                                    session = s,
-                                    stats = adminStats,
-                                    isLoading = adminLoading,
-                                    onNavigateGroupes = { currentScreen = DesktopScreen.ADMIN_GROUPES },
-                                    onNavigatePlans = { currentScreen = DesktopScreen.ADMIN_PLANS },
-                                    onNavigateModules = { currentScreen = DesktopScreen.ADMIN_MODULES },
-                                    onRefresh = { loadAdminData() }
-                                )
-
-                            DesktopScreen.ADMIN_GROUPES ->
-                                AdminGroupesScreen(
-                                    groupes = adminGroupes,
-                                    adminGroupesByGroup = adminGroupAdmins,
-                                    plans = adminPlans,
-                                    totalEcoles = dashboardStatsDto.totalEcoles.toInt(),
-                                    totalUtilisateurs = dashboardStatsDto.totalUtilisateurs.toInt(),
-                                    isLoading = adminLoading,
-                                    onCreateGroupe = { dto, onResult -> appScope.createGroupeAndRefresh(adminClient, dto, { loadAdminData() }, onResult) },
-                                    onUpdateGroupe = { gId, dto, onResult -> appScope.updateGroupeAndRefresh(adminClient, gId, dto, { loadAdminData() }, onResult) },
-                                    onDeleteGroupe = { gId, onResult -> appScope.deleteGroupeAndRefresh(adminClient, gId, { loadAdminData() }, onResult) },
-                                    onToggleGroupeStatus = { gId, active, onResult -> appScope.toggleGroupeStatusAndRefresh(adminClient, gId, active, { loadAdminData() }, onResult) },
-                                    onCreateAdminGroupe = { gId, pw, n, p, e, onResult -> appScope.createAdminGroupeAndRefresh(adminClient, gId, pw, n, p, e, { loadAdminData() }, onResult) },
-                                    onRefresh = { loadAdminData(isInitial = true) }
-                                )
-
-                            DesktopScreen.ADMIN_PLANS ->
-                                AdminPlansScreen(
-                                    plans = adminPlans,
-                                    isLoading = adminLoading,
-                                    onRefresh = { loadAdminData() }
-                                )
-
-                            DesktopScreen.ADMIN_MODULES ->
-                                AdminModulesScreen(
-                                    modules = adminModules,
-                                    isLoading = adminLoading,
-                                    onRefresh = { loadAdminData() }
-                                )
-
-                            DesktopScreen.ADMIN_CATEGORIES ->
-                                PlaceholderScreen("Catégories", "CRUD des catégories dynamiques de la plateforme")
-
-                            DesktopScreen.ADMIN_SUBSCRIPTIONS ->
-                                PlaceholderScreen("Abonnements", "Gestion des abonnements par groupe scolaire")
-
-                            DesktopScreen.ADMIN_INVOICES ->
-                                PlaceholderScreen("Factures", "Facturation plateforme — émission, suivi, relances")
-
-                            DesktopScreen.ADMIN_ADMINISTRATORS ->
-                                AdminAdminsScreen(
-                                    admins = adminUsers,
-                                    groupes = adminGroupes,
-                                    isLoading = adminLoading,
-                                    onCreateAdmin = { dto, onResult -> appScope.createAdminAndRefresh(adminClient, dto, { loadAdminData() }, onResult) },
-                                    onUpdateAdmin = { uId, dto -> appScope.updateAdminAndRefresh(adminClient, uId, dto, { loadAdminData() }) { _, _ -> } },
-                                    onDeleteAdmin = { uId, onResult -> appScope.deleteAdminAndRefresh(adminClient, uId, { loadAdminData() }, onResult) },
-                                    onToggleAdminStatus = { uId, status, onResult -> appScope.toggleAdminStatusAndRefresh(adminClient, uId, status, { loadAdminData() }, onResult) },
-                                    onRefresh = { loadAdminData(isInitial = true) }
-                                )
-
-                            DesktopScreen.ADMIN_ANNOUNCEMENTS ->
-                                PlaceholderScreen("Annonces", "Diffusion d'annonces vers tous les groupes")
-
-                            DesktopScreen.ADMIN_NOTIFICATIONS ->
-                                PlaceholderScreen("Notifications", "Notifications plateforme — alertes et rappels")
-
-                            DesktopScreen.ADMIN_MESSAGING ->
-                                PlaceholderScreen("Messagerie", "Messagerie interne plateforme")
-
-                            DesktopScreen.ADMIN_TICKETS ->
-                                PlaceholderScreen("Signalements", "Tickets de support et signalements")
-
-                            DesktopScreen.ADMIN_AUDIT_LOG ->
-                                AuditLogScreen()
-
-                            // ── Admin Groupe Screens ──────────────────
+                        if (currentScreen.requiredRole == "SUPER_ADMIN") {
+                            SuperAdminDesktopScreenContent(
+                                currentScreen = currentScreen,
+                                session = s,
+                                adminStats = adminStats,
+                                dashboardStatsDto = dashboardStatsDto,
+                                adminGroupes = adminGroupes,
+                                adminGroupAdmins = adminGroupAdmins,
+                                adminPlans = adminPlans,
+                                adminModules = adminModules,
+                                adminCategories = adminCategories,
+                                adminUsers = adminUsers,
+                                adminLoading = adminLoading,
+                                appScope = appScope,
+                                adminClient = adminClient,
+                                onLoadAdminData = { loadAdminData(isInitial = it) },
+                                onScreenChange = { currentScreen = it }
+                            )
+                        } else when (currentScreen) {
                             DesktopScreen.GROUPE_DASHBOARD ->
                                 PlaceholderScreen("Dashboard Groupe", "Vue d'ensemble du groupe scolaire")
 
@@ -407,6 +377,8 @@ fun EpiloteDesktopApp() {
 
                             DesktopScreen.ANNONCES ->
                                 PlaceholderScreen("Annonces", "Annonces et communications")
+
+                            else -> Unit
                         }
                     }
                 }

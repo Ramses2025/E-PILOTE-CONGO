@@ -46,7 +46,7 @@ fun EditAdminDialog(
     isSubmitting: Boolean,
     errorMessage: String?,
     onDismiss: () -> Unit,
-    onUpdate: (String, UpdateAdminUserDto) -> Unit
+    onUpdate: (String, UpdateAdminUserDto, (Boolean, String?) -> Unit) -> Unit
 ) {
     var prenom by remember { mutableStateOf(admin.firstName) }
     var nom by remember { mutableStateOf(admin.lastName) }
@@ -199,7 +199,7 @@ fun EditAdminDialog(
                                 avatar = avatarData,
                                 mustChangePassword = mustChangePassword
                             )
-                        )
+                        ) { _, _ -> }
                     },
                     enabled = !isSubmitting,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D3557)),
