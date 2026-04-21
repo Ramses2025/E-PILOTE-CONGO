@@ -26,7 +26,9 @@ class AdminController(
     private val invoicePdfService: AdminInvoicePdfService,
     private val moduleRepo: AdminModuleRepository,
     private val passwordEncoder: PasswordEncoder,
-    private val sgClient: AppServicesClient
+    private val sgClient: AppServicesClient,
+    private val platformIdentityRepo: AdminPlatformIdentityRepository,
+    private val paymentReceiptRepo: AdminPaymentReceiptRepository
 ) {
     private val allowedInvoiceStatuses = setOf("draft", "sent", "paid", "overdue", "cancelled")
 
@@ -275,6 +277,119 @@ class AdminController(
         repo.updateInvoiceStatus(invoiceId, normalizedStatus, datePaiement)?.let { ResponseEntity.ok(it) }
             ?: ResponseEntity.notFound().build()
     }
+
+    // ── Super Admin : Identité Plateforme (Paramètres) ───────────
+    //
+    // Les factures étant des documents officiels et contractuels, l'émetteur doit être
+    // identifié sur chaque PDF (raison sociale, RCCM, NIU, siège, IBAN…). Le Super Admin
+    // remplit ces informations depuis la page Paramètres. Tant que les champs sont vides,
+    // les PDF affichent un placeholder explicite.
+
+    @GetMapping("/api/super-admin/platform-identity")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun getPlatformIdentity(): ResponseEntity<PlatformIdentity> =
+        runBlocking { ResponseEntity.ok(platformIdentityRepo.read()) }
+
+    @PutMapping("/api/super-admin/platform-identity")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun updatePlatformIdentity(
+        @Valid @RequestBody req: UpdatePlatformIdentityRequest
+    ): ResponseEntity<PlatformIdentity> =
+        runBlocking { ResponseEntity.ok(platformIdentityRepo.update(req)) }
+
+    // ── Super Admin : Paiements présentiels & abonnements ────────
+    //
+    // Workflow métier :
+    //   1) Le groupe scolaire se déplace au siège et paie
+    //   2) Le Super Admin enregistre le paiement via POST /api/super-admin/payment-receipts
+    //      → crée un PaymentReceipt + met l'abonnement actif/renouvelé + émet une facture
+    //   3) L'historique par groupe est consultable via GET .../groupes/{id}/payment-receipts
+    //   4) Un job planifié suspend les abonnements arrivés à échéance.
+
+    @GetMapping("/api/super-admin/payment-methods")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun listPaymentMethods(): ResponseEntity<List<Map<String, Any>>> =
+        ResponseEntity.ok(
+            PaymentMethod.values().map {
+                mapOf("code" to it.code, "label" to it.label, "enabled" to it.enabled)
+            }
+        )
+
+    @PostMapping("/api/super-admin/payment-receipts")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun recordPayment(
+        @Valid @RequestBody req: RecordPaymentRequest,
+        auth: Authentication
+    ): ResponseEntity<PaymentReceiptResponse> = runBlocking {
+        val method = PaymentMethod.fromCode(req.paymentMethod)
+            ?: return@runBlocking ResponseEntity.badRequest().build()
+        if (!method.enabled) {
+            // TODO: Mobile Money — implémentation prévue en phase ultérieure
+            // TODO: Carte bancaire — implémentation prévue en phase ultérieure
+            return@runBlocking ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build()
+        }
+        val subscription = subscriptionRepo.getSubscriptionById(req.subscriptionId)
+            ?: return@runBlocking ResponseEntity.badRequest().build()
+        if (subscription.groupeId != req.groupeId) {
+            return@runBlocking ResponseEntity.badRequest().build()
+        }
+
+        // 1) Activer/renouveler l'abonnement (dateDebut = maintenant, dateFin = +N mois).
+        val activated = subscriptionRepo.activateOrRenew(
+            subId = req.subscriptionId,
+            durationMonths = req.durationMonths
+        ) ?: return@runBlocking ResponseEntity.badRequest().build()
+
+        // 2) Émettre une facture plateforme associée (snapshot identité, numérotation atomique).
+        val invoice = runCatching {
+            repo.createInvoice(
+                CreateInvoiceRequest(
+                    groupeId = req.groupeId,
+                    subscriptionId = req.subscriptionId,
+                    montantXAF = req.montantXAF,
+                    dateEcheance = activated.dateFin,
+                    notes = listOfNotNull(
+                        "Paiement présentiel — mode : ${method.label}",
+                        req.externalReference?.let { "Réf. externe : $it" },
+                        req.paidBy?.let { "Payé par : $it" },
+                        req.notes.takeIf { it.isNotBlank() }
+                    ).joinToString("\n")
+                )
+            )
+        }.getOrNull()
+        if (invoice != null) {
+            // Facture payée à l'émission (paiement présentiel reçu).
+            runCatching { repo.updateInvoiceStatus(invoice.id, "paid", System.currentTimeMillis()) }
+        }
+
+        // 3) Enregistrer le reçu de paiement pour historique.
+        val receipt = paymentReceiptRepo.record(
+            groupeId = req.groupeId,
+            subscriptionId = req.subscriptionId,
+            invoiceId = invoice?.id,
+            montantXAF = req.montantXAF,
+            method = method,
+            externalReference = req.externalReference,
+            paidBy = req.paidBy,
+            receivedBy = auth.userId(),
+            notes = req.notes,
+            accessStart = activated.dateDebut,
+            accessEnd = activated.dateFin
+        )
+        ResponseEntity.status(HttpStatus.CREATED).body(receipt)
+    }
+
+    @GetMapping("/api/super-admin/payment-receipts")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun listPaymentReceipts(): ResponseEntity<List<PaymentReceiptResponse>> =
+        runBlocking { ResponseEntity.ok(paymentReceiptRepo.listAll()) }
+
+    @GetMapping("/api/super-admin/groupes/{groupeId}/payment-receipts")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun listGroupePaymentReceipts(
+        @PathVariable groupeId: String
+    ): ResponseEntity<List<PaymentReceiptResponse>> =
+        runBlocking { ResponseEntity.ok(paymentReceiptRepo.listByGroupe(groupeId)) }
 
     // ── Super Admin : Annonces Globales ──────────────────────────
 

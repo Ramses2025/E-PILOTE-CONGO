@@ -65,6 +65,9 @@ enum class DesktopScreen(
     // ── 7. Audit ────────────────────────────────────────────────
     ADMIN_AUDIT_LOG      ("Journal d'audit",     Icons.Default.History,            null, SidebarSection.SA_AUDIT,          "SUPER_ADMIN"),
 
+    // ── 8. Paramètres plateforme ────────────────────────────────
+    ADMIN_PLATFORM_SETTINGS ("Paramètres",       Icons.Default.Settings,           null, SidebarSection.SA_PARAMETRES,     "SUPER_ADMIN"),
+
     // ── Admin Groupe : Gestion de son tenant ────────────────────
     GROUPE_DASHBOARD     ("Dashboard Groupe",    Icons.Default.Dashboard,          null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
     GROUPE_ECOLES        ("Écoles",              Icons.Default.School,             null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
@@ -99,6 +102,7 @@ enum class SidebarSection(val label: String) {
     SA_COMMUNICATION("COMMUNICATION"),
     SA_SUPPORT("SUPPORT"),
     SA_AUDIT("AUDIT"),
+    SA_PARAMETRES("PARAMÈTRES"),
     GESTION_GROUPE("GESTION GROUPE"),
     PRINCIPAL("PÉDAGOGIE"),
     GESTION("GESTION"),

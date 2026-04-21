@@ -168,6 +168,71 @@ class AdminSubscriptionRepository(
         return buildSubscriptionResponse(req.groupeId, groupDoc)
     }
 
+    /**
+     * Active ou renouvelle un abonnement : fixe `dateDebut = maintenant` et
+     * `dateFin = maintenant + durationMonths`. Met le statut à `active`. Utilisé quand
+     * le Super Admin enregistre un paiement présentiel.
+     */
+    suspend fun activateOrRenew(subId: String, durationMonths: Int = 12): SubscriptionResponse? {
+        val groupId = resolveGroupIdForSubscription(subId) ?: return null
+        val groupDoc = runCatching { col(GROUPS_COLLECTION).get(groupId).contentAs<MutableMap<String, Any?>>() }.getOrNull() ?: return null
+        val planId = groupDoc["planId"] as? String ?: return null
+        if (planId.isBlank()) return null
+
+        val currentTime = now()
+        val subscription = mutableMap(groupDoc["subscription"])
+        val createdAt = parseTimestamp(subscription["createdAt"] ?: groupDoc["createdAt"]).takeIf { it > 0 } ?: currentTime
+        val endTime = Instant.ofEpochMilli(currentTime)
+            .atZone(ZoneId.of("UTC"))
+            .plusMonths(durationMonths.toLong())
+            .toInstant()
+            .toEpochMilli()
+
+        groupDoc["subscription"] = mutableMapOf(
+            "id" to (subscription["id"] as? String ?: "sub::$groupId"),
+            "statut" to "active",
+            "status" to "active",
+            "dateDebut" to currentTime,
+            "startDate" to formatDateIso(currentTime),
+            "dateFin" to endTime,
+            "endDate" to formatDateIso(endTime),
+            "renouvellementAuto" to (subscription["renouvellementAuto"] as? Boolean ?: subscription["autoRenew"] as? Boolean ?: false),
+            "autoRenew" to (subscription["renouvellementAuto"] as? Boolean ?: subscription["autoRenew"] as? Boolean ?: false),
+            "createdAt" to createdAt,
+            "updatedAt" to currentTime
+        )
+        groupDoc["updatedAt"] = currentTime
+        col(GROUPS_COLLECTION).upsert(groupId, groupDoc)
+        return buildSubscriptionResponse(groupId, groupDoc)
+    }
+
+    /**
+     * Passe tous les abonnements arrivés à échéance en `suspended` (sauf ceux déjà
+     * `cancelled`/`suspended`). Retourne la liste des identifiants de groupes suspendus.
+     *
+     * Invoqué automatiquement par [cg.epilote.backend.admin.SubscriptionExpiryScheduler]
+     * chaque jour à 02:00 UTC (`@Scheduled(cron = ...)`).
+     * Référence Spring Scheduling (Kotlin) :
+     * https://docs.spring.io/spring-framework/reference/integration/scheduling.html
+     */
+    suspend fun suspendExpiredSubscriptions(): List<String> {
+        val currentTime = now()
+        val expired = listGroupDocs().filter { (groupId, doc) ->
+            val sub = buildSubscriptionResponse(groupId, doc) ?: return@filter false
+            sub.statut == "active" && sub.dateFin in 1 until currentTime
+        }
+        expired.forEach { (groupId, doc) ->
+            val sub = mutableMap(doc["subscription"])
+            sub["statut"] = "suspended"
+            sub["status"] = "suspended"
+            sub["updatedAt"] = currentTime
+            doc["subscription"] = sub
+            doc["updatedAt"] = currentTime
+            runCatching { col(GROUPS_COLLECTION).upsert(groupId, doc) }
+        }
+        return expired.map { it.first }
+    }
+
     suspend fun updateSubscriptionStatus(id: String, statut: String): SubscriptionResponse? {
         val normalizedStatus = statut.trim().lowercase()
         val groupId = resolveGroupIdForSubscription(id) ?: return null

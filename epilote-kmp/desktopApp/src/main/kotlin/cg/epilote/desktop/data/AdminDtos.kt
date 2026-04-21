@@ -374,3 +374,96 @@ data class AIAppreciationResponseDto(
     val conseil: String = "",
     val fallback: Boolean = false
 )
+
+// ── Paramètres plateforme (identité juridique) ─────────────────────────────
+// Documents miroirs de PlatformIdentity côté backend. Utilisés par la page
+// « Paramètres plateforme » (Super Admin) pour configurer les mentions légales
+// qui apparaissent sur chaque facture PDF.
+@Serializable
+data class PlatformIdentityDto(
+    val raisonSociale: String = "",
+    val rccm: String = "",
+    val niu: String = "",
+    val siege: String = "",
+    val city: String = "",
+    val country: String = "Congo",
+    val phone: String = "",
+    val email: String = "",
+    val website: String = "",
+    val logoBase64: String = "",
+    val tvaRate: Double = 0.0,
+    val tvaExempted: Boolean = true,
+    val paymentTerms: String = "",
+    val competentCourt: String = "",
+    val iban: String = "",
+    val bankName: String = "",
+    val mtnMomoNumber: String = "",
+    val airtelMoneyNumber: String = "",
+    val invoiceNumberFormat: String = "FAC-{YYYY}-{NNNNNN}",
+    val legalMentions: String = "",
+    val updatedAt: Long = 0L
+)
+
+@Serializable
+data class UpdatePlatformIdentityDto(
+    val raisonSociale: String? = null,
+    val rccm: String? = null,
+    val niu: String? = null,
+    val siege: String? = null,
+    val city: String? = null,
+    val country: String? = null,
+    val phone: String? = null,
+    val email: String? = null,
+    val website: String? = null,
+    val logoBase64: String? = null,
+    val tvaRate: Double? = null,
+    val tvaExempted: Boolean? = null,
+    val paymentTerms: String? = null,
+    val competentCourt: String? = null,
+    val iban: String? = null,
+    val bankName: String? = null,
+    val mtnMomoNumber: String? = null,
+    val airtelMoneyNumber: String? = null,
+    val invoiceNumberFormat: String? = null,
+    val legalMentions: String? = null
+)
+
+// ── Paiements présentiels ──────────────────────────────────────────────────
+// Un PaymentReceipt est créé à chaque fois que le Super Admin enregistre un
+// paiement reçu en espèces/chèque/virement au siège.
+@Serializable
+data class PaymentReceiptDto(
+    val id: String = "",
+    val groupeId: String = "",
+    val subscriptionId: String = "",
+    val invoiceId: String? = null,
+    val montantXAF: Long = 0,
+    val paymentMethod: String = "",
+    val paymentMethodLabel: String = "",
+    val externalReference: String? = null,
+    val paidBy: String? = null,
+    val receivedBy: String = "",
+    val accessStart: Long = 0,
+    val accessEnd: Long = 0,
+    val notes: String = "",
+    val receivedAt: Long = 0
+)
+
+@Serializable
+data class RecordPaymentDto(
+    val groupeId: String,
+    val subscriptionId: String,
+    val montantXAF: Long,
+    val paymentMethod: String,
+    val durationMonths: Int = 12,
+    val externalReference: String? = null,
+    val paidBy: String? = null,
+    val notes: String = ""
+)
+
+@Serializable
+data class PaymentMethodDto(
+    val code: String = "",
+    val label: String = "",
+    val enabled: Boolean = false
+)

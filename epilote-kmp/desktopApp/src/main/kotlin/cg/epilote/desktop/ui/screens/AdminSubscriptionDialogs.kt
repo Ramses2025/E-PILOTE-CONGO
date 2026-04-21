@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Paid
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -48,7 +49,9 @@ internal fun SubscriptionDetailDialog(
     subscription: SubscriptionDto,
     onDismiss: () -> Unit,
     onChangePlan: () -> Unit,
-    onChangeStatus: (String) -> Unit
+    onChangeStatus: (String) -> Unit,
+    onRecordPayment: () -> Unit = {},
+    onShowHistory: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
     val statusColor = subscriptionStatusColor(subscription.statut)
@@ -92,6 +95,9 @@ internal fun SubscriptionDetailDialog(
             }
         },
         actions = {
+            TextButton(onClick = onShowHistory, modifier = Modifier.cursorHand()) {
+                Text("Historique", color = Color(0xFF475467))
+            }
             TextButton(onClick = { onChangeStatus(nextStatus) }, modifier = Modifier.cursorHand()) {
                 Text(
                     when (nextStatus) {
@@ -105,6 +111,15 @@ internal fun SubscriptionDetailDialog(
             OutlinedButton(onClick = onChangePlan, modifier = Modifier.cursorHand(), shape = RoundedCornerShape(10.dp)) {
                 Icon(Icons.Default.Paid, null, modifier = Modifier.size(16.dp))
                 Text("Changer de plan", modifier = Modifier.padding(start = 6.dp))
+            }
+            Button(
+                onClick = onRecordPayment,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.cursorHand(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669))
+            ) {
+                Icon(Icons.Default.Payments, null, modifier = Modifier.size(16.dp))
+                Text("Enregistrer paiement", modifier = Modifier.padding(start = 6.dp))
             }
             Button(onClick = onDismiss, shape = RoundedCornerShape(10.dp), modifier = Modifier.cursorHand()) {
                 Text("Fermer")
