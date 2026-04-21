@@ -13,6 +13,19 @@ internal fun buildDesktopAdminTokenProvider(
     sessionRepo.getSession()?.accessToken ?: sessionProvider()?.accessToken
 }
 
+internal fun buildDesktopAdminUnauthorizedHandler(
+    baseUrl: String,
+    sessionRepo: UserSessionRepository,
+    onSessionUpdated: (UserSession?) -> Unit
+): suspend () -> Boolean = {
+    val refreshed = refreshDesktopAdminSession(baseUrl, sessionRepo, onSessionUpdated)
+    if (!refreshed) {
+        sessionRepo.clearSession()
+        onSessionUpdated(null)
+    }
+    refreshed
+}
+
 internal suspend fun refreshDesktopAdminSession(
     baseUrl: String,
     sessionRepo: UserSessionRepository,

@@ -91,6 +91,8 @@ fun AdminInvoicesScreen(
     var showFormDialog by remember { mutableStateOf(false) }
     var confirmStatusChange by remember { mutableStateOf<Pair<InvoiceDto, String>?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
+    var isDocumentProcessing by remember { mutableStateOf(false) }
+    var documentFeedback by remember { mutableStateOf<AdminFeedbackMessage?>(null) }
     var submitError by remember { mutableStateOf<String?>(null) }
     var reloadTick by remember { mutableIntStateOf(0) }
 
@@ -311,7 +313,40 @@ fun AdminInvoicesScreen(
             onDismiss = { selectedInvoice = null },
             onStatusChange = { nextStatus ->
                 confirmStatusChange = invoice to nextStatus
-            }
+            },
+            onExportPdf = {
+                scope.launch {
+                    isDocumentProcessing = true
+                    val pdfBytes = runCatching { client.downloadInvoicePdf(invoice.id) }.getOrNull()
+                    isDocumentProcessing = false
+                    val feedback = pdfBytes?.let { exportInvoicePdf(invoice, it) }
+                        ?: InvoiceDocumentActionResult("Impossible de télécharger le PDF de la facture.", isError = true)
+                    documentFeedback = AdminFeedbackMessage(feedback.message, isError = feedback.isError)
+                }
+            },
+            onOpenPdf = {
+                scope.launch {
+                    isDocumentProcessing = true
+                    val pdfBytes = runCatching { client.downloadInvoicePdf(invoice.id) }.getOrNull()
+                    isDocumentProcessing = false
+                    val feedback = pdfBytes?.let { openInvoicePdf(invoice, it) }
+                        ?: InvoiceDocumentActionResult("Impossible de télécharger le PDF de la facture.", isError = true)
+                    documentFeedback = AdminFeedbackMessage(feedback.message, isError = feedback.isError)
+                }
+            },
+            onSharePdf = {
+                scope.launch {
+                    isDocumentProcessing = true
+                    val pdfBytes = runCatching { client.downloadInvoicePdf(invoice.id) }.getOrNull()
+                    isDocumentProcessing = false
+                    val feedback = pdfBytes?.let { shareInvoicePdf(invoice, it) }
+                        ?: InvoiceDocumentActionResult("Impossible de télécharger le PDF de la facture.", isError = true)
+                    documentFeedback = AdminFeedbackMessage(feedback.message, isError = feedback.isError)
+                }
+            },
+            documentFeedback = documentFeedback,
+            onDismissDocumentFeedback = { documentFeedback = null },
+            isDocumentProcessing = isDocumentProcessing
         )
     }
 

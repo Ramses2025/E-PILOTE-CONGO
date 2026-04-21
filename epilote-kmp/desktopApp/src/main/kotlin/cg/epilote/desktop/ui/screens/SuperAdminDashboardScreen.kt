@@ -30,6 +30,9 @@ fun SuperAdminDashboardScreen(
     onNavigateGroupes: () -> Unit,
     onNavigatePlans: () -> Unit,
     onNavigateModules: () -> Unit,
+    onNavigateInvoices: () -> Unit,
+    onNavigateNotifications: () -> Unit,
+    onNavigateAnnouncements: () -> Unit,
     onRefresh: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -91,19 +94,20 @@ fun SuperAdminDashboardScreen(
 
             // ── 9. ALERTES (factures en retard)
             if (stats.invoicesOverdue > 0) {
-                AlertsSection(stats.invoicesOverdue)
+                AlertsSection(stats.invoicesOverdue, onNavigateNotifications)
             }
 
             // ── 10. ACTIVITÉ RÉCENTE
             AnimatedSection(visible, 700) {
-                RecentActivityRow(stats = stats, onNavigateGroupes = onNavigateGroupes)
+                RecentActivityRow(stats = stats, onNavigateGroupes = onNavigateGroupes, onNavigateInvoices = onNavigateInvoices)
             }
 
             // ── 11. ACTIONS RAPIDES
             QuickActionsRow(
                 onNavigateGroupes = onNavigateGroupes,
                 onNavigatePlans = onNavigatePlans,
-                onNavigateModules = onNavigateModules
+                onNavigateModules = onNavigateModules,
+                onNavigateAnnouncements = onNavigateAnnouncements
             )
 
             // ── 12. FOOTER

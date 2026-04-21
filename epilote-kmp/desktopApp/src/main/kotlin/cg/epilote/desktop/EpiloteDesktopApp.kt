@@ -13,12 +13,9 @@ import cg.epilote.desktop.ui.components.AppHeader
 import cg.epilote.desktop.ui.components.DesktopScreen
 import cg.epilote.desktop.ui.components.Sidebar
 import cg.epilote.desktop.ui.screens.*
-import cg.epilote.desktop.ui.screens.superadmin.AdminStats
-import cg.epilote.desktop.ui.screens.superadmin.toAdminStats
 import cg.epilote.desktop.ui.theme.EpiloteGreen
 import cg.epilote.desktop.ui.theme.EpiloteTextMuted
 import cg.epilote.desktop.ui.theme.EpiloteTheme
-import kotlinx.coroutines.SupervisorJob
 import cg.epilote.shared.data.local.*
 import cg.epilote.shared.data.remote.ApiClient
 import cg.epilote.shared.data.remote.AuthApiService
@@ -33,13 +30,9 @@ import cg.epilote.shared.domain.usecase.notes.ResolveConflictUseCase
 import cg.epilote.shared.presentation.viewmodel.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-private val desktopBackendBaseUrl: String
-    get() = System.getProperty("epilote.backend.url")
-        ?: System.getenv("EPILOTE_BACKEND_URL")
-        ?: "http://localhost:8080"
 
 @Composable
 fun EpiloteDesktopApp() {
@@ -129,80 +122,73 @@ fun EpiloteDesktopApp() {
 
             val appScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
 
+            val adminUnauthorizedHandler = remember(sessionRepo) {
+                buildDesktopAdminUnauthorizedHandler(desktopBackendBaseUrl, sessionRepo) { refreshedSession ->
+                    session = refreshedSession
+                }
+            }
+
             val adminClient = remember {
                 DesktopAdminClient(
                     baseUrl = desktopBackendBaseUrl,
                     tokenProvider = buildDesktopAdminTokenProvider(sessionRepo) { session },
-                    onUnauthorized = {
-                        val refreshed = refreshDesktopAdminSession(desktopBackendBaseUrl, sessionRepo) { refreshedSession ->
-                            session = refreshedSession
-                        }
-                        if (!refreshed) {
-                            sessionRepo.clearSession()
-                            session = null
-                        }
-                        refreshed
-                    }
+                    onUnauthorized = adminUnauthorizedHandler
                 )
             }
 
-            // ── Admin state ──────────────────────────────────────────
-            var adminStats by remember { mutableStateOf(AdminStats()) }
-            var dashboardStatsDto by remember { mutableStateOf(DashboardStatsDto()) }
-            var adminGroupes by remember { mutableStateOf<List<GroupeDto>>(emptyList()) }
-            var adminGroupAdmins by remember { mutableStateOf<Map<String, List<UserDto>>>(emptyMap()) }
-            var adminPlans by remember { mutableStateOf<List<PlanDto>>(emptyList()) }
-            var adminModules by remember { mutableStateOf<List<ModuleDto>>(emptyList()) }
-            var adminCategories by remember { mutableStateOf<List<CategorieDto>>(emptyList()) }
-            var adminUsers by remember { mutableStateOf<List<AdminUserDto>>(emptyList()) }
-            var adminLoading by remember { mutableStateOf(false) }
+            val adminRepo = remember { AdminDataRepository(adminClient) }
+
+            val adminRealtimeClient = remember {
+                AdminRealtimeClient(
+                    baseUrl = desktopBackendBaseUrl,
+                    tokenProvider = buildDesktopAdminTokenProvider(sessionRepo) { session },
+                    onUnauthorized = adminUnauthorizedHandler,
+                    lastEventIdProvider = { adminRepo.lastEventId },
+                    onReconnectNeeded = { adminRepo.refreshAll() }
+                )
+            }
+
+            // ── Admin state from repository ───────────────────────────
+            val adminStats by adminRepo.adminStats.collectAsState()
+            val dashboardStatsDto by adminRepo.dashboardStats.collectAsState()
+            val adminGroupes by adminRepo.groupes.collectAsState()
+            val adminGroupAdmins by adminRepo.adminGroupAdmins.collectAsState()
+            val adminPlans by adminRepo.plans.collectAsState()
+            val adminModules by adminRepo.modules.collectAsState()
+            val adminCategories by adminRepo.categories.collectAsState()
+            val adminUsers by adminRepo.adminUsers.collectAsState()
+            val adminLoading by adminRepo.isLoading.collectAsState()
             var sidebarExpanded by remember { mutableStateOf(true) }
 
-            fun loadAdminData(isInitial: Boolean = false) {
-                if (isInitial) adminLoading = true
-                appScope.launch {
-                    try {
-                        val snapshot = adminClient.loadAdminSnapshot()
-                        println(
-                            "loadAdminData snapshot groupes=${snapshot.groupes.size}, plans=${snapshot.plans.size}, modules=${snapshot.modules.size}, admins=${snapshot.adminUsers.size}"
-                        )
-                        dashboardStatsDto = snapshot.dashboardStats
-                        adminStats = snapshot.adminStats
-                        val canAcceptEmptyGroupes = snapshot.dashboardStats.totalGroupes == 0L
-                        if (snapshot.groupes.isNotEmpty() || adminGroupes.isEmpty() || canAcceptEmptyGroupes) {
-                            adminGroupes = snapshot.groupes
-                        }
-                        if (snapshot.adminGroupAdmins.isNotEmpty() || adminGroupAdmins.isEmpty()) {
-                            adminGroupAdmins = snapshot.adminGroupAdmins
-                        }
-                        if (snapshot.plans.isNotEmpty() || adminPlans.isEmpty()) {
-                            adminPlans = snapshot.plans
-                        }
-                        if (snapshot.modules.isNotEmpty() || adminModules.isEmpty()) {
-                            adminModules = snapshot.modules
-                        }
-                        if (snapshot.categories.isNotEmpty() || adminCategories.isEmpty()) {
-                            adminCategories = snapshot.categories
-                        }
-                        if (snapshot.adminUsers.isNotEmpty() || adminUsers.isEmpty()) {
-                            adminUsers = snapshot.adminUsers
-                        }
-                    } catch (_: Exception) {
-                        // partial load failure — keep existing data
+            // ── Initial data load + periodic refresh ──
+            LaunchedEffect(isSuperAdmin) {
+                if (isSuperAdmin) {
+                    // Always refresh token before first load (access token may be expired)
+                    val refreshed = refreshDesktopAdminSession(desktopBackendBaseUrl, sessionRepo) { session = it }
+                    if (!refreshed) {
+                        // Refresh failed — force re-login
+                        session = null
+                        return@LaunchedEffect
                     }
-                    adminLoading = false
+                    adminRepo.refreshAll()
+                    while (true) {
+                        delay(60_000)
+                        adminRepo.refreshAll()
+                    }
                 }
             }
 
-            LaunchedEffect(isSuperAdmin) {
-                if (isSuperAdmin) {
-                    loadAdminData(isInitial = true)
-                    while (true) {
-                        delay(30_000)
-                        loadAdminData()
-                    }
+            // ── SSE real-time updates ──
+            SuperAdminRealtimeEffect(
+                enabled = isSuperAdmin,
+                client = adminRealtimeClient,
+                currentUserId = s.userId,
+                onEvent = { event ->
+                    // Self-originated events: patch locally (mutation helpers already did it)
+                    // Other users' events: apply payload or refresh
+                    adminRepo.onSseEvent(event)
                 }
-            }
+            )
 
             val syncVm      = remember { SyncIndicatorViewModel(syncManager) }
             val classesVm   = remember { ClassesViewModel(classeRepo, matiereRepo) }
@@ -266,7 +252,7 @@ fun EpiloteDesktopApp() {
                                 adminLoading = adminLoading,
                                 appScope = appScope,
                                 adminClient = adminClient,
-                                onLoadAdminData = { loadAdminData(isInitial = it) },
+                                adminRepo = adminRepo,
                                 onScreenChange = { currentScreen = it }
                             )
                         } else when (currentScreen) {

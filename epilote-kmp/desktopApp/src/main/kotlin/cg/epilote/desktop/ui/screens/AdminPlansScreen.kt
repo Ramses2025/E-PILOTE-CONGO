@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cg.epilote.desktop.data.AdminDataRepository
 import cg.epilote.desktop.data.CreatePlanDto
 import cg.epilote.desktop.data.DesktopAdminClient
 import cg.epilote.desktop.data.UpdatePlanDto
@@ -50,6 +51,7 @@ fun AdminPlansScreen(
     isLoading: Boolean,
     scope: CoroutineScope,
     client: DesktopAdminClient,
+    adminRepo: AdminDataRepository,
     onRefresh: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -148,16 +150,16 @@ fun AdminPlansScreen(
             onSubmit = { nom, type, prix, students, personnel, modIncluded, active ->
                 isSubmitting = true; formError = null
                 if (selectedPlan != null) {
-                    scope.updatePlanAndRefresh(client, selectedPlan!!.id,
+                    scope.updatePlanAndRefresh(client, adminRepo, selectedPlan!!.id,
                         UpdatePlanDto(nom = nom, prixXAF = prix, maxStudents = students, maxPersonnel = personnel, modulesIncluded = modIncluded, isActive = active),
-                        onRefresh, { ok, err ->
+                        { ok, err ->
                             isSubmitting = false
                             if (ok) showFormDialog = false else formError = err
                         })
                 } else {
-                    scope.createPlanAndRefresh(client,
+                    scope.createPlanAndRefresh(client, adminRepo,
                         CreatePlanDto(nom = nom, type = type, prixXAF = prix, maxStudents = students, maxPersonnel = personnel, modulesIncluded = modIncluded, isActive = active),
-                        onRefresh, { ok, err ->
+                        { ok, err ->
                             isSubmitting = false
                             if (ok) showFormDialog = false else formError = err
                         })
@@ -177,7 +179,7 @@ fun AdminPlansScreen(
             confirmLabel = if (plan.isActive) "Suspendre" else "Réactiver",
             onDismiss = { showConfirmation = false },
             onConfirm = {
-                scope.togglePlanStatusAndRefresh(client, plan.id, !plan.isActive, onRefresh) { ok, _ ->
+                scope.togglePlanStatusAndRefresh(client, adminRepo, plan.id, !plan.isActive) { ok, _ ->
                     if (ok) showConfirmation = false
                 }
             },

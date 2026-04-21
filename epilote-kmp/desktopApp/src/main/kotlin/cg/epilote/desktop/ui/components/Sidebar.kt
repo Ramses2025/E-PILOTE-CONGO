@@ -35,7 +35,8 @@ enum class DesktopScreen(
     val icon: ImageVector,
     val moduleSlug: String?,
     val section: SidebarSection = SidebarSection.PRINCIPAL,
-    val requiredRole: String? = null
+    val requiredRole: String? = null,
+    val showInSidebar: Boolean = true
 ) {
     // ── 1. Pilotage ─────────────────────────────────────────────
     ADMIN_DASHBOARD      ("Tableau de bord",     Icons.Default.Dashboard,          null, SidebarSection.SA_PILOTAGE,       "SUPER_ADMIN"),
@@ -56,7 +57,7 @@ enum class DesktopScreen(
     // ── 5. Communication ────────────────────────────────────────
     ADMIN_NOTIFICATIONS  ("Notifications",       Icons.Default.Notifications,      null, SidebarSection.SA_COMMUNICATION,  "SUPER_ADMIN"),
     ADMIN_MESSAGING      ("Messagerie",          Icons.Default.Forum,              null, SidebarSection.SA_COMMUNICATION,  "SUPER_ADMIN"),
-    ADMIN_ANNOUNCEMENTS  ("Annonces",            Icons.Default.Campaign,           null, SidebarSection.SA_COMMUNICATION,  "SUPER_ADMIN"),
+    ADMIN_ANNOUNCEMENTS  ("Annonces",            Icons.Default.Campaign,           null, SidebarSection.SA_COMMUNICATION,  "SUPER_ADMIN", false),
 
     // ── 6. Support ──────────────────────────────────────────────
     ADMIN_TICKETS        ("Support",             Icons.Default.SupportAgent,       null, SidebarSection.SA_SUPPORT,        "SUPER_ADMIN"),
@@ -115,12 +116,13 @@ fun Sidebar(
     val sidebarWidth = if (isExpanded) 220.dp else 64.dp
 
     val visibleScreens = DesktopScreen.entries.filter { screen ->
+        if (!screen.showInSidebar) return@filter false
         // SUPER_ADMIN only sees ADMIN section
         if (session.role == "SUPER_ADMIN") {
             return@filter screen.requiredRole == "SUPER_ADMIN"
         }
         val roleOk = screen.requiredRole == null || session.role == screen.requiredRole
-        val moduleOk = screen.moduleSlug == null || session.hasModule(screen.moduleSlug!!)
+        val moduleOk = screen.moduleSlug == null || session.hasModule(screen.moduleSlug)
         roleOk && moduleOk
     }
     val screensBySection = visibleScreens.groupBy { it.section }

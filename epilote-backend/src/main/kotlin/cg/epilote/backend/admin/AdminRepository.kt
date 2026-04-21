@@ -837,6 +837,11 @@ class AdminRepository(
             .sortedByDescending { maxOf(it.dateEmission, it.datePaiement ?: 0L) }
     }
 
+    suspend fun getInvoiceById(id: String): InvoiceResponse? {
+        val (_, existing) = findInvoiceDocument(id) ?: return null
+        return mapToInvoiceResponse(id, existing)
+    }
+
     suspend fun updateInvoiceStatus(id: String, statut: String, datePaiement: Long? = null): InvoiceResponse? {
         val (collectionName, existing) = findInvoiceDocument(id) ?: return null
         val normalizedStatus = statut.trim().lowercase()

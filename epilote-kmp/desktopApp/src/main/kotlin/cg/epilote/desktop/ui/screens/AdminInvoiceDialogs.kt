@@ -12,10 +12,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -64,11 +67,18 @@ private fun parseInvoiceDateInput(value: String): Long? = try {
     null
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun InvoiceDetailDialog(
     invoice: InvoiceDto,
     onDismiss: () -> Unit,
-    onStatusChange: (String) -> Unit
+    onStatusChange: (String) -> Unit,
+    onExportPdf: () -> Unit,
+    onOpenPdf: () -> Unit,
+    onSharePdf: () -> Unit,
+    documentFeedback: AdminFeedbackMessage?,
+    onDismissDocumentFeedback: () -> Unit,
+    isDocumentProcessing: Boolean
 ) {
     val scrollState = rememberScrollState()
     val statusColor = invoiceStatusColor(invoice.statut)
@@ -106,6 +116,24 @@ internal fun InvoiceDetailDialog(
                 InvoiceDetailRow("Échéance", formatDate(invoice.dateEcheance))
                 InvoiceDetailRow("Paiement", invoice.datePaiement?.let(::formatDate) ?: "Non encaissée")
                 HorizontalDivider(color = Color(0xFFE9EEF5))
+                documentFeedback?.let { feedback ->
+                    AdminFeedbackBanner(feedback = feedback, onDismiss = onDismissDocumentFeedback)
+                }
+                Text("Document officiel", fontSize = 12.sp, color = EpiloteTextMuted)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onOpenPdf, enabled = !isDocumentProcessing, modifier = Modifier.cursorHand(), shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null, modifier = Modifier.size(16.dp))
+                        Text("Prévisualiser PDF", modifier = Modifier.padding(start = 6.dp))
+                    }
+                    OutlinedButton(onClick = onExportPdf, enabled = !isDocumentProcessing, modifier = Modifier.cursorHand(), shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
+                        Text("Exporter PDF", modifier = Modifier.padding(start = 6.dp))
+                    }
+                    OutlinedButton(onClick = onSharePdf, enabled = !isDocumentProcessing, modifier = Modifier.cursorHand(), shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp))
+                        Text("Partager", modifier = Modifier.padding(start = 6.dp))
+                    }
+                }
                 if (invoice.notes.isNotBlank()) {
                     Text("Notes", fontSize = 12.sp, color = EpiloteTextMuted)
                     Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFFF8FAFC)) {

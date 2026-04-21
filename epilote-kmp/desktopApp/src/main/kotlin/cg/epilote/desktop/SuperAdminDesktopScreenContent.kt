@@ -1,13 +1,18 @@
 package cg.epilote.desktop
 
 import androidx.compose.runtime.Composable
+import cg.epilote.desktop.data.AdminDataRepository
 import cg.epilote.desktop.data.DashboardStatsDto
 import cg.epilote.desktop.data.DesktopAdminClient
 import cg.epilote.desktop.ui.components.DesktopScreen
 import cg.epilote.desktop.ui.screens.AdminAdminsScreen
+import cg.epilote.desktop.ui.screens.AdminMessagingMailbox
 import cg.epilote.desktop.ui.screens.AdminCategoriesScreen
 import cg.epilote.desktop.ui.screens.AdminGroupesScreen
+import cg.epilote.desktop.ui.screens.AdminSupportScreen
 import cg.epilote.desktop.ui.screens.AdminInvoicesScreen
+import cg.epilote.desktop.ui.screens.AdminMessagingScreen
+import cg.epilote.desktop.ui.screens.AdminNotificationsScreen
 import cg.epilote.desktop.ui.screens.AdminUserDto
 import cg.epilote.desktop.ui.screens.CategorieDto
 import cg.epilote.desktop.ui.screens.GroupeDto
@@ -34,7 +39,7 @@ internal fun SuperAdminDesktopScreenContent(
     adminLoading: Boolean,
     appScope: CoroutineScope,
     adminClient: DesktopAdminClient,
-    onLoadAdminData: (Boolean) -> Unit,
+    adminRepo: AdminDataRepository,
     onScreenChange: (DesktopScreen) -> Unit
 ) {
     when (currentScreen) {
@@ -46,7 +51,10 @@ internal fun SuperAdminDesktopScreenContent(
                 onNavigateGroupes = { onScreenChange(DesktopScreen.ADMIN_GROUPES) },
                 onNavigatePlans = { onScreenChange(DesktopScreen.ADMIN_PLANS) },
                 onNavigateModules = { onScreenChange(DesktopScreen.ADMIN_MODULES) },
-                onRefresh = { onLoadAdminData(false) }
+                onNavigateInvoices = { onScreenChange(DesktopScreen.ADMIN_INVOICES) },
+                onNavigateNotifications = { onScreenChange(DesktopScreen.ADMIN_NOTIFICATIONS) },
+                onNavigateAnnouncements = { onScreenChange(DesktopScreen.ADMIN_ANNOUNCEMENTS) },
+                onRefresh = { adminRepo.refreshAllAsync() }
             )
 
         DesktopScreen.ADMIN_GROUPES ->
@@ -57,12 +65,12 @@ internal fun SuperAdminDesktopScreenContent(
                 totalEcoles = dashboardStatsDto.totalEcoles.toInt(),
                 totalUtilisateurs = dashboardStatsDto.totalUtilisateurs.toInt(),
                 isLoading = adminLoading,
-                onCreateGroupe = { dto, onResult -> appScope.createGroupeAndRefresh(adminClient, dto, { onLoadAdminData(false) }, onResult) },
-                onUpdateGroupe = { gId, dto, onResult -> appScope.updateGroupeAndRefresh(adminClient, gId, dto, { onLoadAdminData(false) }, onResult) },
-                onDeleteGroupe = { gId, onResult -> appScope.deleteGroupeAndRefresh(adminClient, gId, { onLoadAdminData(false) }, onResult) },
-                onToggleGroupeStatus = { gId, active, onResult -> appScope.toggleGroupeStatusAndRefresh(adminClient, gId, active, { onLoadAdminData(false) }, onResult) },
-                onCreateAdminGroupe = { gId, pw, n, p, e, onResult -> appScope.createAdminGroupeAndRefresh(adminClient, gId, pw, n, p, e, { onLoadAdminData(false) }, onResult) },
-                onRefresh = { onLoadAdminData(true) }
+                onCreateGroupe = { dto, onResult -> appScope.createGroupeAndRefresh(adminClient, adminRepo, dto, onResult) },
+                onUpdateGroupe = { gId, dto, onResult -> appScope.updateGroupeAndRefresh(adminClient, adminRepo, gId, dto, onResult) },
+                onDeleteGroupe = { gId, onResult -> appScope.deleteGroupeAndRefresh(adminClient, adminRepo, gId, onResult) },
+                onToggleGroupeStatus = { gId, active, onResult -> appScope.toggleGroupeStatusAndRefresh(adminClient, adminRepo, gId, active, onResult) },
+                onCreateAdminGroupe = { gId, pw, n, p, e, onResult -> appScope.createAdminGroupeAndRefresh(adminClient, adminRepo, gId, pw, n, p, e, onResult) },
+                onRefresh = { adminRepo.refreshGroupesAsync() }
             )
 
         DesktopScreen.ADMIN_PLANS ->
@@ -72,7 +80,8 @@ internal fun SuperAdminDesktopScreenContent(
                 isLoading = adminLoading,
                 scope = appScope,
                 client = adminClient,
-                onRefresh = { onLoadAdminData(false) }
+                adminRepo = adminRepo,
+                onRefresh = { adminRepo.refreshPlansAsync() }
             )
 
         DesktopScreen.ADMIN_MODULES ->
@@ -80,10 +89,10 @@ internal fun SuperAdminDesktopScreenContent(
                 modules = adminModules,
                 categories = adminCategories,
                 isLoading = adminLoading,
-                onCreateModule = { dto, onResult -> appScope.createModuleAndRefresh(adminClient, dto, { onLoadAdminData(false) }, onResult) },
-                onUpdateModule = { moduleId, dto, onResult -> appScope.updateModuleAndRefresh(adminClient, moduleId, dto, { onLoadAdminData(false) }, onResult) },
-                onToggleModuleStatus = { moduleId, active, onResult -> appScope.toggleModuleStatusAndRefresh(adminClient, moduleId, active, { onLoadAdminData(false) }, onResult) },
-                onRefresh = { onLoadAdminData(true) }
+                onCreateModule = { dto, onResult -> appScope.createModuleAndRefresh(adminClient, adminRepo, dto, onResult) },
+                onUpdateModule = { moduleId, dto, onResult -> appScope.updateModuleAndRefresh(adminClient, adminRepo, moduleId, dto, onResult) },
+                onToggleModuleStatus = { moduleId, active, onResult -> appScope.toggleModuleStatusAndRefresh(adminClient, adminRepo, moduleId, active, onResult) },
+                onRefresh = { adminRepo.refreshModulesAsync() }
             )
 
         DesktopScreen.ADMIN_CATEGORIES ->
@@ -91,10 +100,10 @@ internal fun SuperAdminDesktopScreenContent(
                 categories = adminCategories,
                 modules = adminModules,
                 isLoading = adminLoading,
-                onCreateCategory = { dto, onResult -> appScope.createCategoryAndRefresh(adminClient, dto, { onLoadAdminData(false) }, onResult) },
-                onUpdateCategory = { code, dto, onResult -> appScope.updateCategoryAndRefresh(adminClient, code, dto, { onLoadAdminData(false) }, onResult) },
-                onToggleCategoryStatus = { code, active, onResult -> appScope.toggleCategoryStatusAndRefresh(adminClient, code, active, { onLoadAdminData(false) }, onResult) },
-                onRefresh = { onLoadAdminData(true) }
+                onCreateCategory = { dto, onResult -> appScope.createCategoryAndRefresh(adminClient, adminRepo, dto, onResult) },
+                onUpdateCategory = { code, dto, onResult -> appScope.updateCategoryAndRefresh(adminClient, adminRepo, code, dto, onResult) },
+                onToggleCategoryStatus = { code, active, onResult -> appScope.toggleCategoryStatusAndRefresh(adminClient, adminRepo, code, active, onResult) },
+                onRefresh = { adminRepo.refreshCategoriesAsync() }
             )
 
         DesktopScreen.ADMIN_SUBSCRIPTIONS ->
@@ -104,7 +113,7 @@ internal fun SuperAdminDesktopScreenContent(
                 isLoading = adminLoading,
                 scope = appScope,
                 client = adminClient,
-                onRefresh = { onLoadAdminData(false) }
+                onRefresh = { adminRepo.refreshDashboardStatsAsync() }
             )
 
         DesktopScreen.ADMIN_INVOICES ->
@@ -114,7 +123,7 @@ internal fun SuperAdminDesktopScreenContent(
                 isLoading = adminLoading,
                 scope = appScope,
                 client = adminClient,
-                onRefresh = { onLoadAdminData(false) }
+                onRefresh = { adminRepo.refreshDashboardStatsAsync() }
             )
 
         DesktopScreen.ADMIN_ADMINISTRATORS ->
@@ -122,27 +131,66 @@ internal fun SuperAdminDesktopScreenContent(
                 admins = adminUsers,
                 groupes = adminGroupes,
                 isLoading = adminLoading,
-                onCreateAdmin = { dto, onResult -> appScope.createAdminAndRefresh(adminClient, dto, { onLoadAdminData(false) }, onResult) },
-                onUpdateAdmin = { uId, dto, onResult -> appScope.updateAdminAndRefresh(adminClient, uId, dto, { onLoadAdminData(false) }, onResult) },
-                onDeleteAdmin = { uId, onResult -> appScope.deleteAdminAndRefresh(adminClient, uId, { onLoadAdminData(false) }, onResult) },
-                onToggleAdminStatus = { uId, status, onResult -> appScope.toggleAdminStatusAndRefresh(adminClient, uId, status, { onLoadAdminData(false) }, onResult) },
-                onRefresh = { onLoadAdminData(true) }
+                onCreateAdmin = { dto, onResult -> appScope.createAdminAndRefresh(adminClient, adminRepo, dto, onResult) },
+                onUpdateAdmin = { uId, dto, onResult -> appScope.updateAdminAndRefresh(adminClient, adminRepo, uId, dto, onResult) },
+                onDeleteAdmin = { uId, onResult -> appScope.deleteAdminAndRefresh(adminClient, adminRepo, uId, onResult) },
+                onToggleAdminStatus = { uId, status, onResult -> appScope.toggleAdminStatusAndRefresh(adminClient, adminRepo, uId, status, onResult) },
+                onRefresh = { adminRepo.refreshAdminsAsync() }
             )
 
         DesktopScreen.ADMIN_ANNOUNCEMENTS ->
-            PlaceholderScreen("Annonces", "Diffusion d'annonces vers tous les groupes")
+            AdminMessagingScreen(
+                session = session,
+                groupes = adminGroupes,
+                admins = adminUsers,
+                isLoading = adminLoading,
+                scope = appScope,
+                client = adminClient,
+                onRefresh = { adminRepo.refreshDashboardStatsAsync() },
+                initialMailbox = AdminMessagingMailbox.ANNOUNCEMENTS
+            )
 
         DesktopScreen.ADMIN_NOTIFICATIONS ->
-            PlaceholderScreen("Notifications", "Notifications plateforme — alertes et rappels")
+            AdminNotificationsScreen(
+                groupes = adminGroupes,
+                adminGroupesByGroup = adminGroupAdmins,
+                admins = adminUsers,
+                isLoading = adminLoading,
+                scope = appScope,
+                client = adminClient,
+                onRefresh = { adminRepo.refreshDashboardStatsAsync() }
+            )
 
         DesktopScreen.ADMIN_MESSAGING ->
-            PlaceholderScreen("Messagerie", "Messagerie interne plateforme")
+            AdminMessagingScreen(
+                session = session,
+                groupes = adminGroupes,
+                admins = adminUsers,
+                isLoading = adminLoading,
+                scope = appScope,
+                client = adminClient,
+                onRefresh = { adminRepo.refreshDashboardStatsAsync() }
+            )
 
         DesktopScreen.ADMIN_TICKETS ->
-            PlaceholderScreen("Signalements", "Tickets de support et signalements")
+            AdminSupportScreen(
+                groupes = adminGroupes,
+                adminGroupesByGroup = adminGroupAdmins,
+                admins = adminUsers,
+                isLoading = adminLoading,
+                scope = appScope,
+                client = adminClient,
+                onRefresh = { adminRepo.refreshDashboardStatsAsync() }
+            )
 
         DesktopScreen.ADMIN_AUDIT_LOG ->
-            cg.epilote.desktop.ui.screens.AuditLogScreen()
+            cg.epilote.desktop.ui.screens.AdminAuditScreen(
+                groupes = adminGroupes,
+                admins = adminUsers,
+                isLoading = adminLoading,
+                client = adminClient,
+                onRefresh = { adminRepo.refreshDashboardStatsAsync() }
+            )
 
         else -> Unit
     }

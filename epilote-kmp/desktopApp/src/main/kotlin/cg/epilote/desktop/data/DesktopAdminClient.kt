@@ -101,6 +101,47 @@ class DesktopAdminClient(
         return firstResponse.status.value in 200..299
     }
 
+    private suspend fun executeBytes(
+        method: String,
+        path: String,
+        request: suspend () -> HttpResponse
+    ): ByteArray? {
+        val firstResponse = runCatching { request() }.getOrElse { error ->
+            println("DesktopAdminClient $method $path request failed: ${error.message}")
+            return null
+        }
+
+        if (shouldAttemptRefresh(firstResponse.status)) {
+            println("DesktopAdminClient $method $path returned ${firstResponse.status}; attempting token refresh")
+            val refreshed = runCatching { onUnauthorized() }.getOrDefault(false)
+            if (refreshed) {
+                val retryResponse = runCatching { request() }.getOrElse { error ->
+                    println("DesktopAdminClient $method $path retry failed: ${error.message}")
+                    return null
+                }
+                if (retryResponse.status.value in 200..299) {
+                    return runCatching { retryResponse.body<ByteArray>() }.getOrElse { error ->
+                        println("DesktopAdminClient $method $path byte decode failed: ${error.message}")
+                        null
+                    }
+                }
+                println("DesktopAdminClient $method $path retry returned ${retryResponse.status}")
+                return null
+            }
+            return null
+        }
+
+        if (firstResponse.status.value !in 200..299) {
+            println("DesktopAdminClient $method $path returned ${firstResponse.status}")
+            return null
+        }
+
+        return runCatching { firstResponse.body<ByteArray>() }.getOrElse { error ->
+            println("DesktopAdminClient $method $path byte decode failed: ${error.message}")
+            null
+        }
+    }
+
     private suspend inline fun <reified T> get(path: String): T? =
         execute("GET", path) {
             httpClient.get("$baseUrl$path") {
@@ -171,12 +212,39 @@ class DesktopAdminClient(
     suspend fun createInvoice(dto: CreateInvoiceDto): InvoiceApiDto? =
         post("/api/super-admin/invoices", dto)
 
+    suspend fun downloadInvoicePdf(invoiceId: String): ByteArray? =
+        executeBytes("GET", "/api/super-admin/invoices/$invoiceId/pdf") {
+            httpClient.get("$baseUrl/api/super-admin/invoices/$invoiceId/pdf") {
+                tokenProvider()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+            }
+        }
+
     suspend fun updateInvoiceStatus(invoiceId: String, statut: String, datePaiement: Long? = null): InvoiceApiDto? =
         execute("PUT", "/api/super-admin/invoices/$invoiceId/status?statut=$statut") {
             httpClient.put("$baseUrl/api/super-admin/invoices/$invoiceId/status") {
                 contentType(ContentType.Application.Json)
                 parameter("statut", statut)
                 datePaiement?.let { parameter("datePaiement", it) }
+                tokenProvider()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+            }
+        }
+
+    suspend fun listAnnouncements(): List<AnnouncementApiDto>? =
+        get("/api/super-admin/communications/announcements")
+
+    suspend fun createAnnouncement(dto: CreateAnnouncementDto): AnnouncementApiDto? =
+        post("/api/super-admin/communications/announcements", dto)
+
+    suspend fun listMessages(): List<AdminMessageApiDto>? =
+        get("/api/super-admin/communications/messages")
+
+    suspend fun createMessage(dto: CreateAdminMessageDto): AdminMessageApiDto? =
+        post("/api/super-admin/communications/messages", dto)
+
+    suspend fun updateMessageStatus(messageId: String, status: String): AdminMessageApiDto? =
+        execute("PUT", "/api/super-admin/communications/messages/$messageId/status?status=$status") {
+            httpClient.put("$baseUrl/api/super-admin/communications/messages/$messageId/status") {
+                parameter("status", status)
                 tokenProvider()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
             }
         }

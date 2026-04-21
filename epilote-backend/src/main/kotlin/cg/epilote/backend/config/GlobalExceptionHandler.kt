@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 @RestControllerAdvice
 class GlobalExceptionHandler {
 
+    private val log = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
+
     @ExceptionHandler(AuthException::class)
     fun handleAuth(ex: AuthException): ResponseEntity<ErrorResponse> =
         ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -37,9 +39,11 @@ class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception::class)
-    fun handleGeneric(ex: Exception): ResponseEntity<ErrorResponse> =
-        ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+    fun handleGeneric(ex: Exception): ResponseEntity<ErrorResponse> {
+        log.error("Unhandled exception", ex)
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(ErrorResponse("INTERNAL_ERROR", "Erreur interne du serveur"))
+    }
 }
 
 data class ErrorResponse(val code: String, val message: String)

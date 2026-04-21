@@ -30,7 +30,7 @@ import cg.epilote.desktop.ui.theme.EpiloteTextMuted
 // ── Section Alertes ─────────────────────────────────────────────────────────
 
 @Composable
-fun AlertsSection(overdueCount: Long) {
+fun AlertsSection(overdueCount: Long, onNavigateNotifications: () -> Unit) {
     val pulseAlpha by rememberInfiniteTransition().animateFloat(
         initialValue = 0.7f,
         targetValue = 1f,
@@ -75,9 +75,9 @@ fun AlertsSection(overdueCount: Long) {
                     fontSize = 12.sp, color = Color(0xFF991B1B)
                 )
             }
-            Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFEF4444)) {
+            Surface(onClick = onNavigateNotifications, shape = RoundedCornerShape(10.dp), color = Color(0xFFEF4444), modifier = Modifier.hoverable(MutableInteractionSource())) {
                 Text(
-                    "Voir les factures", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                    "Voir les notifications", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                     color = Color.White,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                 )
@@ -91,7 +91,8 @@ fun AlertsSection(overdueCount: Long) {
 @Composable
 fun RecentActivityRow(
     stats: AdminStats,
-    onNavigateGroupes: () -> Unit
+    onNavigateGroupes: () -> Unit,
+    onNavigateInvoices: () -> Unit
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -104,7 +105,8 @@ fun RecentActivityRow(
         )
         RecentInvoicesCard(
             invoices = stats.recentInvoices,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            onNavigateInvoices = onNavigateInvoices
         )
     }
 }
@@ -178,7 +180,8 @@ private fun RecentGroupesCard(
 @Composable
 private fun RecentInvoicesCard(
     invoices: List<InvoiceApiDto>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onNavigateInvoices: () -> Unit
 ) {
     Card(
         modifier = modifier,
@@ -202,7 +205,7 @@ private fun RecentInvoicesCard(
                     ) { Icon(Icons.Default.Receipt, null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp)) }
                     Text("Dernières factures", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF0F172A))
                 }
-                TextButton(onClick = {}) {
+                TextButton(onClick = onNavigateInvoices) {
                     Text("Voir tout", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF2A9D8F))
                 }
             }
@@ -267,18 +270,16 @@ private fun EmptyListPlaceholder(icon: ImageVector, message: String) {
 fun QuickActionsRow(
     onNavigateGroupes: () -> Unit,
     onNavigatePlans: () -> Unit,
-    onNavigateModules: () -> Unit
+    onNavigateModules: () -> Unit,
+    onNavigateAnnouncements: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Actions rapides", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF0F172A))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Actions rapides", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF0F172A))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
             ActionCard(Modifier.weight(1f), "Nouveau Groupe", "Créer un groupe scolaire", Icons.Default.AddBusiness, Color(0xFF2A9D8F), onNavigateGroupes)
             ActionCard(Modifier.weight(1f), "Gérer les Plans", "Configurer les abonnements", Icons.Default.CreditCard, Color(0xFF1E40AF), onNavigatePlans)
             ActionCard(Modifier.weight(1f), "Modules & Catégories", "Référentiel fonctionnel", Icons.Default.Extension, Color(0xFF8B5CF6), onNavigateModules)
-            ActionCard(Modifier.weight(1f), "Annonces globales", "Diffuser aux groupes", Icons.Default.Campaign, Color(0xFFF59E0B)) {}
+            ActionCard(Modifier.weight(1f), "Annonces globales", "Diffuser aux groupes", Icons.Default.Campaign, Color(0xFFF59E0B), onNavigateAnnouncements)
         }
     }
 }

@@ -5,7 +5,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import org.springframework.core.io.ByteArrayResource
+import org.springframework.http.ContentDisposition
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.Authentication
@@ -19,6 +23,7 @@ class AdminController(
     private val categoryRepo: AdminCategoryRepository,
     private val planRepo: AdminPlanRepository,
     private val subscriptionRepo: AdminSubscriptionRepository,
+    private val invoicePdfService: AdminInvoicePdfService,
     private val moduleRepo: AdminModuleRepository,
     private val passwordEncoder: PasswordEncoder,
     private val sgClient: AppServicesClient
@@ -239,6 +244,23 @@ class AdminController(
     @GetMapping("/api/super-admin/invoices")
     fun listInvoices(): ResponseEntity<List<InvoiceResponse>> =
         runBlocking { ResponseEntity.ok(repo.listInvoices()) }
+
+    @GetMapping("/api/super-admin/invoices/{invoiceId}/pdf")
+    fun downloadInvoicePdf(
+        @PathVariable invoiceId: String
+    ): ResponseEntity<ByteArrayResource> = runBlocking {
+        val pdf = invoicePdfService.generateInvoicePdf(invoiceId)
+            ?: return@runBlocking ResponseEntity.notFound().build()
+        val resource = ByteArrayResource(pdf.bytes)
+        ResponseEntity.ok()
+            .header(
+                HttpHeaders.CONTENT_DISPOSITION,
+                ContentDisposition.attachment().filename(pdf.fileName).build().toString()
+            )
+            .contentType(MediaType.APPLICATION_PDF)
+            .contentLength(pdf.bytes.size.toLong())
+            .body(resource)
+    }
 
     @PutMapping("/api/super-admin/invoices/{invoiceId}/status")
     fun updateInvoiceStatus(

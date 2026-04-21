@@ -66,6 +66,23 @@ data class CreateInvoiceDto(
 )
 
 @Serializable
+data class AnnouncementApiDto(
+    val id: String = "",
+    val titre: String = "",
+    val contenu: String = "",
+    val cible: String = "all",
+    val createdBy: String = "",
+    val createdAt: Long = 0
+)
+
+@Serializable
+data class CreateAnnouncementDto(
+    val titre: String,
+    val contenu: String,
+    val cible: String = "all"
+)
+
+@Serializable
 data class GroupeApiDto(
     val id: String = "",
     val nom: String = "",
