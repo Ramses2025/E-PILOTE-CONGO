@@ -35,6 +35,9 @@ fun DashboardMainKpiRow(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
+        // KPIs honnêtes : aucune tendance mensuelle n'est disponible côté backend pour l'instant,
+        // nous évitons donc les pourcentages fictifs et affichons des métriques calculées à partir
+        // des données réelles de AdminStats.
         KpiCard(
             modifier = Modifier.weight(1f),
             icon = Icons.Default.Business,
@@ -42,8 +45,8 @@ fun DashboardMainKpiRow(
             iconTint = Color(0xFF3B82F6),
             label = "Groupes Scolaires",
             value = formatNumber(stats.totalGroupes),
-            trend = "↑12%",
-            trendLabel = "Clients actifs",
+            trend = "",
+            trendLabel = "${stats.groupesActifs} actifs",
             onClick = onNavigateGroupes
         )
         KpiCard(
@@ -51,30 +54,30 @@ fun DashboardMainKpiRow(
             icon = Icons.Default.CreditCard,
             iconBg = Color(0xFFD1FAE5),
             iconTint = Color(0xFF059669),
-            label = "Plans Actifs",
+            label = "Abonnements actifs",
             value = formatNumber(stats.activeSubscriptions),
-            trend = "↑8%",
-            trendLabel = "Abonnements"
+            trend = "",
+            trendLabel = "sur ${formatNumber(stats.totalSubscriptions)} total"
         )
         KpiCard(
             modifier = Modifier.weight(1f),
             icon = Icons.Default.Payments,
             iconBg = Color(0xFFD1FAE5),
             iconTint = Color(0xFF10B981),
-            label = "Revenus",
+            label = "Revenus encaissés",
             value = formatXAF(stats.revenuePaid),
-            trend = "↑15%",
-            trendLabel = "Ce mois"
+            trend = "",
+            trendLabel = "sur ${formatXAF(stats.revenueTotal)} émis"
         )
         KpiCard(
             modifier = Modifier.weight(1f),
-            icon = Icons.Default.TrendingUp,
+            icon = Icons.Default.School,
             iconBg = Color(0xFFDBEAFE),
             iconTint = Color(0xFF3B82F6),
-            label = "Croissance",
-            value = "0 %",
-            trend = "↑0%",
-            trendLabel = "vs mois dernier"
+            label = "Écoles",
+            value = formatNumber(stats.totalEcoles),
+            trend = "",
+            trendLabel = "sur la plateforme"
         )
     }
 }
