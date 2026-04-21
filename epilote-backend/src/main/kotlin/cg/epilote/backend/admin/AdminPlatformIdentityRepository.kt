@@ -22,6 +22,13 @@ class AdminPlatformIdentityRepository(private val bucket: Bucket) {
         const val CONFIG_COLLECTION = "config"
         const val DOC_ID = "config::platform_identity"
         const val DOC_TYPE = "config_platform_identity"
+        /**
+         * Tout format de numérotation de facture doit contenir au moins un bloc `{N+}`
+         * (ex. `{N}`, `{NN}`, `{NNNNNN}`) — c'est ce bloc qui reçoit le numéro séquentiel
+         * atomique via [AdminInvoiceCounterRepository]. Sans ce bloc, deux factures
+         * différentes produiraient la même référence (non-conformité juridique).
+         */
+        val SEQUENCE_PLACEHOLDER: Regex = Regex("\\{N+}")
     }
 
     private fun col(name: String): Collection = runBlocking { scope.collection(name) }
@@ -78,7 +85,9 @@ class AdminPlatformIdentityRepository(private val bucket: Bucket) {
             bankName = req.bankName ?: current.bankName,
             mtnMomoNumber = req.mtnMomoNumber ?: current.mtnMomoNumber,
             airtelMoneyNumber = req.airtelMoneyNumber ?: current.airtelMoneyNumber,
-            invoiceNumberFormat = req.invoiceNumberFormat?.takeIf { it.isNotBlank() } ?: current.invoiceNumberFormat,
+            invoiceNumberFormat = req.invoiceNumberFormat
+                ?.takeIf { it.isNotBlank() && SEQUENCE_PLACEHOLDER.containsMatchIn(it) }
+                ?: current.invoiceNumberFormat,
             legalMentions = req.legalMentions ?: current.legalMentions,
             updatedAt = now
         )

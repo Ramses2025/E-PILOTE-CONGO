@@ -51,11 +51,19 @@ class AdminInvoiceCounterRepository(private val bucket: Bucket) {
      * Applique le format défini dans `PlatformIdentity.invoiceNumberFormat` en remplaçant
      * `{YYYY}` par l'année courante et `{NNNNNN}` (ou tout autre bloc `{N+}`) par la valeur
      * du compteur avec padding zéro.
+     *
+     * Défense en profondeur : si un format ne contient pas de bloc `{N+}` (données
+     * obsolètes en base avant validation en écriture), on retombe sur le format par
+     * défaut pour garantir l'unicité de la référence — deux factures ne peuvent
+     * JAMAIS porter la même référence.
      */
     fun formatReference(format: String, year: Int, sequence: Long): String {
-        val safeFormat = format.ifBlank { "FAC-{YYYY}-{NNNNNN}" }
+        val sequencePlaceholder = Regex("\\{N+}")
+        val safeFormat = format.takeIf {
+            it.isNotBlank() && sequencePlaceholder.containsMatchIn(it)
+        } ?: "FAC-{YYYY}-{NNNNNN}"
         val withYear = safeFormat.replace("{YYYY}", year.toString())
-        return Regex("\\{N+}").replace(withYear) { match ->
+        return sequencePlaceholder.replace(withYear) { match ->
             val width = match.value.length - 2
             sequence.toString().padStart(width, '0')
         }

@@ -1,5 +1,7 @@
 package cg.epilote.backend.admin
 
+import com.couchbase.client.core.error.CasMismatchException
+import com.couchbase.client.core.error.DocumentNotFoundException
 import com.couchbase.client.kotlin.Bucket
 import com.couchbase.client.kotlin.Collection
 import com.couchbase.client.kotlin.query.execute
@@ -224,15 +226,18 @@ class AdminSubscriptionRepository(
             if (sub.statut == "active" && sub.dateFin in 1 until currentTime) groupId else null
         }
 
-        // 2) Pour chaque candidat, relecture KV `get` (doc le plus récent) + re-check
-        //    de l'expiration AVANT upsert. Évite la race condition où un paiement
-        //    `activateOrRenew` aurait renouvelé l'abonnement entre le N1QL et l'upsert.
-        //    Référence : https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html
+        // 2) Pour chaque candidat, relecture KV `get` (doc + CAS le plus récent) + re-check
+        //    de l'expiration, puis `replace` avec le CAS lu (écriture optimiste). Si un autre
+        //    writer (`activateOrRenew`, `updateSubscriptionStatus`) a modifié le doc entre le
+        //    `get` et le `replace`, `CasMismatchException` est levée et on n'écrase PAS le
+        //    renouvellement. Pattern officiel Couchbase Kotlin SDK :
+        //    https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html#cas
         val suspended = mutableListOf<String>()
         candidateGroupIds.forEach { groupId ->
-            val freshDoc = runCatching {
-                col(GROUPS_COLLECTION).get(groupId).contentAs<MutableMap<String, Any?>>()
-            }.getOrNull() ?: return@forEach
+            val fresh = runCatching { col(GROUPS_COLLECTION).get(groupId) }.getOrNull()
+                ?: return@forEach
+            val freshDoc = runCatching { fresh.contentAs<MutableMap<String, Any?>>() }.getOrNull()
+                ?: return@forEach
 
             val sub = buildSubscriptionResponse(groupId, freshDoc) ?: return@forEach
             // Re-check : si l'abonnement a été renouvelé entre-temps (ou annulé), ne pas toucher.
@@ -244,9 +249,15 @@ class AdminSubscriptionRepository(
             subMap["updatedAt"] = currentTime
             freshDoc["subscription"] = subMap
             freshDoc["updatedAt"] = currentTime
-            runCatching {
-                col(GROUPS_COLLECTION).upsert(groupId, freshDoc)
+            try {
+                col(GROUPS_COLLECTION).replace(groupId, freshDoc, cas = fresh.cas)
                 suspended += groupId
+            } catch (_: CasMismatchException) {
+                // Un autre writer (paiement / renouvellement) a modifié le doc entre le
+                // `get` et le `replace` — on ne suspend pas ce cycle, prochain run du
+                // scheduler réévaluera.
+            } catch (_: DocumentNotFoundException) {
+                // Doc supprimé entre-temps, rien à faire.
             }
         }
         return suspended
