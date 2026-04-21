@@ -46,6 +46,20 @@ class AdminInvoicePdfService(
     private val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
     private val currencyFormatter = NumberFormat.getInstance(Locale.FRANCE)
 
+    companion object {
+        /**
+         * Caractères Unicode supplémentaires mappés par l'encodage WinAnsi (CP1252) :
+         * Euro, guillemets typographiques, tiret long, etc. Référence :
+         * https://pdfbox.apache.org/3.0/dependencies.html (Fonts → WinAnsiEncoding).
+         */
+        private val WIN_ANSI_EXTRA_CODE_POINTS: Set<Int> = setOf(
+            0x20AC, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6,
+            0x2030, 0x0160, 0x2039, 0x0152, 0x017D, 0x2018, 0x2019, 0x201C,
+            0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A,
+            0x0153, 0x017E, 0x0178
+        )
+    }
+
     suspend fun generateInvoicePdf(invoiceId: String): GeneratedInvoicePdf? {
         val invoice = repo.getInvoiceById(invoiceId) ?: return null
         val groupe = repo.getGroupeById(invoice.groupeId) ?: return null
@@ -250,16 +264,17 @@ class AdminInvoicePdfService(
     }
 
     private fun isWinAnsiCompatible(ch: Char): Boolean {
+        // Les caractères de contrôle (\n, \r, \t) n'ont pas de glyphe dans Helvetica WinAnsi :
+        // laissés tels quels ils font cracher PDFBox showText() avec IllegalArgumentException.
+        // On les remplace donc par '?' dans le fallback (ou on les pré-filtre via wrap()).
+        if (ch == '\n' || ch == '\r' || ch == '\t') return false
         val code = ch.code
-        // Plage ASCII imprimable + tabs/retours.
+        // Plage ASCII imprimable.
         if (code in 0x20..0x7E) return true
-        if (ch == '\n' || ch == '\r' || ch == '\t') return true
         // Plage Latin-1 supplément couverte par WinAnsi.
         if (code in 0xA0..0xFF) return true
-        // Quelques caractères additionnels mappés par WinAnsi (Euro, guillemets typographiques…).
-        return code in setOf(0x20AC, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6,
-            0x2030, 0x0160, 0x2039, 0x0152, 0x017D, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022,
-            0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x017E, 0x0178)
+        // Caractères typographiques Unicode supplémentaires supportés par WinAnsi.
+        return code in WIN_ANSI_EXTRA_CODE_POINTS
     }
 
     private fun formatDate(epochMillis: Long): String = runCatching {
