@@ -157,6 +157,8 @@ class AdminInvoicePdfService(
                 competentCourt = snap["competentCourt"] as? String ?: "",
                 iban = snap["iban"] as? String ?: "",
                 bankName = snap["bankName"] as? String ?: "",
+                mtnMomoNumber = snap["mtnMomoNumber"] as? String ?: "",
+                airtelMoneyNumber = snap["airtelMoneyNumber"] as? String ?: "",
                 legalMentions = snap["legalMentions"] as? String ?: ""
             )
         }

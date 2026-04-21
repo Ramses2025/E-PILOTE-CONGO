@@ -824,6 +824,8 @@ class AdminRepository(
                 "website" to it.website,
                 "iban" to it.iban,
                 "bankName" to it.bankName,
+                "mtnMomoNumber" to it.mtnMomoNumber,
+                "airtelMoneyNumber" to it.airtelMoneyNumber,
                 "tvaRate" to it.tvaRate,
                 "tvaExempted" to it.tvaExempted,
                 "paymentTerms" to it.paymentTerms,
