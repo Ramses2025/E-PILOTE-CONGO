@@ -34,6 +34,19 @@ class AdminPaymentReceiptRepository(private val bucket: Bucket) {
 
     private fun newId(): String = "payment_receipt::${UUID.randomUUID()}"
 
+    /**
+     * Cherche un reçu déjà enregistré avec la clé d'idempotence donnée. Utilisé
+     * par `recordPayment` pour dédupliquer les retries réseau côté desktop —
+     * pattern officiel Stripe (https://stripe.com/docs/api/idempotent_requests).
+     */
+    suspend fun findByIdempotencyKey(key: String): PaymentReceiptResponse? = runCatching {
+        val result = scope.query(
+            "SELECT META().id AS id, * FROM `$COLLECTION` WHERE `type` = '$DOC_TYPE' AND `idempotencyKey` = \$key LIMIT 1",
+            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("key" to key)
+        ).execute()
+        result.rows.firstNotNullOfOrNull(::rowToResponse)
+    }.getOrNull()
+
     suspend fun record(
         groupeId: String,
         subscriptionId: String,
@@ -45,7 +58,8 @@ class AdminPaymentReceiptRepository(private val bucket: Bucket) {
         receivedBy: String,
         notes: String,
         accessStart: Long,
-        accessEnd: Long
+        accessEnd: Long,
+        idempotencyKey: String? = null
     ): PaymentReceiptResponse {
         val id = newId()
         val receivedAt = now()
@@ -66,6 +80,7 @@ class AdminPaymentReceiptRepository(private val bucket: Bucket) {
             "accessStart" to accessStart,
             "accessEnd" to accessEnd,
             "receivedAt" to receivedAt,
+            "idempotencyKey" to idempotencyKey,
             "createdAt" to receivedAt,
             "updatedAt" to receivedAt
         )

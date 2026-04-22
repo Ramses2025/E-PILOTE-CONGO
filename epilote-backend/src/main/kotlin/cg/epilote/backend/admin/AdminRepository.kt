@@ -833,15 +833,23 @@ class AdminRepository(
                 "legalMentions" to it.legalMentions
             )
         }
+        // Statut initial : si l'appelant demande "paid" (paiement présentiel reçu au
+        // moment de l'émission), on fige le statut à la création pour éviter le
+        // double-commit non-atomique `create(draft)` → `updateStatus(paid)` qui
+        // pouvait laisser la facture en draft si la 2e étape échouait.
+        val allowedInitialStatus = setOf("draft", "paid")
+        val normalizedInitial = req.initialStatus.trim().lowercase()
+            .takeIf { it in allowedInitialStatus } ?: "draft"
+        val paidAt: Long? = if (normalizedInitial == "paid") (req.datePaiement ?: issuedAt) else null
         val doc = mapOf(
             "type"             to "invoice_platform",
             "groupeId"         to req.groupeId,
             "subscriptionId"   to req.subscriptionId,
             "montantXAF"       to req.montantXAF,
-            "statut"           to "draft",
+            "statut"           to normalizedInitial,
             "dateEmission"     to issuedAt,
             "dateEcheance"     to req.dateEcheance,
-            "datePaiement"     to null,
+            "datePaiement"     to paidAt,
             "reference"        to ref,
             "notes"            to req.notes,
             "emitterIdentity"  to identitySnapshot,

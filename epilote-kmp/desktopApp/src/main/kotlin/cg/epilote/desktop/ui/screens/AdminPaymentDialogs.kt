@@ -44,6 +44,7 @@ import cg.epilote.desktop.data.RecordPaymentDto
 import cg.epilote.desktop.ui.theme.EpiloteTextMuted
 import cg.epilote.desktop.ui.theme.cursorHand
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * Formulaire « Enregistrer un paiement présentiel ».
@@ -73,6 +74,10 @@ internal fun RecordPaymentDialog(
     var notes by remember { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    // Clé d'idempotence stable pour la durée de vie du dialogue : si l'utilisateur
+    // double-clique ou si le réseau retry, le backend retourne le même reçu
+    // (pas de facture doublon). Pattern Stripe documenté.
+    val idempotencyKey = remember { UUID.randomUUID().toString() }
 
     LaunchedEffect(Unit) {
         loadingMethods = true
@@ -252,7 +257,8 @@ internal fun RecordPaymentDialog(
                             durationMonths = duration,
                             externalReference = externalReference.trim().ifBlank { null },
                             paidBy = paidBy.trim().ifBlank { null },
-                            notes = notes.trim()
+                            notes = notes.trim(),
+                            idempotencyKey = idempotencyKey
                         )
                         val receipt = runCatching { client.recordPayment(payload) }.getOrNull()
                         submitting = false

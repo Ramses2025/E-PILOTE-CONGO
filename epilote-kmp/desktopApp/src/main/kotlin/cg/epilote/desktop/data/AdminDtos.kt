@@ -458,7 +458,14 @@ data class RecordPaymentDto(
     val durationMonths: Int = 12,
     val externalReference: String? = null,
     val paidBy: String? = null,
-    val notes: String = ""
+    val notes: String = "",
+    /**
+     * Clé d'idempotence (UUID) générée côté desktop au moment d'ouvrir le dialogue
+     * de saisie. Si le clic `Enregistrer` est envoyé deux fois (retry réseau,
+     * double-clic, timeout), le backend retourne le même reçu au lieu de créer
+     * une facture doublon. Pattern documenté Stripe.
+     */
+    val idempotencyKey: String? = null
 )
 
 @Serializable

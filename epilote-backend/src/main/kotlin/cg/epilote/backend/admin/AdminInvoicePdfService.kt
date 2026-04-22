@@ -59,7 +59,15 @@ class AdminInvoicePdfService(
 
     private val log = LoggerFactory.getLogger(AdminInvoicePdfService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
-    private val currencyFormatter = NumberFormat.getInstance(Locale.FRANCE)
+
+    /**
+     * `NumberFormat` n'est PAS thread-safe (doc Java officielle). `AdminInvoicePdfService`
+     * est un singleton Spring ; deux appels concurrents à `/api/super-admin/invoices/{id}/pdf`
+     * ou deux `recordPayment` en parallèle partageraient la même instance → corruption du
+     * buffer de formatage. On crée donc une instance par appel via [currencyFormatter].
+     * Référence : https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/NumberFormat.html
+     */
+    private fun currencyFormatter(): NumberFormat = NumberFormat.getInstance(Locale.FRANCE)
 
     companion object {
         private const val PLACEHOLDER = "« À compléter dans Paramètres plateforme »"
@@ -191,7 +199,12 @@ class AdminInvoicePdfService(
 
     private fun wrap(ctx: DrawContext, text: String, size: Float, maxWidth: Float, bold: Boolean = false): List<String> {
         val font: PDFont = if (bold) ctx.fonts.bold else ctx.fonts.regular
-        val source = if (ctx.fonts.unicodeSafe) text else sanitizeForWinAnsi(text)
+        // Les séparateurs de ligne/retour/tab doivent être réduits à des espaces AVANT la
+        // sanitisation WinAnsi (qui les remplace sinon par `?`, ce qui casse le
+        // word-wrap sur du texte multiligne — ex. notes de paiement concaténées avec
+        // `\n` dans `recordPayment`).
+        val flattened = text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+        val source = if (ctx.fonts.unicodeSafe) flattened else sanitizeForWinAnsi(flattened)
         if (source.isBlank()) return listOf("")
         val words = source.trim().split(Regex("\\s+"))
         val lines = mutableListOf<String>()
@@ -469,10 +482,16 @@ class AdminInvoicePdfService(
         val legal = identity.legalMentions.ifBlank {
             "Facture émise par la plateforme E-PILOTE CONGO. Document contractuel opposable, généré électroniquement et archivé côté serveur."
         }
-        val line1 = wrap(ctx, legal, 8f, ctx.innerWidth).firstOrNull() ?: legal
-        drawText(ctx, line1, ctx.left, footerY + 4f, 8f)
+        // Rendu multi-ligne des mentions légales : on ne tronquait auparavant qu'à la
+        // première ligne, ce qui masquait la suite du texte. On limite à 3 lignes
+        // (au-delà, les mentions les plus longues débordent sur le contenu principal).
+        val legalLines = wrap(ctx, legal, 8f, ctx.innerWidth).take(3)
+        legalLines.forEachIndexed { idx, line ->
+            drawText(ctx, line, ctx.left, footerY + 4f - idx * 10f, 8f)
+        }
         if (identity.competentCourt.isNotBlank()) {
-            drawText(ctx, "Tribunal compétent : ${identity.competentCourt}", ctx.left, footerY - 8f, 8f)
+            val courtY = footerY + 4f - legalLines.size * 10f - 2f
+            drawText(ctx, "Tribunal compétent : ${identity.competentCourt}", ctx.left, courtY, 8f)
         }
     }
 
@@ -531,7 +550,7 @@ class AdminInvoicePdfService(
         Instant.ofEpochMilli(epochMillis).atZone(ZoneId.of("UTC")).toLocalDate().format(dateFormatter)
     }.getOrDefault("-")
 
-    private fun formatMoney(amount: Long): String = "${currencyFormatter.format(amount)} XAF"
+    private fun formatMoney(amount: Long): String = "${currencyFormatter().format(amount)} XAF"
 
     private fun formatPercent(rate: Double): String {
         val formatter = NumberFormat.getNumberInstance(Locale.FRANCE).apply {

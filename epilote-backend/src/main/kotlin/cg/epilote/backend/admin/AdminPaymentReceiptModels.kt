@@ -46,7 +46,19 @@ data class RecordPaymentRequest(
     val externalReference: String? = null,
     /** Nom de la personne qui a réglé au nom du groupe (ex. directeur). */
     val paidBy: String? = null,
-    val notes: String = ""
+    val notes: String = "",
+    /**
+     * Clé d'idempotence fournie par le client (UUID recommandé). Si deux appels
+     * `recordPayment` arrivent avec la même clé (ex. retry côté desktop, timeout
+     * réseau), le backend retourne le reçu déjà enregistré sans ré-exécuter les
+     * 3 étapes (activate → invoice → receipt), évitant ainsi la création d'une
+     * facture doublon orpheline.
+     *
+     * Pattern documenté Stripe / Spring :
+     *  - https://stripe.com/docs/api/idempotent_requests
+     *  - https://docs.spring.io/spring-framework/reference/web/webmvc-functional.html
+     */
+    val idempotencyKey: String? = null
 )
 
 data class PaymentReceiptResponse(

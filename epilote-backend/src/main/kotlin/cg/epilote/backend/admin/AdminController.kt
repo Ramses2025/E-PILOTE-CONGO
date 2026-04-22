@@ -5,6 +5,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.http.ContentDisposition
 import org.springframework.http.HttpHeaders
@@ -30,6 +31,7 @@ class AdminController(
     private val platformIdentityRepo: AdminPlatformIdentityRepository,
     private val paymentReceiptRepo: AdminPaymentReceiptRepository
 ) {
+    private val log = LoggerFactory.getLogger(AdminController::class.java)
     private val allowedInvoiceStatuses = setOf("draft", "sent", "paid", "overdue", "cancelled")
 
     private fun Authentication.userId() = principal as String
@@ -334,14 +336,27 @@ class AdminController(
             return@runBlocking ResponseEntity.badRequest().build()
         }
 
+        // 0) Idempotence : si le client fournit une clé et qu'un reçu existe déjà
+        //    avec cette clé, on retourne 200 avec le reçu existant (pas de duplication
+        //    de facture/abonnement). Pattern documenté Stripe.
+        req.idempotencyKey?.takeIf { it.isNotBlank() }?.let { key ->
+            paymentReceiptRepo.findByIdempotencyKey(key)?.let { existing ->
+                return@runBlocking ResponseEntity.ok(existing)
+            }
+        }
+
         // 1) Activer/renouveler l'abonnement (dateDebut = maintenant, dateFin = +N mois).
         val activated = subscriptionRepo.activateOrRenew(
             subId = req.subscriptionId,
             durationMonths = req.durationMonths
         ) ?: return@runBlocking ResponseEntity.badRequest().build()
 
-        // 2) Émettre une facture plateforme associée (snapshot identité, numérotation atomique).
-        val invoice = runCatching {
+        // 2) Émettre une facture plateforme directement en statut "paid" (paiement
+        //    présentiel reçu à l'émission) — on évite ainsi le double-commit
+        //    non-atomique `createDraft → updateStatus(paid)` qui pouvait laisser la
+        //    facture en draft si la 2e étape échouait (comptabilité incohérente).
+        val paidAt = System.currentTimeMillis()
+        val invoice = try {
             repo.createInvoice(
                 CreateInvoiceRequest(
                     groupeId = req.groupeId,
@@ -353,20 +368,23 @@ class AdminController(
                         req.externalReference?.let { "Réf. externe : $it" },
                         req.paidBy?.let { "Payé par : $it" },
                         req.notes.takeIf { it.isNotBlank() }
-                    ).joinToString("\n")
+                    ).joinToString("\n"),
+                    initialStatus = "paid",
+                    datePaiement = paidAt
                 )
             )
-        }.getOrNull()
-        if (invoice != null) {
-            // Facture payée à l'émission (paiement présentiel reçu).
-            runCatching { repo.updateInvoiceStatus(invoice.id, "paid", System.currentTimeMillis()) }
+        } catch (e: Exception) {
+            // Si la facture ne peut pas être créée, on propage l'erreur plutôt que
+            // d'enregistrer un reçu orphelin pointant vers un invoiceId=null.
+            log.warn("Échec création facture pour recordPayment (sub=${req.subscriptionId}) : ${e.message}", e)
+            return@runBlocking ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build()
         }
 
         // 3) Enregistrer le reçu de paiement pour historique.
         val receipt = paymentReceiptRepo.record(
             groupeId = req.groupeId,
             subscriptionId = req.subscriptionId,
-            invoiceId = invoice?.id,
+            invoiceId = invoice.id,
             montantXAF = req.montantXAF,
             method = method,
             externalReference = req.externalReference,
@@ -374,7 +392,8 @@ class AdminController(
             receivedBy = auth.userId(),
             notes = req.notes,
             accessStart = activated.dateDebut,
-            accessEnd = activated.dateFin
+            accessEnd = activated.dateFin,
+            idempotencyKey = req.idempotencyKey?.takeIf { it.isNotBlank() }
         )
         ResponseEntity.status(HttpStatus.CREATED).body(receipt)
     }
