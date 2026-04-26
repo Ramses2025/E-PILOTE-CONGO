@@ -4,9 +4,11 @@ import cg.epilote.backend.auth.AuthException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.validation.FieldError
+import org.springframework.web.ErrorResponseException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.server.ResponseStatusException
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
@@ -38,8 +40,45 @@ class GlobalExceptionHandler {
             .body(ErrorResponse("VALIDATION_ERROR", errors.joinToString("; ")))
     }
 
+    /**
+     * Honore les exceptions porteuses d'un statut HTTP explicite (annotation
+     * `@ResponseStatus` sur l'exception ou `ResponseStatusException` levée
+     * explicitement). Sans ce handler, le `handleGeneric` ci-dessous les
+     * convertirait en HTTP 500, masquant les erreurs métier (ex. 409 CONFLICT
+     * pour email dupliqué, 400 pour planId invalide).
+     *
+     * Référence Spring MVC :
+     * https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller/ann-exceptionhandler.html
+     */
+    @ExceptionHandler(ResponseStatusException::class)
+    fun handleResponseStatus(ex: ResponseStatusException): ResponseEntity<ErrorResponse> {
+        val status = HttpStatus.resolve(ex.statusCode.value()) ?: HttpStatus.INTERNAL_SERVER_ERROR
+        val code = status.name
+        val message = ex.reason ?: ex.message ?: status.reasonPhrase
+        return ResponseEntity.status(status).body(ErrorResponse(code, message))
+    }
+
+    @ExceptionHandler(ErrorResponseException::class)
+    fun handleErrorResponse(ex: ErrorResponseException): ResponseEntity<ErrorResponse> {
+        val status = HttpStatus.resolve(ex.statusCode.value()) ?: HttpStatus.INTERNAL_SERVER_ERROR
+        val code = status.name
+        val message = ex.body.detail ?: ex.message ?: status.reasonPhrase
+        return ResponseEntity.status(status).body(ErrorResponse(code, message))
+    }
+
     @ExceptionHandler(Exception::class)
     fun handleGeneric(ex: Exception): ResponseEntity<ErrorResponse> {
+        // Délègue aux exceptions porteuses de @ResponseStatus avant de tomber
+        // dans le 500 générique : sinon une exception métier custom (annotée
+        // @ResponseStatus(HttpStatus.CONFLICT) par exemple) serait convertie
+        // en 500, masquant l'intention du code métier.
+        val responseStatusAnnotation = ex.javaClass.getAnnotation(org.springframework.web.bind.annotation.ResponseStatus::class.java)
+        if (responseStatusAnnotation != null) {
+            val status = responseStatusAnnotation.value
+            val code = status.name
+            val message = ex.message ?: status.reasonPhrase
+            return ResponseEntity.status(status).body(ErrorResponse(code, message))
+        }
         log.error("Unhandled exception", ex)
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(ErrorResponse("INTERNAL_ERROR", "Erreur interne du serveur"))
