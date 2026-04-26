@@ -43,6 +43,16 @@ class AdminRepository(
     }
 
     suspend fun createGroupe(req: CreateGroupeRequest, createdBy: String): GroupeResponse {
+        // Vérifie que le plan existe avant de créer le groupe : sinon on aurait
+        // un groupe orphelin (planId pointant vers rien) qui ferait échouer le
+        // login ADMIN_GROUPE et le calcul des permissions (cf. AuthService).
+        planRepo.getPlanById(req.planId)
+            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Plan introuvable : ${req.planId}")
+        // Unicité de l'email côté groupe scolaire (utile pour la facturation +
+        // pour qu'un admin groupe n'utilise pas le même email qu'un autre groupe).
+        if (!req.email.isNullOrBlank() && groupEmailAlreadyUsed(req.email)) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Un groupe scolaire avec l'email '${req.email}' existe déjà")
+        }
         val id = newId("groupe")
         val slug = generateSlug()
         val normalizedLogo = req.logo?.trim()?.takeIf { it.isNotEmpty() }
@@ -325,7 +335,36 @@ class AdminRepository(
         username?.trim()?.takeIf { it.isNotEmpty() }
             ?: email.substringBefore("@").ifBlank { email }
 
+    /**
+     * Vérifie si un compte (user/admin/super admin) existe déjà pour cet email.
+     * Garantit l'unicité avant `createAdmin*`/`createUser` afin que `findByEmail`
+     * de l'AuthService retourne un résultat déterministe lors du login.
+     *
+     * Comparaison normalisée via TRIM+LOWER (côté N1QL) pour éviter les doublons
+     * dus à la casse ou aux espaces parasites saisis dans le formulaire.
+     */
+    private suspend fun emailAlreadyUsed(email: String): Boolean {
+        val normalized = email.trim().lowercase()
+        if (normalized.isEmpty()) return false
+        val result = scope.query(
+            "SELECT RAW META().id FROM `users` WHERE `type` = 'user' AND LOWER(TRIM(`email`)) = \$email LIMIT 1",
+            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("email" to normalized)
+        ).execute()
+        return result.rows.isNotEmpty()
+    }
+
+    private suspend fun groupEmailAlreadyUsed(email: String): Boolean {
+        val normalized = email.trim().lowercase()
+        if (normalized.isEmpty()) return false
+        val result = scope.query(
+            "SELECT RAW META().id FROM `${GROUPS_COLLECTION}` WHERE `type` IN ['school_group','groupe'] AND LOWER(TRIM(`email`)) = \$email LIMIT 1",
+            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("email" to normalized)
+        ).execute()
+        return result.rows.isNotEmpty()
+    }
+
     suspend fun createAdminGroupe(groupeId: String, req: CreateAdminGroupeRequest, passwordHash: String): UserResponse {
+        if (emailAlreadyUsed(req.email)) throw EmailAlreadyUsedException(req.email)
         val id = newId("user")
         val username = effectiveUsername(req.email, req.username)
         val doc = mapOf(
@@ -360,6 +399,7 @@ class AdminRepository(
     }
 
     suspend fun createUser(groupeId: String, req: CreateUserRequest, passwordHash: String, profilPermissions: List<ProfilPermission>): UserResponse {
+        if (emailAlreadyUsed(req.email)) throw EmailAlreadyUsedException(req.email)
         val id = newId("user")
         val username = effectiveUsername(req.email, req.username)
         val doc = mapOf(
@@ -1117,6 +1157,7 @@ class AdminRepository(
     }
 
     suspend fun createAdmin(req: CreateAdminRequest, passwordHash: String): AdminUserResponse {
+        if (emailAlreadyUsed(req.email)) throw EmailAlreadyUsedException(req.email)
         val id = newId("user")
         val username = req.email.substringBefore("@").ifBlank { "admin_${System.currentTimeMillis()}" }
         val roleNorm = req.role.uppercase()
