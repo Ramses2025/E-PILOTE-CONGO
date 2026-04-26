@@ -23,9 +23,15 @@ class UserRepository(private val bucket: Bucket) {
     }
 
     suspend fun findByEmail(email: String): EpiloteUserDetails? {
+        // Comparaison normalisée (LOWER+TRIM) côté N1QL pour s'aligner sur la
+        // vérification d'unicité à la création (`AdminRepository.emailAlreadyUsed`).
+        // Sans cela, un utilisateur inscrit avec "John@X.com" ne pourrait pas se
+        // reconnecter avec "john@x.com" alors que l'unicité l'aurait pourtant
+        // rejeté à la création — UX incohérente. Voir Devin Review PR #3.
+        val normalized = email.trim().lowercase()
         val result = bucket.defaultScope().query(
-            statement = "SELECT META().id, * FROM `users` WHERE email = \$email LIMIT 1",
-            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("email" to email)
+            statement = "SELECT META().id, * FROM `users` WHERE LOWER(TRIM(`email`)) = \$email LIMIT 1",
+            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("email" to normalized)
         ).execute()
 
         return result.rows.firstOrNull()?.let { row ->
