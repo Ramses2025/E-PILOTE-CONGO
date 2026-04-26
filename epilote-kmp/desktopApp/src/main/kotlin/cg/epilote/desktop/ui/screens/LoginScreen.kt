@@ -57,6 +57,17 @@ fun LoginScreen(
     val rememberMe by viewModel.rememberMe.collectAsState()
     var passwordVisible by remember { mutableStateOf(false) }
 
+    // ── Local mirrors for TextField input ───────────────────────
+    // Compose Desktop's OutlinedTextField requires a synchronous source of
+    // truth for fast typing. Reading directly from `StateFlow.collectAsState()`
+    // introduces dispatcher latency that drops/interleaves keystrokes.
+    // We mirror the VM state into local Compose state, propagate edits
+    // synchronously, and let LaunchedEffect handle external VM resets.
+    var emailInput    by remember { mutableStateOf(email) }
+    var passwordInput by remember { mutableStateOf(password) }
+    LaunchedEffect(email)    { if (email != emailInput) emailInput = email }
+    LaunchedEffect(password) { if (password != passwordInput) passwordInput = password }
+
     val focusManager = LocalFocusManager.current
     val emailFocusReq = remember { FocusRequester() }
     val passFocusReq  = remember { FocusRequester() }
@@ -110,10 +121,12 @@ fun LoginScreen(
 
     // ── Reset error/network state when user starts editing ──────
     fun onEmailChange(v: String) {
+        emailInput = v
         if (uiState is LoginUiState.Error || uiState is LoginUiState.NoNetwork) viewModel.resetState()
         viewModel.onEmailChange(v)
     }
     fun onPasswordChange(v: String) {
+        passwordInput = v
         if (uiState is LoginUiState.Error || uiState is LoginUiState.NoNetwork) viewModel.resetState()
         viewModel.onPasswordChange(v)
     }
@@ -210,7 +223,7 @@ fun LoginScreen(
 
                     // ── Email field ──────────────────────────────
                     OutlinedTextField(
-                        value = email,
+                        value = emailInput,
                         onValueChange = ::onEmailChange,
                         label = { Text("Adresse email", fontSize = 13.sp) },
                         modifier = Modifier.fillMaxWidth()
@@ -236,7 +249,7 @@ fun LoginScreen(
 
                     // ── Password field ──────────────────────────
                     OutlinedTextField(
-                        value = password,
+                        value = passwordInput,
                         onValueChange = ::onPasswordChange,
                         label = { Text("Mot de passe", fontSize = 13.sp) },
                         trailingIcon = {
