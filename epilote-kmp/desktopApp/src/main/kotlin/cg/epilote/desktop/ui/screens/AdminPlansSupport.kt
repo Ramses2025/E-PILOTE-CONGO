@@ -94,7 +94,7 @@ internal fun PlanKpiRow(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     KpiCard(modifier = Modifier.weight(1f), icon = Icons.Default.ViewModule, iconBg = Color(0xFFEDE9FE), iconTint = Color(0xFF6D28D9), label = "Modules couverts", value = "$totalModulesAcrossPlans", trendLabel = "tous plans confondus")
-                    KpiCard(modifier = Modifier.weight(1f), icon = Icons.Default.MonetizationOn, iconBg = Color(0xFFFFEDD5), iconTint = Color(0xFFC2410C), label = "Prix moyen", value = "${avgPrice} XAF", trendLabel = "tarif moyen")
+                    KpiCard(modifier = Modifier.weight(1f), icon = Icons.Default.MonetizationOn, iconBg = Color(0xFFFFEDD5), iconTint = Color(0xFFC2410C), label = "Prix moyen des plans", value = "${avgPrice} XAF", trendLabel = "moyenne arithmétique")
                 }
             }
         } else {
@@ -102,7 +102,7 @@ internal fun PlanKpiRow(
                 KpiCard(modifier = Modifier.weight(1f), icon = Icons.Default.Star, iconBg = Color(0xFFDBEAFE), iconTint = Color(0xFF2563EB), label = "Plans", value = "$totalPlans", trendLabel = "$activePlans actifs")
                 KpiCard(modifier = Modifier.weight(1f), icon = Icons.Default.CheckCircle, iconBg = Color(0xFFD1FAE5), iconTint = Color(0xFF059669), label = "Actifs", value = "$activePlans", trendLabel = "sur la plateforme")
                 KpiCard(modifier = Modifier.weight(1f), icon = Icons.Default.ViewModule, iconBg = Color(0xFFEDE9FE), iconTint = Color(0xFF6D28D9), label = "Modules couverts", value = "$totalModulesAcrossPlans", trendLabel = "tous plans confondus")
-                KpiCard(modifier = Modifier.weight(1f), icon = Icons.Default.MonetizationOn, iconBg = Color(0xFFFFEDD5), iconTint = Color(0xFFC2410C), label = "Prix moyen", value = "${avgPrice} XAF", trendLabel = "tarif moyen")
+                KpiCard(modifier = Modifier.weight(1f), icon = Icons.Default.MonetizationOn, iconBg = Color(0xFFFFEDD5), iconTint = Color(0xFFC2410C), label = "Prix moyen des plans", value = "${avgPrice} XAF", trendLabel = "moyenne arithmétique")
             }
         }
     }

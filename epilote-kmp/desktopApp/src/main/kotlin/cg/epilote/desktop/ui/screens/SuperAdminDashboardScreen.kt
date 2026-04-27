@@ -37,7 +37,13 @@ fun SuperAdminDashboardScreen(
 ) {
     val scrollState = rememberScrollState()
     var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
+    LaunchedEffect(Unit) {
+        // Force un rafraîchissement dès l'affichage du tableau de bord pour éviter
+        // l'affichage transitoire des KPIs par défaut (0 partout) tant que le refresh
+        // global n'a pas encore répondu. Cf. AdminDataRepository.refreshAll().
+        visible = true
+        onRefresh()
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().background(Color(0xFFF0F4F8))

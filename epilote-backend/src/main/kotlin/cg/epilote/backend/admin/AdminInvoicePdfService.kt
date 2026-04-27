@@ -4,16 +4,33 @@ import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.common.PDRectangle
+import org.apache.pdfbox.pdmodel.font.PDFont
+import org.apache.pdfbox.pdmodel.font.PDType0Font
 import org.apache.pdfbox.pdmodel.font.PDType1Font
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts
+import org.slf4j.LoggerFactory
+import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Service
 import java.io.ByteArrayOutputStream
 import java.text.NumberFormat
+import java.text.Normalizer
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/**
+ * Génère le PDF d'une facture plateforme.
+ *
+ * Documents juridiques : la mise en forme actuelle reste minimale en attendant
+ * la refonte juridique complète (logo, RCCM, NIU, HT/TVA/TTC, signatures…).
+ * L'objectif de cette version est de stabiliser la génération (plus aucun HTTP 500)
+ * en gérant correctement l'encodage UTF-8 via une police TrueType embarquée
+ * (DejaVu Sans, licence Bitstream Vera — pas une dépendance Gradle).
+ *
+ * Référence : https://pdfbox.apache.org/3.0/dependencies.html — chargement officiel
+ * d'une TTF à sous-ensembles via [PDType0Font.load].
+ */
 @Service
 class AdminInvoicePdfService(
     private val repo: AdminRepository,
@@ -25,10 +42,23 @@ class AdminInvoicePdfService(
         val bytes: ByteArray
     )
 
+    private val log = LoggerFactory.getLogger(AdminInvoicePdfService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
     private val currencyFormatter = NumberFormat.getInstance(Locale.FRANCE)
-    private val regularFont = PDType1Font(Standard14Fonts.FontName.HELVETICA)
-    private val boldFont = PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD)
+
+    companion object {
+        /**
+         * Caractères Unicode supplémentaires mappés par l'encodage WinAnsi (CP1252) :
+         * Euro, guillemets typographiques, tiret long, etc. Référence :
+         * https://pdfbox.apache.org/3.0/dependencies.html (Fonts → WinAnsiEncoding).
+         */
+        private val WIN_ANSI_EXTRA_CODE_POINTS: Set<Int> = setOf(
+            0x20AC, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6,
+            0x2030, 0x0160, 0x2039, 0x0152, 0x017D, 0x2018, 0x2019, 0x201C,
+            0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A,
+            0x0153, 0x017E, 0x0178
+        )
+    }
 
     suspend fun generateInvoicePdf(invoiceId: String): GeneratedInvoicePdf? {
         val invoice = repo.getInvoiceById(invoiceId) ?: return null
@@ -39,6 +69,11 @@ class AdminInvoicePdfService(
 
         val output = ByteArrayOutputStream()
         PDDocument().use { document ->
+            val fonts = loadFonts(document)
+            val regularFont = fonts.regular
+            val boldFont = fonts.bold
+            val unicodeSafe = fonts.unicodeSafe
+
             val page = PDPage(PDRectangle.A4)
             document.addPage(page)
             PDPageContentStream(document, page).use { content ->
@@ -49,22 +84,24 @@ class AdminInvoicePdfService(
                 val lineHeight = 15f
 
                 fun drawText(text: String, x: Float, yPos: Float, fontSize: Float = 11f, bold: Boolean = false) {
+                    val safe = if (unicodeSafe) text else sanitizeForWinAnsi(text)
                     content.beginText()
                     content.setFont(if (bold) boldFont else regularFont, fontSize)
                     content.newLineAtOffset(x, yPos)
-                    content.showText(text)
+                    content.showText(safe)
                     content.endText()
                 }
 
                 fun wrap(text: String, fontSize: Float, maxWidth: Float, bold: Boolean = false): List<String> {
-                    val font = if (bold) boldFont else regularFont
-                    if (text.isBlank()) return listOf("")
-                    val words = text.trim().split(Regex("\\s+"))
+                    val font: PDFont = if (bold) boldFont else regularFont
+                    val source = if (unicodeSafe) text else sanitizeForWinAnsi(text)
+                    if (source.isBlank()) return listOf("")
+                    val words = source.trim().split(Regex("\\s+"))
                     val lines = mutableListOf<String>()
                     var current = ""
                     words.forEach { word ->
                         val candidate = if (current.isBlank()) word else "$current $word"
-                        val width = font.getStringWidth(candidate) / 1000f * fontSize
+                        val width = runCatching { font.getStringWidth(candidate) / 1000f * fontSize }.getOrDefault(0f)
                         if (width <= maxWidth || current.isBlank()) {
                             current = candidate
                         } else {
@@ -172,6 +209,72 @@ class AdminInvoicePdfService(
             document.save(output)
         }
         return GeneratedInvoicePdf(fileName = "$safeReference.pdf", bytes = output.toByteArray())
+    }
+
+    private data class InvoiceFonts(
+        val regular: PDFont,
+        val bold: PDFont,
+        /** true si les polices supportent UTF-8 (TTF embarquée), false si fallback Helvetica WinAnsi. */
+        val unicodeSafe: Boolean
+    )
+
+    /**
+     * Charge les polices au sein du document. On tente d'abord DejaVu Sans (TTF embarquée
+     * en ressources, support UTF-8 complet). En cas d'échec (ressource absente, classpath
+     * cassé), on retombe sur Helvetica Standard-14 + sanitisation WinAnsi pour que
+     * l'endpoint ne renvoie plus jamais HTTP 500.
+     */
+    private fun loadFonts(document: PDDocument): InvoiceFonts {
+        return runCatching {
+            val regular = ClassPathResource("fonts/DejaVuSans.ttf").inputStream.use {
+                PDType0Font.load(document, it, true)
+            }
+            val bold = ClassPathResource("fonts/DejaVuSans-Bold.ttf").inputStream.use {
+                PDType0Font.load(document, it, true)
+            }
+            InvoiceFonts(regular, bold, unicodeSafe = true)
+        }.getOrElse { error ->
+            log.warn(
+                "DejaVu TTF indisponible pour la facture, fallback Helvetica Standard-14 (rendu UTF-8 partiel) : {}",
+                error.message
+            )
+            InvoiceFonts(
+                regular = PDType1Font(Standard14Fonts.FontName.HELVETICA),
+                bold = PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD),
+                unicodeSafe = false
+            )
+        }
+    }
+
+    /**
+     * Sanitisation pour le fallback Helvetica (encodage WinAnsi).
+     * Sans ça, n'importe quel caractère Unicode hors WinAnsi (emoji, ł, ş, ñ composé…)
+     * provoque [IllegalArgumentException] et un HTTP 500.
+     */
+    private fun sanitizeForWinAnsi(text: String): String {
+        if (text.isEmpty()) return text
+        // 1. Normalisation NFC (les caractères composés é = e + ◌́ deviennent é précomposé).
+        val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
+        // 2. Remplacement caractères hors WinAnsi par '?'.
+        val builder = StringBuilder(normalized.length)
+        normalized.forEach { ch ->
+            builder.append(if (isWinAnsiCompatible(ch)) ch else '?')
+        }
+        return builder.toString()
+    }
+
+    private fun isWinAnsiCompatible(ch: Char): Boolean {
+        // Les caractères de contrôle (\n, \r, \t) n'ont pas de glyphe dans Helvetica WinAnsi :
+        // laissés tels quels ils font cracher PDFBox showText() avec IllegalArgumentException.
+        // On les remplace donc par '?' dans le fallback (ou on les pré-filtre via wrap()).
+        if (ch == '\n' || ch == '\r' || ch == '\t') return false
+        val code = ch.code
+        // Plage ASCII imprimable.
+        if (code in 0x20..0x7E) return true
+        // Plage Latin-1 supplément couverte par WinAnsi.
+        if (code in 0xA0..0xFF) return true
+        // Caractères typographiques Unicode supplémentaires supportés par WinAnsi.
+        return code in WIN_ANSI_EXTRA_CODE_POINTS
     }
 
     private fun formatDate(epochMillis: Long): String = runCatching {
