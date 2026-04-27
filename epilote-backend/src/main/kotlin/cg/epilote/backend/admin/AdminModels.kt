@@ -73,6 +73,16 @@ class PlanLimitExceededException(message: String) : RuntimeException(message)
 @ResponseStatus(HttpStatus.FORBIDDEN)
 class SubscriptionExpiredException(message: String) : RuntimeException(message)
 
+/**
+ * Levée par le repository quand on tente de créer un compte (admin, super admin,
+ * admin groupe ou utilisateur) avec un email déjà utilisé. Sans cette validation,
+ * `findByEmail` retournerait nondéterministiquement l'un ou l'autre des doublons,
+ * rendant la connexion ambiguë et imprévisible.
+ */
+@ResponseStatus(HttpStatus.CONFLICT)
+class EmailAlreadyUsedException(email: String) :
+    RuntimeException("Un compte avec l'email '$email' existe déjà")
+
 // ── Groupe Scolaire ─────────────────────────────────────────────
 data class CreateGroupeRequest(
     @field:NotBlank val nom: String,

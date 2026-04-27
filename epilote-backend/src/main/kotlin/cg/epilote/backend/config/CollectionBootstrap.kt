@@ -32,20 +32,30 @@ class CollectionBootstrap(
      * côté Capella au démarrage.
      */
     private val requiredCollections = listOf(
+        // Identité / RBAC
         "users",
         "profils",
+        // Tenancy
         "schools",
-        "groupes",
+        "school_groups",  // collection primaire des groupes scolaires (cf. AdminRepository.GROUPS_COLLECTION)
+        "groupes",        // legacy : conservé pour compat ascendante avec docs existants
+        // Catalogue & abonnements
         "modules",
         "categories",
         "plans",
         "subscriptions",
+        // Facturation
         "invoices",
         "invoices_platform",
         "invoice_counters",
         "payment_receipts",
+        // Communications
+        "announcements",
         "announcements_platform",
+        "messages",
+        // Configuration et journal
         "config",
+        "audit_logs",
     )
 
     @EventListener(ApplicationReadyEvent::class)

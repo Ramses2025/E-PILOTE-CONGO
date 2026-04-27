@@ -257,10 +257,9 @@ class AdminInvoicePdfService(
     }
 
     private fun drawLogoIfPresent(ctx: DrawContext, base64: String, x: Float, y: Float, maxSize: Float): Boolean {
-        if (base64.isBlank()) return false
+        val bytes: ByteArray? = decodeLogoBytes(base64) ?: loadDefaultLogoBytes()
+        if (bytes == null) return false
         return runCatching {
-            val cleaned = base64.substringAfter(",", base64)
-            val bytes = Base64.getDecoder().decode(cleaned)
             val image = PDImageXObject.createFromByteArray(ctx.document, bytes, "logo")
             val ratio = image.width.toFloat() / image.height.toFloat()
             val width: Float
@@ -275,8 +274,28 @@ class AdminInvoicePdfService(
             ctx.content.drawImage(image, x, y, width, height)
             true
         }.getOrElse {
-            log.warn("Logo plateforme invalide (base64 décodage/création image) : {}", it.message)
+            log.warn("Logo plateforme invalide (création image PDF) : {}", it.message)
             false
+        }
+    }
+
+    private fun decodeLogoBytes(base64: String): ByteArray? {
+        if (base64.isBlank()) return null
+        return runCatching {
+            val cleaned = base64.substringAfter(",", base64)
+            Base64.getDecoder().decode(cleaned)
+        }.getOrElse {
+            log.warn("Logo plateforme : base64 invalide ({}). Fallback logo par défaut.", it.message)
+            null
+        }
+    }
+
+    private fun loadDefaultLogoBytes(): ByteArray? {
+        return runCatching {
+            this::class.java.getResourceAsStream("/branding/logo.png")?.use { it.readBytes() }
+        }.getOrElse {
+            log.warn("Logo plateforme par défaut introuvable dans /branding/logo.png : {}", it.message)
+            null
         }
     }
 
