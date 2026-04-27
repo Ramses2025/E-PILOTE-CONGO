@@ -106,7 +106,11 @@ class AuthController(
                 metadata = mapOf("passwordChangedAt" to result.passwordChangedAt)
             )
             ResponseEntity.ok(result)
-        } catch (e: AuthException) {
+        } catch (e: Exception) {
+            // Couvre AuthException (legacy), ValidationException (entrée invalide → 400),
+            // ResponseStatusException (autorisation 403, cible 404, échec 500). Toutes
+            // sont auditées en FAILURE puis re-propagées au GlobalExceptionHandler qui
+            // applique le bon statut HTTP.
             auditRepo.record(
                 action = if (isAdminReset) AuditAction.PASSWORD_RESET else AuditAction.PASSWORD_CHANGED,
                 outcome = AuditOutcome.FAILURE,

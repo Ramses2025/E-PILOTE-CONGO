@@ -3,8 +3,11 @@ package cg.epilote.backend.auth
 import cg.epilote.backend.admin.AdminPlanRepository
 import cg.epilote.backend.admin.AdminSubscriptionRepository
 import cg.epilote.backend.admin.SubscriptionExpiredException
+import cg.epilote.backend.config.ValidationException
+import org.springframework.http.HttpStatus
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
+import org.springframework.web.server.ResponseStatusException
 
 @Service
 class AuthService(
@@ -105,35 +108,43 @@ class AuthService(
         val isSelfService = targetId == actorUserId
         val isAdminReset = !isSelfService
 
+        // Erreurs d'autorisation → 403 Forbidden (l'utilisateur EST authentifié, mais
+        // n'a pas les droits pour cette action). Pas 401 : sinon le client desktop
+        // (DesktopAdminClient.execute) interprèterait ces erreurs comme un token
+        // expiré et déclencherait un refresh + retry inutile.
         if (isAdminReset && actorRole != UserRole.SUPER_ADMIN) {
-            throw AuthException("Action réservée au Super Admin")
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Action réservée au Super Admin")
         }
 
+        // Cible introuvable → 404. Pas 401 (même raison qu'au-dessus).
         val target = userRepository.findById(targetId)
-            ?: throw AuthException("Utilisateur introuvable")
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Utilisateur introuvable")
 
+        // Erreurs de validation d'entrée → 400 Bad Request (via ValidationException
+        // déjà mappée par GlobalExceptionHandler). Le client desktop différencie
+        // ainsi un mauvais mot de passe (à ré-essayer) d'une session expirée.
         if (isSelfService) {
             val provided = request.currentPassword
             if (provided.isNullOrBlank()) {
-                throw AuthException("Mot de passe actuel requis")
+                throw ValidationException("Mot de passe actuel requis")
             }
             if (!passwordEncoder.matches(provided, target.passwordHash)) {
-                throw AuthException("Mot de passe actuel incorrect")
+                throw ValidationException("Mot de passe actuel incorrect")
             }
         }
 
         // Politique minimale (alignée avec les exigences UI) : 8 caractères au moins.
         if (request.newPassword.length < 8) {
-            throw AuthException("Le nouveau mot de passe doit contenir au moins 8 caractères")
+            throw ValidationException("Le nouveau mot de passe doit contenir au moins 8 caractères")
         }
         if (passwordEncoder.matches(request.newPassword, target.passwordHash)) {
-            throw AuthException("Le nouveau mot de passe doit être différent de l'actuel")
+            throw ValidationException("Le nouveau mot de passe doit être différent de l'actuel")
         }
 
         val newHash = passwordEncoder.encode(request.newPassword)
         val updated = userRepository.updatePasswordHash(target.userId, newHash)
         if (!updated) {
-            throw AuthException("Impossible de mettre à jour le mot de passe")
+            throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Impossible de mettre à jour le mot de passe")
         }
         val now = System.currentTimeMillis()
         return ChangePasswordResponse(

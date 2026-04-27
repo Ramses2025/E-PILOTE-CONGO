@@ -47,6 +47,14 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
         const val STATUS_IN_PROGRESS = "in_progress"
         const val STATUS_DONE = "done"
         const val STATUS_FAILED = "failed"
+        /**
+         * Au-delà de cette durée, un claim resté `in_progress` est considéré comme
+         * orphelin (markDone/markFailed n'a pas pu s'exécuter — crash, network split,
+         * etc.). On le libère pour permettre une retry.
+         *
+         * Couvre largement la latence d'un POST `recordPayment` (en pratique <2 s).
+         */
+        const val STALE_IN_PROGRESS_MS = 5 * 60 * 1000L
     }
 
     private fun col(): Collection = runBlocking { scope.collection(COLLECTION) }
@@ -82,17 +90,20 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
             val status = existing["status"] as? String ?: STATUS_IN_PROGRESS
             val receiptId = existing["receiptId"] as? String
             val errorMessage = existing["errorMessage"] as? String
+            val updatedAt = (existing["updatedAt"] as? Number)?.toLong() ?: 0L
 
             when (status) {
                 STATUS_DONE -> ClaimOutcome.AlreadyDone(receiptId)
-                STATUS_FAILED -> {
-                    // Un précédent essai a échoué : on libère et réessaye.
-                    runCatching { col().remove(id) }
-                    try {
-                        col().insert(id, newClaim)
-                        ClaimOutcome.Acquired
-                    } catch (_: DocumentExistsException) {
-                        // Race avec un autre retry : on retombe en InProgress.
+                STATUS_FAILED -> reacquire(id, newClaim)
+                STATUS_IN_PROGRESS -> {
+                    // Staleness : si le claim est `in_progress` depuis plus de
+                    // STALE_IN_PROGRESS_MS, le caller précédent a probablement
+                    // crashé entre l'insert et le markDone/markFailed. On libère
+                    // et on réacquiert plutôt que de bloquer le retry indéfiniment.
+                    val ageMs = System.currentTimeMillis() - updatedAt
+                    if (ageMs > STALE_IN_PROGRESS_MS) {
+                        reacquire(id, newClaim)
+                    } else {
                         ClaimOutcome.InProgress
                     }
                 }
@@ -100,6 +111,21 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
             }.let {
                 if (it is ClaimOutcome.PreviouslyFailed) it.copy(errorMessage = errorMessage) else it
             }
+        }
+    }
+
+    /**
+     * Tente de libérer un claim existant (failed ou stale-in-progress) puis de
+     * le réacquérir atomiquement. Si une race fait échouer la réacquisition, on
+     * retombe en `InProgress` (un autre retry vient de gagner).
+     */
+    private suspend fun reacquire(id: String, newClaim: Map<String, Any?>): ClaimOutcome {
+        runCatching { col().remove(id) }
+        return try {
+            col().insert(id, newClaim)
+            ClaimOutcome.Acquired
+        } catch (_: DocumentExistsException) {
+            ClaimOutcome.InProgress
         }
     }
 
