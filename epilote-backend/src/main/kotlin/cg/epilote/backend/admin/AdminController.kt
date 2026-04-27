@@ -534,9 +534,15 @@ class AdminController(
         // Pose un doc déterministe `payment_claim::<key>` AVANT toute mutation métier.
         // Référence Couchbase : https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html#insert
         // Un retry concurrent verra le claim et retournera la réponse cachée ou 409.
+        var claimToken: String? = null
         if (idempotencyKey != null) {
             when (val outcome = paymentClaimRepo.claim(idempotencyKey)) {
-                is ClaimOutcome.Acquired -> Unit // poursuit l'exécution
+                is ClaimOutcome.Acquired -> {
+                    // Le token est requis pour markDone/markFailed afin d'éviter
+                    // d'écraser un claim qu'un autre caller aurait réacquis après
+                    // staleness (CAS-mismatch protection).
+                    claimToken = outcome.claimToken
+                }
                 is ClaimOutcome.AlreadyDone -> {
                     val cachedReceipt = outcome.receiptId?.let { paymentReceiptRepo.getById(it) }
                     return@runBlocking if (cachedReceipt != null) {
@@ -643,8 +649,8 @@ class AdminController(
             // d'expiration automatique le suspendra à dateFin si pas de paiement
             // ultérieur ne le confirme).
             log.warn("Échec recordPayment (sub=${req.subscriptionId}, key=$idempotencyKey) : ${e.message}", e)
-            if (idempotencyKey != null) {
-                runCatching { paymentClaimRepo.markFailed(idempotencyKey, e.message) }
+            if (idempotencyKey != null && claimToken != null) {
+                runCatching { paymentClaimRepo.markFailed(idempotencyKey, claimToken, e.message) }
             }
             audit(AuditAction.PAYMENT_RECORDED, auth, httpReq,
                 outcome = AuditOutcome.FAILURE,
@@ -658,8 +664,8 @@ class AdminController(
         }
 
         // ── Étape 3 : Marquer le claim `done` (réponse cachée pour les retries) ──
-        if (idempotencyKey != null) {
-            runCatching { paymentClaimRepo.markDone(idempotencyKey, receipt.id) }
+        if (idempotencyKey != null && claimToken != null) {
+            runCatching { paymentClaimRepo.markDone(idempotencyKey, claimToken, receipt.id) }
         }
 
         ResponseEntity.status(HttpStatus.CREATED).body(receipt)

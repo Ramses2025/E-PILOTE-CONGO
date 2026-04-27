@@ -1,10 +1,12 @@
 package cg.epilote.backend.admin
 
+import com.couchbase.client.core.error.CasMismatchException
 import com.couchbase.client.core.error.DocumentExistsException
 import com.couchbase.client.kotlin.Bucket
 import com.couchbase.client.kotlin.Collection
 import kotlinx.coroutines.runBlocking
 import org.springframework.stereotype.Repository
+import java.util.UUID
 
 /**
  * Idempotence transactionnelle des paiements présentiels (`recordPayment`).
@@ -75,10 +77,12 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
     suspend fun claim(idempotencyKey: String): ClaimOutcome {
         val id = docId(idempotencyKey)
         val now = System.currentTimeMillis()
+        val claimToken = UUID.randomUUID().toString()
         val newClaim = mapOf(
             "type" to DOC_TYPE,
             "idempotencyKey" to idempotencyKey,
             "status" to STATUS_IN_PROGRESS,
+            "claimToken" to claimToken,
             "receiptId" to null,
             "errorMessage" to null,
             "createdAt" to now,
@@ -88,11 +92,13 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
         return try {
             // KV insert : strongly-consistent côté cluster.
             col().insert(id, newClaim)
-            ClaimOutcome.Acquired
+            ClaimOutcome.Acquired(claimToken)
         } catch (e: DocumentExistsException) {
             // Un autre appel a déjà posé un claim pour cette clé. On lit son état
-            // pour décider quoi faire.
-            val existing = runCatching { col().get(id).contentAs<Map<String, Any?>>() }
+            // (avec son CAS) pour décider quoi faire.
+            val getResult = runCatching { col().get(id) }.getOrNull()
+                ?: return ClaimOutcome.InProgress
+            val existing = runCatching { getResult.contentAs<Map<String, Any?>>() }
                 .getOrNull()
                 ?: return ClaimOutcome.InProgress
             val status = existing["status"] as? String ?: STATUS_IN_PROGRESS
@@ -106,11 +112,13 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
                 STATUS_IN_PROGRESS -> {
                     // Staleness : si le claim est `in_progress` depuis plus de
                     // STALE_IN_PROGRESS_MS, le caller précédent a probablement
-                    // crashé entre l'insert et le markDone/markFailed. On libère
-                    // et on réacquiert plutôt que de bloquer le retry indéfiniment.
+                    // crashé entre l'insert et le markDone/markFailed. On réacquiert
+                    // **avec CAS** plutôt que remove+insert (atomicité garantie
+                    // par le SDK Couchbase : un seul caller concurrent réussira).
+                    // https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html#cas
                     val ageMs = System.currentTimeMillis() - updatedAt
                     if (ageMs > STALE_IN_PROGRESS_MS) {
-                        reacquire(id, newClaim)
+                        reacquireWithCas(id, getResult.cas, newClaim, claimToken)
                     } else {
                         ClaimOutcome.InProgress
                     }
@@ -121,52 +129,96 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
     }
 
     /**
-     * Tente de libérer un claim existant (failed ou stale-in-progress) puis de
-     * le réacquérir atomiquement. Si une race fait échouer la réacquisition, on
-     * retombe en `InProgress` (un autre retry vient de gagner).
+     * Réacquiert un claim stale en remplaçant **atomiquement** son contenu via
+     * CAS (compare-and-swap). Si deux callers concurrents observent le même claim
+     * stale et tentent de réacquérir, exactement un voit son `replace` réussir ;
+     * l'autre reçoit [CasMismatchException] et retombe en `InProgress`. Cela
+     * élimine la TOCTOU race d'un précédent `remove + insert` non-atomique.
+     *
+     * Pattern officiel Couchbase Kotlin SDK :
+     *   https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html#cas
      */
-    private suspend fun reacquire(id: String, newClaim: Map<String, Any?>): ClaimOutcome {
-        runCatching { col().remove(id) }
+    private suspend fun reacquireWithCas(
+        id: String,
+        cas: Long,
+        newClaim: Map<String, Any?>,
+        claimToken: String
+    ): ClaimOutcome {
         return try {
-            col().insert(id, newClaim)
-            ClaimOutcome.Acquired
-        } catch (_: DocumentExistsException) {
+            col().replace(id, newClaim, cas = cas)
+            ClaimOutcome.Acquired(claimToken)
+        } catch (_: CasMismatchException) {
+            // Un autre retry vient de gagner la course de réacquisition.
             ClaimOutcome.InProgress
         }
     }
 
     /**
      * Marque le claim comme terminé avec succès et cache la réponse pour les retries.
+     *
+     * Vérifie que le `claimToken` du doc actuel correspond à celui obtenu lors de
+     * l'acquisition : si un autre caller a réacquis le claim entre-temps (cas
+     * stale-in-progress), on n'écrase PAS son état avec le nôtre. Pattern
+     * officiel Couchbase Kotlin SDK (replace + CAS) :
+     *   https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html#cas
      */
-    suspend fun markDone(idempotencyKey: String, receiptId: String) {
-        val id = docId(idempotencyKey)
-        val now = System.currentTimeMillis()
-        val existing = runCatching { col().get(id).contentAs<MutableMap<String, Any?>>() }
-            .getOrNull() ?: return
-        existing["status"] = STATUS_DONE
-        existing["receiptId"] = receiptId
-        existing["updatedAt"] = now
-        runCatching { col().upsert(id, existing) }
+    suspend fun markDone(idempotencyKey: String, claimToken: String, receiptId: String) {
+        updateClaimIfOwner(idempotencyKey, claimToken) { existing ->
+            existing["status"] = STATUS_DONE
+            existing["receiptId"] = receiptId
+        }
     }
 
     /**
-     * Marque le claim comme échoué — un retry pourra reprendre depuis zéro.
+     * Marque le claim comme échoué — l'erreur cachée sera rejouée à toute
+     * tentative future avec la même clé (sémantique Stripe terminale).
+     *
+     * Comme [markDone], protégé par CAS + vérification du `claimToken` pour ne pas
+     * écraser un claim qu'un autre caller aurait réacquis après staleness.
      */
-    suspend fun markFailed(idempotencyKey: String, errorMessage: String?) {
+    suspend fun markFailed(idempotencyKey: String, claimToken: String, errorMessage: String?) {
+        updateClaimIfOwner(idempotencyKey, claimToken) { existing ->
+            existing["status"] = STATUS_FAILED
+            existing["errorMessage"] = errorMessage
+        }
+    }
+
+    /**
+     * Helper : applique [mutate] au doc claim **uniquement** si son `claimToken`
+     * correspond à celui passé en paramètre, et le réécrit avec CAS-replace pour
+     * garantir l'atomicité. Si un autre writer a touché le doc entre `get` et
+     * `replace` ([CasMismatchException]) ou si le `claimToken` ne correspond
+     * plus, on abandonne silencieusement (un autre caller possède désormais
+     * le claim et c'est sa réponse qui doit être cachée).
+     */
+    private suspend fun updateClaimIfOwner(
+        idempotencyKey: String,
+        claimToken: String,
+        mutate: (MutableMap<String, Any?>) -> Unit
+    ) {
         val id = docId(idempotencyKey)
-        val now = System.currentTimeMillis()
-        val existing = runCatching { col().get(id).contentAs<MutableMap<String, Any?>>() }
+        val getResult = runCatching { col().get(id) }.getOrNull() ?: return
+        val existing = runCatching { getResult.contentAs<MutableMap<String, Any?>>() }
             .getOrNull() ?: return
-        existing["status"] = STATUS_FAILED
-        existing["errorMessage"] = errorMessage
-        existing["updatedAt"] = now
-        runCatching { col().upsert(id, existing) }
+        val currentToken = existing["claimToken"] as? String
+        if (currentToken != claimToken) {
+            // Un autre caller a réacquis le claim après staleness — ne pas écraser.
+            return
+        }
+        mutate(existing)
+        existing["updatedAt"] = System.currentTimeMillis()
+        runCatching { col().replace(id, existing, cas = getResult.cas) }
     }
 }
 
 sealed class ClaimOutcome {
-    /** Première fois qu'on voit cette clé : exécuter la logique métier. */
-    data object Acquired : ClaimOutcome()
+    /**
+     * Première fois qu'on voit cette clé : exécuter la logique métier. Le
+     * [claimToken] doit être passé à [AdminPaymentClaimRepository.markDone] /
+     * [AdminPaymentClaimRepository.markFailed] pour que ces appels puissent
+     * vérifier qu'aucun autre caller n'a réacquis le claim entre-temps.
+     */
+    data class Acquired(val claimToken: String) : ClaimOutcome()
 
     /** Un appel précédent a déjà réussi : retourner le receiptId caché. */
     data class AlreadyDone(val receiptId: String?) : ClaimOutcome()
