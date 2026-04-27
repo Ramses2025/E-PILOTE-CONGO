@@ -68,8 +68,7 @@ private val AuditCategories = listOf(
 private val AuditOutcomes = listOf(
     "all" to "Tous résultats",
     "success" to "Succès",
-    "failure" to "Échec",
-    "denied" to "Refusé"
+    "failure" to "Échec"
 )
 
 @Composable

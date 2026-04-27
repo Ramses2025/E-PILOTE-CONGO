@@ -27,8 +27,15 @@ class DesktopAdminClient(
         }
     }
 
+    /**
+     * Sémantique HTTP officielle (RFC 7235 / RFC 7231) :
+     *  - 401 Unauthorized : credentials manquants ou expirés → tenter un refresh.
+     *  - 403 Forbidden    : authentifié mais non autorisé → un refresh ne changera
+     *                       pas le rôle, donc inutile (et masque l'erreur métier
+     *                       réelle). On laisse la 403 remonter.
+     */
     private fun shouldAttemptRefresh(status: HttpStatusCode): Boolean =
-        status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden
+        status == HttpStatusCode.Unauthorized
 
     private suspend inline fun <reified T> execute(
         method: String,
