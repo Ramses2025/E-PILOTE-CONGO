@@ -46,6 +46,7 @@ class CollectionBootstrap(
         "payment_receipts",
         "announcements_platform",
         "config",
+        "audit_logs",
     )
 
     @EventListener(ApplicationReadyEvent::class)

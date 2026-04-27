@@ -1,5 +1,6 @@
 package cg.epilote.backend.admin
 
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -29,7 +30,8 @@ class AdminController(
     private val passwordEncoder: PasswordEncoder,
     private val sgClient: AppServicesClient,
     private val platformIdentityRepo: AdminPlatformIdentityRepository,
-    private val paymentReceiptRepo: AdminPaymentReceiptRepository
+    private val paymentReceiptRepo: AdminPaymentReceiptRepository,
+    private val auditRepo: AdminAuditLogRepository
 ) {
     private val log = LoggerFactory.getLogger(AdminController::class.java)
     private val allowedInvoiceStatuses = setOf("draft", "sent", "paid", "overdue", "cancelled")
@@ -38,6 +40,42 @@ class AdminController(
 
     @Suppress("UNCHECKED_CAST")
     private fun Authentication.details() = details as? Map<String, String> ?: emptyMap()
+
+    private fun Authentication.email(): String? = details()["email"]
+    private fun Authentication.role(): String? = authorities.firstOrNull()?.authority?.removePrefix("ROLE_")
+
+    private fun ipOf(req: HttpServletRequest?): String? {
+        if (req == null) return null
+        val xff = req.getHeader("X-Forwarded-For")?.split(",")?.firstOrNull()?.trim()
+        return xff?.takeIf { it.isNotBlank() } ?: req.remoteAddr
+    }
+
+    private suspend fun audit(
+        action: AuditAction,
+        auth: Authentication?,
+        req: HttpServletRequest?,
+        outcome: AuditOutcome = AuditOutcome.SUCCESS,
+        targetType: String? = null,
+        targetId: String? = null,
+        targetLabel: String? = null,
+        message: String? = null,
+        metadata: Map<String, Any?> = emptyMap()
+    ) {
+        auditRepo.record(
+            action = action,
+            outcome = outcome,
+            actorId = auth?.userId(),
+            actorEmail = auth?.email(),
+            actorRole = auth?.role(),
+            targetType = targetType,
+            targetId = targetId,
+            targetLabel = targetLabel,
+            ipAddress = ipOf(req),
+            userAgent = req?.getHeader("User-Agent"),
+            message = message,
+            metadata = metadata
+        )
+    }
 
     // ── Dashboard Stats ──────────────────────────────────────────
 
@@ -159,9 +197,15 @@ class AdminController(
     @PostMapping("/api/super-admin/groupes")
     fun createGroupe(
         @Valid @RequestBody req: CreateGroupeRequest,
-        auth: Authentication
+        auth: Authentication,
+        httpReq: HttpServletRequest
     ): ResponseEntity<GroupeResponse> = runBlocking {
-        ResponseEntity.status(HttpStatus.CREATED).body(repo.createGroupe(req, auth.userId()))
+        val created = repo.createGroupe(req, auth.userId())
+        audit(AuditAction.GROUPE_CREATED, auth, httpReq,
+            targetType = "groupe", targetId = created.id, targetLabel = created.nom,
+            message = "Groupe '${created.nom}' créé",
+            metadata = mapOf("planId" to created.planId, "city" to created.city, "department" to created.department))
+        ResponseEntity.status(HttpStatus.CREATED).body(created)
     }
 
     @GetMapping("/api/super-admin/groupes")
@@ -171,7 +215,9 @@ class AdminController(
     @PostMapping("/api/super-admin/groupes/{groupeId}/admins")
     fun createAdminGroupe(
         @PathVariable groupeId: String,
-        @Valid @RequestBody req: CreateAdminGroupeRequest
+        @Valid @RequestBody req: CreateAdminGroupeRequest,
+        auth: Authentication,
+        httpReq: HttpServletRequest
     ): ResponseEntity<UserResponse> = runBlocking {
         repo.getGroupeById(groupeId)
             ?: return@runBlocking ResponseEntity.notFound().build()
@@ -179,6 +225,10 @@ class AdminController(
         val admin = repo.createAdminGroupe(groupeId, req, hash)
         val schoolIds = repo.listEcolesByGroupe(groupeId).map { it.id }
         runCatching { sgClient.provisionUser(admin.id, groupeId, schoolIds, "ADMIN_GROUPE") }
+        audit(AuditAction.ADMIN_CREATED, auth, httpReq,
+            targetType = "user", targetId = admin.id, targetLabel = admin.email,
+            message = "Admin groupe créé : ${admin.email}",
+            metadata = mapOf("groupeId" to groupeId, "role" to "ADMIN_GROUPE"))
         ResponseEntity.status(HttpStatus.CREATED).body(admin)
     }
 
@@ -189,16 +239,32 @@ class AdminController(
     @PutMapping("/api/super-admin/groupes/{groupeId}")
     fun updateGroupe(
         @PathVariable groupeId: String,
-        @Valid @RequestBody req: UpdateGroupeRequest
+        @Valid @RequestBody req: UpdateGroupeRequest,
+        auth: Authentication,
+        httpReq: HttpServletRequest
     ): ResponseEntity<GroupeResponse> = runBlocking {
-        repo.updateGroupe(groupeId, req)?.let { ResponseEntity.ok(it) }
-            ?: ResponseEntity.notFound().build()
+        val updated = repo.updateGroupe(groupeId, req)
+        if (updated != null) {
+            audit(AuditAction.GROUPE_UPDATED, auth, httpReq,
+                targetType = "groupe", targetId = groupeId, targetLabel = updated.nom,
+                message = "Groupe '${updated.nom}' modifié")
+            ResponseEntity.ok(updated)
+        } else ResponseEntity.notFound().build()
     }
 
     @DeleteMapping("/api/super-admin/groupes/{groupeId}")
-    fun deleteGroupe(@PathVariable groupeId: String): ResponseEntity<Any> = runBlocking {
-        if (repo.deleteGroupe(groupeId)) ResponseEntity.noContent().build<Any>()
-        else ResponseEntity.notFound().build()
+    fun deleteGroupe(
+        @PathVariable groupeId: String,
+        auth: Authentication,
+        httpReq: HttpServletRequest
+    ): ResponseEntity<Any> = runBlocking {
+        val existing = runCatching { repo.getGroupeById(groupeId) }.getOrNull()
+        if (repo.deleteGroupe(groupeId)) {
+            audit(AuditAction.GROUPE_DELETED, auth, httpReq,
+                targetType = "groupe", targetId = groupeId, targetLabel = existing?.nom,
+                message = "Groupe ${existing?.nom ?: groupeId} supprimé")
+            ResponseEntity.noContent().build<Any>()
+        } else ResponseEntity.notFound().build()
     }
 
     // ── Super Admin : Abonnements ────────────────────────────────
@@ -221,17 +287,28 @@ class AdminController(
     @PutMapping("/api/super-admin/subscriptions/{subId}/status")
     fun updateSubscriptionStatus(
         @PathVariable subId: String,
-        @RequestParam statut: String
+        @RequestParam statut: String,
+        auth: Authentication,
+        httpReq: HttpServletRequest
     ): ResponseEntity<SubscriptionResponse> = runBlocking {
-        subscriptionRepo.updateSubscriptionStatus(subId, statut)?.let { ResponseEntity.ok(it) }
-            ?: ResponseEntity.notFound().build()
+        val updated = subscriptionRepo.updateSubscriptionStatus(subId, statut)
+        if (updated != null) {
+            audit(AuditAction.SUBSCRIPTION_STATUS_CHANGED, auth, httpReq,
+                targetType = "subscription", targetId = subId,
+                targetLabel = updated.groupeId,
+                message = "Statut abonnement ${subId} → ${updated.statut}",
+                metadata = mapOf("newStatus" to updated.statut, "groupeId" to updated.groupeId))
+            ResponseEntity.ok(updated)
+        } else ResponseEntity.notFound().build()
     }
 
     // ── Super Admin : Factures Plateforme ─────────────────────────
 
     @PostMapping("/api/super-admin/invoices")
     fun createInvoice(
-        @Valid @RequestBody req: CreateInvoiceRequest
+        @Valid @RequestBody req: CreateInvoiceRequest,
+        auth: Authentication,
+        httpReq: HttpServletRequest
     ): ResponseEntity<InvoiceResponse> = runBlocking {
         val subscription = subscriptionRepo.getSubscriptionById(req.subscriptionId)
             ?: return@runBlocking ResponseEntity.badRequest().build()
@@ -242,7 +319,12 @@ class AdminController(
         if (subscription.statut == "cancelled" || subscription.dateFin < now) {
             return@runBlocking ResponseEntity.badRequest().build()
         }
-        ResponseEntity.status(HttpStatus.CREATED).body(repo.createInvoice(req))
+        val invoice = repo.createInvoice(req)
+        audit(AuditAction.INVOICE_CREATED, auth, httpReq,
+            targetType = "invoice", targetId = invoice.id, targetLabel = invoice.reference,
+            message = "Facture ${invoice.reference} émise pour groupe ${req.groupeId}",
+            metadata = mapOf("montantXAF" to invoice.montantXAF, "groupeId" to invoice.groupeId))
+        ResponseEntity.status(HttpStatus.CREATED).body(invoice)
     }
 
     @GetMapping("/api/super-admin/invoices")
@@ -270,14 +352,112 @@ class AdminController(
     fun updateInvoiceStatus(
         @PathVariable invoiceId: String,
         @RequestParam statut: String,
-        @RequestParam(required = false) datePaiement: Long?
+        @RequestParam(required = false) datePaiement: Long?,
+        auth: Authentication,
+        httpReq: HttpServletRequest
     ): ResponseEntity<InvoiceResponse> = runBlocking {
         val normalizedStatus = statut.trim().lowercase()
         if (normalizedStatus !in allowedInvoiceStatuses) {
             return@runBlocking ResponseEntity.badRequest().build()
         }
-        repo.updateInvoiceStatus(invoiceId, normalizedStatus, datePaiement)?.let { ResponseEntity.ok(it) }
-            ?: ResponseEntity.notFound().build()
+        val updated = repo.updateInvoiceStatus(invoiceId, normalizedStatus, datePaiement)
+        if (updated != null) {
+            audit(AuditAction.INVOICE_STATUS_CHANGED, auth, httpReq,
+                targetType = "invoice", targetId = invoiceId, targetLabel = updated.reference,
+                message = "Facture ${updated.reference} → ${updated.statut}",
+                metadata = mapOf("newStatus" to updated.statut))
+            ResponseEntity.ok(updated)
+        } else ResponseEntity.notFound().build()
+    }
+
+    // ── Super Admin : Audit Logs (journal serveur) ────────────────
+    //
+    // Trace immuable de chaque action mutante. Stocké cloud-only dans la collection
+    // `audit_logs` (jamais syncé vers les bases mobiles — conformité RGPD/CADF).
+
+    @GetMapping("/api/super-admin/audit-logs")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun listAuditLogs(
+        @RequestParam(required = false, defaultValue = "1") page: Int,
+        @RequestParam(required = false, defaultValue = "50") pageSize: Int,
+        @RequestParam(required = false) category: String?,
+        @RequestParam(required = false) action: String?,
+        @RequestParam(required = false) outcome: String?,
+        @RequestParam(required = false) actorId: String?,
+        @RequestParam(required = false) targetId: String?,
+        @RequestParam(required = false) since: Long?,
+        @RequestParam(required = false) until: Long?,
+        @RequestParam(required = false) search: String?
+    ): ResponseEntity<AuditLogPage> = runBlocking {
+        ResponseEntity.ok(
+            auditRepo.list(
+                page = page, pageSize = pageSize,
+                category = category, action = action, outcome = outcome,
+                actorId = actorId, targetId = targetId,
+                since = since, until = until, search = search
+            )
+        )
+    }
+
+    @GetMapping("/api/super-admin/audit-logs/actions")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun listAuditActions(): ResponseEntity<List<Map<String, String>>> =
+        ResponseEntity.ok(
+            AuditAction.values().map {
+                mapOf(
+                    "code" to it.code,
+                    "category" to it.category.code,
+                    "label" to it.label
+                )
+            }
+        )
+
+    // ── Super Admin : Maintenance abonnements ─────────────────────
+
+    /**
+     * Liste les abonnements actifs dont l'échéance arrive dans les `days` jours.
+     * Sert au badge d'alerte du Dashboard et aux relances avant suspension.
+     */
+    @GetMapping("/api/super-admin/subscriptions/expiring-soon")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun listExpiringSubscriptions(
+        @RequestParam(required = false, defaultValue = "7") days: Int
+    ): ResponseEntity<List<SubscriptionResponse>> = runBlocking {
+        val safeDays = days.coerceIn(1, 365)
+        val now = System.currentTimeMillis()
+        val horizon = now + safeDays.toLong() * 24L * 3600L * 1000L
+        val expiring = subscriptionRepo.listSubscriptions().filter { sub ->
+            sub.statut == "active" && sub.dateFin in (now + 1)..horizon
+        }.sortedBy { it.dateFin }
+        ResponseEntity.ok(expiring)
+    }
+
+    /**
+     * Déclenche manuellement le job de suspension des abonnements expirés
+     * (même logique que [SubscriptionExpiryScheduler], lançé à la demande).
+     * Renvoie la liste des identifiants de groupes suspendus pendant ce run.
+     */
+    @PostMapping("/api/super-admin/subscriptions/run-expiry-check")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun runExpiryCheck(
+        auth: Authentication,
+        httpReq: HttpServletRequest
+    ): ResponseEntity<Map<String, Any>> = runBlocking {
+        val suspended = runCatching { subscriptionRepo.suspendExpiredSubscriptions() }
+            .getOrElse { emptyList() }
+        audit(AuditAction.SCHEDULER_EXPIRY_RUN, auth, httpReq,
+            message = "Job d'expiration déclenché manuellement — ${suspended.size} groupe(s) suspendu(s)",
+            metadata = mapOf("trigger" to "manual", "suspendedGroupIds" to suspended))
+        suspended.forEach { gid ->
+            audit(AuditAction.SUBSCRIPTION_AUTO_SUSPENDED, auth, httpReq,
+                targetType = "groupe", targetId = gid,
+                message = "Abonnement suspendu (échéance dépassée)",
+                metadata = mapOf("trigger" to "manual"))
+        }
+        ResponseEntity.ok(mapOf(
+            "suspendedCount" to suspended.size,
+            "suspendedGroupIds" to suspended
+        ))
     }
 
     // ── Super Admin : Identité Plateforme (Paramètres) ───────────
@@ -295,9 +475,17 @@ class AdminController(
     @PutMapping("/api/super-admin/platform-identity")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     fun updatePlatformIdentity(
-        @Valid @RequestBody req: UpdatePlatformIdentityRequest
-    ): ResponseEntity<PlatformIdentity> =
-        runBlocking { ResponseEntity.ok(platformIdentityRepo.update(req)) }
+        @Valid @RequestBody req: UpdatePlatformIdentityRequest,
+        auth: Authentication,
+        httpReq: HttpServletRequest
+    ): ResponseEntity<PlatformIdentity> = runBlocking {
+        val updated = platformIdentityRepo.update(req)
+        audit(AuditAction.PLATFORM_IDENTITY_UPDATED, auth, httpReq,
+            targetType = "platform", targetId = "config::platform_identity",
+            targetLabel = updated.raisonSociale,
+            message = "Paramètres plateforme mis à jour")
+        ResponseEntity.ok(updated)
+    }
 
     // ── Super Admin : Paiements présentiels & abonnements ────────
     //
@@ -321,7 +509,8 @@ class AdminController(
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     fun recordPayment(
         @Valid @RequestBody req: RecordPaymentRequest,
-        auth: Authentication
+        auth: Authentication,
+        httpReq: HttpServletRequest
     ): ResponseEntity<PaymentReceiptResponse> = runBlocking {
         val method = PaymentMethod.fromCode(req.paymentMethod)
             ?: return@runBlocking ResponseEntity.badRequest().build()
@@ -381,6 +570,21 @@ class AdminController(
         }
 
         // 3) Enregistrer le reçu de paiement pour historique.
+        audit(AuditAction.PAYMENT_RECORDED, auth, httpReq,
+            targetType = "subscription", targetId = req.subscriptionId, targetLabel = req.groupeId,
+            message = "Paiement ${req.montantXAF} XAF (${method.label}) enregistré pour groupe ${req.groupeId}",
+            metadata = mapOf(
+                "montantXAF" to req.montantXAF,
+                "paymentMethod" to method.code,
+                "durationMonths" to req.durationMonths,
+                "invoiceId" to invoice.id,
+                "invoiceReference" to invoice.reference,
+                "accessEnd" to activated.dateFin
+            ))
+        audit(AuditAction.SUBSCRIPTION_RENEWED, auth, httpReq,
+            targetType = "subscription", targetId = req.subscriptionId, targetLabel = req.groupeId,
+            message = "Abonnement renouvelé jusqu'au ${java.time.Instant.ofEpochMilli(activated.dateFin)}",
+            metadata = mapOf("newEndDate" to activated.dateFin, "durationMonths" to req.durationMonths))
         val receipt = paymentReceiptRepo.record(
             groupeId = req.groupeId,
             subscriptionId = req.subscriptionId,
@@ -517,13 +721,19 @@ class AdminController(
     @PostMapping("/api/super-admin/admins")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     fun createAdmin(
-        @Valid @RequestBody req: CreateAdminRequest
+        @Valid @RequestBody req: CreateAdminRequest,
+        auth: Authentication,
+        httpReq: HttpServletRequest
     ): ResponseEntity<AdminUserResponse> = runBlocking {
         val hash = passwordEncoder.encode(req.password)
         val admin = repo.createAdmin(req, hash)
         if (admin.role == "ADMIN_GROUPE" && admin.groupId != null) {
             runCatching { sgClient.provisionUser(admin.id, admin.groupId, emptyList(), "ADMIN_GROUPE") }
         }
+        audit(AuditAction.ADMIN_CREATED, auth, httpReq,
+            targetType = "user", targetId = admin.id, targetLabel = admin.email,
+            message = "Admin ${admin.role} créé : ${admin.email}",
+            metadata = mapOf("role" to admin.role, "groupId" to admin.groupId))
         ResponseEntity.status(HttpStatus.CREATED).body(admin)
     }
 
@@ -531,18 +741,31 @@ class AdminController(
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     fun updateAdmin(
         @PathVariable userId: String,
-        @Valid @RequestBody req: UpdateAdminRequest
+        @Valid @RequestBody req: UpdateAdminRequest,
+        auth: Authentication,
+        httpReq: HttpServletRequest
     ): ResponseEntity<AdminUserResponse> = runBlocking {
-        repo.updateAdmin(userId, req)
-            ?.let { ResponseEntity.ok(it) }
-            ?: ResponseEntity.notFound().build()
+        val updated = repo.updateAdmin(userId, req)
+        if (updated != null) {
+            audit(AuditAction.ADMIN_UPDATED, auth, httpReq,
+                targetType = "user", targetId = userId, targetLabel = updated.email,
+                message = "Admin ${updated.email} modifié")
+            ResponseEntity.ok(updated)
+        } else ResponseEntity.notFound().build()
     }
 
     @DeleteMapping("/api/super-admin/admins/{userId}")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
-    fun deleteAdmin(@PathVariable userId: String): ResponseEntity<Any> = runBlocking {
+    fun deleteAdmin(
+        @PathVariable userId: String,
+        auth: Authentication,
+        httpReq: HttpServletRequest
+    ): ResponseEntity<Any> = runBlocking {
         if (repo.deleteAdmin(userId)) {
             runCatching { sgClient.disableUser(userId) }
+            audit(AuditAction.ADMIN_DELETED, auth, httpReq,
+                targetType = "user", targetId = userId,
+                message = "Admin ${userId} supprimé")
             ResponseEntity.noContent().build<Any>()
         } else {
             ResponseEntity.notFound().build()
@@ -553,10 +776,17 @@ class AdminController(
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     fun toggleAdminStatus(
         @PathVariable userId: String,
-        @Valid @RequestBody req: ToggleAdminStatusRequest
+        @Valid @RequestBody req: ToggleAdminStatusRequest,
+        auth: Authentication,
+        httpReq: HttpServletRequest
     ): ResponseEntity<AdminUserResponse> = runBlocking {
-        repo.toggleAdminStatus(userId, req.status)
-            ?.let { ResponseEntity.ok(it) }
-            ?: ResponseEntity.notFound().build()
+        val updated = repo.toggleAdminStatus(userId, req.status)
+        if (updated != null) {
+            audit(AuditAction.ADMIN_UPDATED, auth, httpReq,
+                targetType = "user", targetId = userId, targetLabel = updated.email,
+                message = "Statut admin ${updated.email} → ${req.status}",
+                metadata = mapOf("newStatus" to req.status))
+            ResponseEntity.ok(updated)
+        } else ResponseEntity.notFound().build()
     }
 }

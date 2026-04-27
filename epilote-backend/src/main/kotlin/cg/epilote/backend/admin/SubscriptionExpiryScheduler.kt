@@ -14,19 +14,43 @@ import org.springframework.stereotype.Component
  */
 @Component
 class SubscriptionExpiryScheduler(
-    private val subscriptionRepo: AdminSubscriptionRepository
+    private val subscriptionRepo: AdminSubscriptionRepository,
+    private val auditRepo: AdminAuditLogRepository
 ) {
     private val log = LoggerFactory.getLogger(SubscriptionExpiryScheduler::class.java)
 
     // Ordre : seconde, minute, heure, jour-mois, mois, jour-semaine
     @Scheduled(cron = "0 0 2 * * *", zone = "UTC")
     fun suspendExpiredSubscriptionsDaily() {
-        val suspended = runBlocking { runCatching { subscriptionRepo.suspendExpiredSubscriptions() }.getOrElse { emptyList() } }
-        if (suspended.isNotEmpty()) {
-            log.info(
-                "Abonnements suspendus automatiquement (expiration dépassée) : {} groupe(s) — ids {}",
-                suspended.size, suspended
+        runBlocking {
+            val suspended = runCatching { subscriptionRepo.suspendExpiredSubscriptions() }
+                .getOrElse { emptyList() }
+            if (suspended.isNotEmpty()) {
+                log.info(
+                    "Abonnements suspendus automatiquement (expiration dépassée) : {} groupe(s) — ids {}",
+                    suspended.size, suspended
+                )
+            }
+            auditRepo.record(
+                action = AuditAction.SCHEDULER_EXPIRY_RUN,
+                actorId = "system",
+                actorEmail = "scheduler@epilote",
+                actorRole = "SYSTEM",
+                message = "Run automatique du job d'expiration — ${suspended.size} groupe(s) suspendu(s)",
+                metadata = mapOf("trigger" to "scheduled", "suspendedGroupIds" to suspended)
             )
+            suspended.forEach { gid ->
+                auditRepo.record(
+                    action = AuditAction.SUBSCRIPTION_AUTO_SUSPENDED,
+                    actorId = "system",
+                    actorEmail = "scheduler@epilote",
+                    actorRole = "SYSTEM",
+                    targetType = "groupe",
+                    targetId = gid,
+                    message = "Abonnement suspendu automatiquement (échéance dépassée)",
+                    metadata = mapOf("trigger" to "scheduled")
+                )
+            }
         }
     }
 }
