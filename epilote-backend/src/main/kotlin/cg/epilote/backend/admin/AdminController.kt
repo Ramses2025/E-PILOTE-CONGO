@@ -31,6 +31,7 @@ class AdminController(
     private val sgClient: AppServicesClient,
     private val platformIdentityRepo: AdminPlatformIdentityRepository,
     private val paymentReceiptRepo: AdminPaymentReceiptRepository,
+    private val paymentClaimRepo: AdminPaymentClaimRepository,
     private val auditRepo: AdminAuditLogRepository
 ) {
     private val log = LoggerFactory.getLogger(AdminController::class.java)
@@ -512,6 +513,7 @@ class AdminController(
         auth: Authentication,
         httpReq: HttpServletRequest
     ): ResponseEntity<PaymentReceiptResponse> = runBlocking {
+        // ── Validation préalable ──────────────────────────────────
         val method = PaymentMethod.fromCode(req.paymentMethod)
             ?: return@runBlocking ResponseEntity.badRequest().build()
         if (!method.enabled) {
@@ -525,28 +527,57 @@ class AdminController(
             return@runBlocking ResponseEntity.badRequest().build()
         }
 
-        // 0) Idempotence : si le client fournit une clé et qu'un reçu existe déjà
-        //    avec cette clé, on retourne 200 avec le reçu existant (pas de duplication
-        //    de facture/abonnement). Pattern documenté Stripe.
-        req.idempotencyKey?.takeIf { it.isNotBlank() }?.let { key ->
-            paymentReceiptRepo.findByIdempotencyKey(key)?.let { existing ->
-                return@runBlocking ResponseEntity.ok(existing)
+        val idempotencyKey = req.idempotencyKey?.takeIf { it.isNotBlank() }
+
+        // ── Étape 1 : Acquisition du claim d'idempotence (KV strong-consistent) ──
+        // Pose un doc déterministe `payment_claim::<key>` AVANT toute mutation métier.
+        // Référence Couchbase : https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html#insert
+        // Un retry concurrent verra le claim et retournera la réponse cachée ou 409.
+        if (idempotencyKey != null) {
+            when (val outcome = paymentClaimRepo.claim(idempotencyKey)) {
+                is ClaimOutcome.Acquired -> Unit // poursuit l'exécution
+                is ClaimOutcome.AlreadyDone -> {
+                    val cachedReceipt = outcome.receiptId?.let { paymentReceiptRepo.getById(it) }
+                    return@runBlocking if (cachedReceipt != null) {
+                        ResponseEntity.ok(cachedReceipt)
+                    } else {
+                        // Claim marqué `done` mais reçu introuvable (ne devrait pas arriver).
+                        // On laisse le client retenter — sécurité défensive.
+                        ResponseEntity.status(HttpStatus.CONFLICT).build()
+                    }
+                }
+                is ClaimOutcome.InProgress -> {
+                    // Un autre appel concurrent est encore en cours d'exécution.
+                    // 409 Conflict + Retry-After signale au client de retenter plus tard.
+                    return@runBlocking ResponseEntity.status(HttpStatus.CONFLICT)
+                        .header("Retry-After", "2")
+                        .build()
+                }
+                is ClaimOutcome.PreviouslyFailed -> {
+                    // Cas rare : transformé en Acquired par le repository, ne devrait
+                    // pas remonter ici. Garde-fou pour l'exhaustivité des branches.
+                    log.warn("ClaimOutcome.PreviouslyFailed inattendu pour key=$idempotencyKey")
+                }
             }
         }
 
-        // 1) Activer/renouveler l'abonnement (dateDebut = maintenant, dateFin = +N mois).
-        val activated = subscriptionRepo.activateOrRenew(
-            subId = req.subscriptionId,
-            durationMonths = req.durationMonths
-        ) ?: return@runBlocking ResponseEntity.badRequest().build()
-
-        // 2) Émettre une facture plateforme directement en statut "paid" (paiement
-        //    présentiel reçu à l'émission) — on évite ainsi le double-commit
-        //    non-atomique `createDraft → updateStatus(paid)` qui pouvait laisser la
-        //    facture en draft si la 2e étape échouait (comptabilité incohérente).
+        // ── Étape 2 : Mutations métier sous garde compensatoire ──
+        // Si l'une des étapes échoue, on marque le claim comme `failed` pour éviter
+        // de bloquer le client (un retry humain du Super Admin pourra reprendre
+        // depuis zéro avec une nouvelle clé) et on logge l'incident pour
+        // investigation manuelle. Pattern compensating documenté :
+        //   - https://stripe.com/docs/api/idempotent_requests
+        //   - https://docs.spring.io/spring-framework/reference/data-access/transaction.html
         val paidAt = System.currentTimeMillis()
-        val invoice = try {
-            repo.createInvoice(
+        val receipt: PaymentReceiptResponse = try {
+            // 2.a) Activer/renouveler l'abonnement (dateDebut = maintenant, dateFin = +N mois).
+            val activated = subscriptionRepo.activateOrRenew(
+                subId = req.subscriptionId,
+                durationMonths = req.durationMonths
+            ) ?: throw IllegalStateException("Activation de l'abonnement impossible (${req.subscriptionId})")
+
+            // 2.b) Émettre la facture directement en statut "paid".
+            val invoice = repo.createInvoice(
                 CreateInvoiceRequest(
                     groupeId = req.groupeId,
                     subscriptionId = req.subscriptionId,
@@ -562,43 +593,66 @@ class AdminController(
                     datePaiement = paidAt
                 )
             )
+
+            // 2.c) Enregistrer le reçu pour historique.
+            val rec = paymentReceiptRepo.record(
+                groupeId = req.groupeId,
+                subscriptionId = req.subscriptionId,
+                invoiceId = invoice.id,
+                montantXAF = req.montantXAF,
+                method = method,
+                externalReference = req.externalReference,
+                paidBy = req.paidBy,
+                receivedBy = auth.userId(),
+                notes = req.notes,
+                accessStart = activated.dateDebut,
+                accessEnd = activated.dateFin,
+                idempotencyKey = idempotencyKey
+            )
+
+            // 2.d) Audit (best-effort — un échec ici ne doit pas annuler le paiement).
+            audit(AuditAction.PAYMENT_RECORDED, auth, httpReq,
+                targetType = "subscription", targetId = req.subscriptionId, targetLabel = req.groupeId,
+                message = "Paiement ${req.montantXAF} XAF (${method.label}) enregistré pour groupe ${req.groupeId}",
+                metadata = mapOf(
+                    "montantXAF" to req.montantXAF,
+                    "paymentMethod" to method.code,
+                    "durationMonths" to req.durationMonths,
+                    "invoiceId" to invoice.id,
+                    "invoiceReference" to invoice.reference,
+                    "accessEnd" to activated.dateFin
+                ))
+            audit(AuditAction.SUBSCRIPTION_RENEWED, auth, httpReq,
+                targetType = "subscription", targetId = req.subscriptionId, targetLabel = req.groupeId,
+                message = "Abonnement renouvelé jusqu'au ${java.time.Instant.ofEpochMilli(activated.dateFin)}",
+                metadata = mapOf("newEndDate" to activated.dateFin, "durationMonths" to req.durationMonths))
+            rec
         } catch (e: Exception) {
-            // Si la facture ne peut pas être créée, on propage l'erreur plutôt que
-            // d'enregistrer un reçu orphelin pointant vers un invoiceId=null.
-            log.warn("Échec création facture pour recordPayment (sub=${req.subscriptionId}) : ${e.message}", e)
+            // Échec mid-flow : on marque le claim comme `failed` (best-effort) et on
+            // logge l'incident. L'admin peut investiguer via le journal d'audit ;
+            // l'abonnement éventuellement renouvelé reste cohérent (le scheduler
+            // d'expiration automatique le suspendra à dateFin si pas de paiement
+            // ultérieur ne le confirme).
+            log.warn("Échec recordPayment (sub=${req.subscriptionId}, key=$idempotencyKey) : ${e.message}", e)
+            if (idempotencyKey != null) {
+                runCatching { paymentClaimRepo.markFailed(idempotencyKey, e.message) }
+            }
+            audit(AuditAction.PAYMENT_RECORDED, auth, httpReq,
+                outcome = AuditOutcome.FAILURE,
+                targetType = "subscription", targetId = req.subscriptionId, targetLabel = req.groupeId,
+                message = "Échec enregistrement paiement : ${e.message}",
+                metadata = mapOf(
+                    "idempotencyKey" to idempotencyKey,
+                    "error" to (e.message ?: e::class.simpleName ?: "unknown")
+                ))
             return@runBlocking ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build()
         }
 
-        // 3) Enregistrer le reçu de paiement pour historique.
-        audit(AuditAction.PAYMENT_RECORDED, auth, httpReq,
-            targetType = "subscription", targetId = req.subscriptionId, targetLabel = req.groupeId,
-            message = "Paiement ${req.montantXAF} XAF (${method.label}) enregistré pour groupe ${req.groupeId}",
-            metadata = mapOf(
-                "montantXAF" to req.montantXAF,
-                "paymentMethod" to method.code,
-                "durationMonths" to req.durationMonths,
-                "invoiceId" to invoice.id,
-                "invoiceReference" to invoice.reference,
-                "accessEnd" to activated.dateFin
-            ))
-        audit(AuditAction.SUBSCRIPTION_RENEWED, auth, httpReq,
-            targetType = "subscription", targetId = req.subscriptionId, targetLabel = req.groupeId,
-            message = "Abonnement renouvelé jusqu'au ${java.time.Instant.ofEpochMilli(activated.dateFin)}",
-            metadata = mapOf("newEndDate" to activated.dateFin, "durationMonths" to req.durationMonths))
-        val receipt = paymentReceiptRepo.record(
-            groupeId = req.groupeId,
-            subscriptionId = req.subscriptionId,
-            invoiceId = invoice.id,
-            montantXAF = req.montantXAF,
-            method = method,
-            externalReference = req.externalReference,
-            paidBy = req.paidBy,
-            receivedBy = auth.userId(),
-            notes = req.notes,
-            accessStart = activated.dateDebut,
-            accessEnd = activated.dateFin,
-            idempotencyKey = req.idempotencyKey?.takeIf { it.isNotBlank() }
-        )
+        // ── Étape 3 : Marquer le claim `done` (réponse cachée pour les retries) ──
+        if (idempotencyKey != null) {
+            runCatching { paymentClaimRepo.markDone(idempotencyKey, receipt.id) }
+        }
+
         ResponseEntity.status(HttpStatus.CREATED).body(receipt)
     }
 

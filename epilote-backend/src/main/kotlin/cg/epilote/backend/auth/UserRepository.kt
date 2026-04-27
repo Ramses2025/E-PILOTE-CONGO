@@ -71,6 +71,30 @@ class UserRepository(private val bucket: Bucket) {
         )
     }.getOrNull()
 
+    /**
+     * Met à jour le `passwordHash` (déjà encodé BCrypt par l'appelant) d'un
+     * utilisateur via une opération KV `get → mutate → upsert` cohérente.
+     *
+     * Le flag `mustChangePassword` est forcé à `false` car l'utilisateur vient,
+     * par définition, de définir un nouveau mot de passe.
+     *
+     * Retourne `true` si la mise à jour a réussi, `false` si l'utilisateur
+     * n'existe pas. Toute autre erreur est propagée.
+     *
+     * Référence officielle Couchbase Kotlin SDK :
+     *   https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html#upsert
+     */
+    suspend fun updatePasswordHash(userId: String, newPasswordHash: String): Boolean {
+        val doc = runCatching { collection.get(userId).contentAs<MutableMap<String, Any?>>() }.getOrNull()
+            ?: return false
+        doc["passwordHash"] = newPasswordHash
+        doc["mustChangePassword"] = false
+        doc["passwordChangedAt"] = System.currentTimeMillis()
+        doc["updatedAt"] = System.currentTimeMillis()
+        collection.upsert(userId, doc)
+        return true
+    }
+
     suspend fun ensureSyncToken(userId: String): String {
         val existing = collection.get(userId).contentAs<MutableMap<String, Any?>>()
         val current = existing["syncToken"] as? String

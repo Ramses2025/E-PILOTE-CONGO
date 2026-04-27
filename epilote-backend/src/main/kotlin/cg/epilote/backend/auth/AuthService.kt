@@ -79,6 +79,70 @@ class AuthService(
         )
     }
 
+    /**
+     * Modifie le mot de passe d'un utilisateur.
+     *
+     * Règles :
+     * - `targetUserId == null` ou égal à `actorUserId` : self-service (l'utilisateur
+     *   change son propre mot de passe). `currentPassword` est OBLIGATOIRE et doit
+     *   correspondre au hash BCrypt enregistré.
+     * - `targetUserId != actorUserId` : réinitialisation administrative.
+     *   Réservée au rôle `SUPER_ADMIN`. `currentPassword` n'est pas requis.
+     *
+     * Toute autre combinaison lève [AuthException]. Le nouveau mot de passe est
+     * encodé en BCrypt via [PasswordEncoder] avant persistence (pattern Spring
+     * Security officiel : https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html).
+     *
+     * Retourne le timestamp `passwordChangedAt` pour permettre au client de
+     * forcer un re-login si nécessaire.
+     */
+    suspend fun changePassword(
+        actorUserId: String,
+        actorRole: UserRole,
+        request: ChangePasswordRequest
+    ): ChangePasswordResponse {
+        val targetId = request.targetUserId?.takeIf { it.isNotBlank() } ?: actorUserId
+        val isSelfService = targetId == actorUserId
+        val isAdminReset = !isSelfService
+
+        if (isAdminReset && actorRole != UserRole.SUPER_ADMIN) {
+            throw AuthException("Action réservée au Super Admin")
+        }
+
+        val target = userRepository.findById(targetId)
+            ?: throw AuthException("Utilisateur introuvable")
+
+        if (isSelfService) {
+            val provided = request.currentPassword
+            if (provided.isNullOrBlank()) {
+                throw AuthException("Mot de passe actuel requis")
+            }
+            if (!passwordEncoder.matches(provided, target.passwordHash)) {
+                throw AuthException("Mot de passe actuel incorrect")
+            }
+        }
+
+        // Politique minimale (alignée avec les exigences UI) : 8 caractères au moins.
+        if (request.newPassword.length < 8) {
+            throw AuthException("Le nouveau mot de passe doit contenir au moins 8 caractères")
+        }
+        if (passwordEncoder.matches(request.newPassword, target.passwordHash)) {
+            throw AuthException("Le nouveau mot de passe doit être différent de l'actuel")
+        }
+
+        val newHash = passwordEncoder.encode(request.newPassword)
+        val updated = userRepository.updatePasswordHash(target.userId, newHash)
+        if (!updated) {
+            throw AuthException("Impossible de mettre à jour le mot de passe")
+        }
+        val now = System.currentTimeMillis()
+        return ChangePasswordResponse(
+            userId = target.userId,
+            mustChangePassword = false,
+            passwordChangedAt = now
+        )
+    }
+
     suspend fun refresh(request: RefreshRequest): TokenResponse {
         val token = request.refreshToken
         if (!jwtService.validateToken(token) || !jwtService.isTokenType(token, "refresh")) {

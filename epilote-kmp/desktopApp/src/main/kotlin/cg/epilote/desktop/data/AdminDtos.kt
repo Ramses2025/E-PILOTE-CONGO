@@ -1,6 +1,7 @@
 package cg.epilote.desktop.data
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 // ── Dashboard Stats ─────────────────────────────────────────────────────────
 
@@ -473,4 +474,57 @@ data class PaymentMethodDto(
     val code: String = "",
     val label: String = "",
     val enabled: Boolean = false
+)
+
+// ── Audit Logs (journal serveur cloud-only, RGPD/CADF) ─────────────────────
+
+@Serializable
+data class AuditEventApiDto(
+    val id: String = "",
+    val timestamp: Long = 0L,
+    val action: String = "",
+    val actionLabel: String = "",
+    val category: String = "",
+    val outcome: String = "",
+    val actorId: String? = null,
+    val actorEmail: String? = null,
+    val actorRole: String? = null,
+    val targetType: String? = null,
+    val targetId: String? = null,
+    val targetLabel: String? = null,
+    val ipAddress: String? = null,
+    val userAgent: String? = null,
+    val message: String? = null,
+    val metadata: Map<String, JsonElement> = emptyMap()
+)
+
+@Serializable
+data class AuditLogPageDto(
+    val items: List<AuditEventApiDto> = emptyList(),
+    val total: Long = 0,
+    val page: Int = 1,
+    val pageSize: Int = 50
+)
+
+@Serializable
+data class AuditActionDto(
+    val code: String = "",
+    val category: String = "",
+    val label: String = ""
+)
+
+// ── Change Password ───────────────────────────────────────────────────────
+
+@Serializable
+data class ChangePasswordRequestDto(
+    val currentPassword: String? = null,
+    val newPassword: String,
+    val targetUserId: String? = null
+)
+
+@Serializable
+data class ChangePasswordResponseDto(
+    val userId: String = "",
+    val mustChangePassword: Boolean = false,
+    val passwordChangedAt: Long = 0
 )

@@ -339,4 +339,45 @@ class DesktopAdminClient(
 
     suspend fun listPaymentReceiptsByGroupe(groupeId: String): List<PaymentReceiptDto>? =
         get("/api/super-admin/groupes/$groupeId/payment-receipts")
+
+    // ── Audit Logs (journal serveur cloud-only) ────────────────────
+    //
+    // Le backend retourne `AuditLogPage` (items + total + page + pageSize).
+    // Référence Spring : https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller/ann-methods/requestparam.html
+
+    suspend fun listAuditLogs(
+        page: Int = 1,
+        pageSize: Int = 50,
+        category: String? = null,
+        action: String? = null,
+        outcome: String? = null,
+        actorId: String? = null,
+        targetId: String? = null,
+        since: Long? = null,
+        until: Long? = null,
+        search: String? = null
+    ): AuditLogPageDto? = execute("GET", "/api/super-admin/audit-logs?page=$page") {
+        httpClient.get("$baseUrl/api/super-admin/audit-logs") {
+            contentType(ContentType.Application.Json)
+            parameter("page", page)
+            parameter("pageSize", pageSize)
+            category?.let { parameter("category", it) }
+            action?.let { parameter("action", it) }
+            outcome?.let { parameter("outcome", it) }
+            actorId?.let { parameter("actorId", it) }
+            targetId?.let { parameter("targetId", it) }
+            since?.let { parameter("since", it) }
+            until?.let { parameter("until", it) }
+            search?.takeIf { it.isNotBlank() }?.let { parameter("search", it) }
+            tokenProvider()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+        }
+    }
+
+    suspend fun listAuditActions(): List<AuditActionDto>? =
+        get("/api/super-admin/audit-logs/actions")
+
+    // ── Mot de passe (self-service + reset administratif) ──────────
+
+    suspend fun changePassword(dto: ChangePasswordRequestDto): ChangePasswordResponseDto? =
+        post("/api/auth/change-password", dto)
 }
