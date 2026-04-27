@@ -292,7 +292,12 @@ internal fun AuditServerEntryDetailDialog(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Métadonnées", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     entry.metadata.forEach { (k, v) ->
-                        LineKv(k, v.toString())
+                        // JsonPrimitive.toString() encodes strings WITH surrounding double-quotes
+                        // (`"cash"` au lieu de `cash`). On utilise `.content` pour récupérer la
+                        // valeur brute. Les nombres et booléens passent par `toString()` (pas de quotes).
+                        // Doc : https://kotlinlang.org/api/kotlinx.serialization/kotlinx-serialization-json/kotlinx.serialization.json/-json-primitive/
+                        val display = if (v is kotlinx.serialization.json.JsonPrimitive && v.isString) v.content else v.toString()
+                        LineKv(k, display)
                     }
                 }
             }
