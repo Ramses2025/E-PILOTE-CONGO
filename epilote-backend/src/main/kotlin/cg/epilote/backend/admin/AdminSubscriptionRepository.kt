@@ -176,34 +176,62 @@ class AdminSubscriptionRepository(
      * le Super Admin enregistre un paiement présentiel.
      */
     suspend fun activateOrRenew(subId: String, durationMonths: Int = 12): SubscriptionResponse? {
-        val groupId = resolveGroupIdForSubscription(subId) ?: return null
-        val groupDoc = runCatching { col(GROUPS_COLLECTION).get(groupId).contentAs<MutableMap<String, Any?>>() }.getOrNull() ?: return null
-        val planId = groupDoc["planId"] as? String ?: return null
-        if (planId.isBlank()) return null
-
         val currentTime = now()
-        val subscription = mutableMap(groupDoc["subscription"])
-        val createdAt = parseTimestamp(subscription["createdAt"] ?: groupDoc["createdAt"]).takeIf { it > 0 } ?: currentTime
         val endTime = Instant.ofEpochMilli(currentTime)
             .atZone(ZoneId.of("UTC"))
             .plusMonths(durationMonths.toLong())
             .toInstant()
             .toEpochMilli()
+        return applyPaidPeriod(subId, currentTime, endTime)
+    }
+
+    /**
+     * Calcule la période d'accès pour un paiement présentiel sans persister.
+     * Permet de pré-calculer `dateDebut` / `dateFin` côté contrôleur, créer la
+     * facture et le reçu, puis n'appliquer la mutation sub qu'en dernier
+     * via [applyPaidPeriod]. Empêche la double-extension d'abonnement en cas
+     * d'échec mid-flow (cf. recordPayment).
+     */
+    fun computeRenewalPeriod(durationMonths: Int): Pair<Long, Long> {
+        val currentTime = now()
+        val endTime = Instant.ofEpochMilli(currentTime)
+            .atZone(ZoneId.of("UTC"))
+            .plusMonths(durationMonths.toLong())
+            .toInstant()
+            .toEpochMilli()
+        return currentTime to endTime
+    }
+
+    /**
+     * Applique une période d'accès pré-calculée à l'abonnement (étape finale
+     * d'un recordPayment, après création de facture et reçu). Sépare la
+     * computation de la persistance pour permettre une compensation
+     * structurée en cas d'échec amont.
+     */
+    suspend fun applyPaidPeriod(subId: String, dateDebut: Long, dateFin: Long): SubscriptionResponse? {
+        val groupId = resolveGroupIdForSubscription(subId) ?: return null
+        val groupDoc = runCatching { col(GROUPS_COLLECTION).get(groupId).contentAs<MutableMap<String, Any?>>() }.getOrNull() ?: return null
+        val planId = groupDoc["planId"] as? String ?: return null
+        if (planId.isBlank()) return null
+
+        val subscription = mutableMap(groupDoc["subscription"])
+        val updatedAt = now()
+        val createdAt = parseTimestamp(subscription["createdAt"] ?: groupDoc["createdAt"]).takeIf { it > 0 } ?: updatedAt
 
         groupDoc["subscription"] = mutableMapOf(
             "id" to (subscription["id"] as? String ?: "sub::$groupId"),
             "statut" to "active",
             "status" to "active",
-            "dateDebut" to currentTime,
-            "startDate" to formatDateIso(currentTime),
-            "dateFin" to endTime,
-            "endDate" to formatDateIso(endTime),
+            "dateDebut" to dateDebut,
+            "startDate" to formatDateIso(dateDebut),
+            "dateFin" to dateFin,
+            "endDate" to formatDateIso(dateFin),
             "renouvellementAuto" to (subscription["renouvellementAuto"] as? Boolean ?: subscription["autoRenew"] as? Boolean ?: false),
             "autoRenew" to (subscription["renouvellementAuto"] as? Boolean ?: subscription["autoRenew"] as? Boolean ?: false),
             "createdAt" to createdAt,
-            "updatedAt" to currentTime
+            "updatedAt" to updatedAt
         )
-        groupDoc["updatedAt"] = currentTime
+        groupDoc["updatedAt"] = updatedAt
         col(GROUPS_COLLECTION).upsert(groupId, groupDoc)
         return buildSubscriptionResponse(groupId, groupDoc)
     }

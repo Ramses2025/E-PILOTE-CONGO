@@ -39,6 +39,8 @@ enum class AuditOutcome(val code: String) {
 enum class AuditAction(val code: String, val category: AuditCategory, val label: String) {
     LOGIN_SUCCESS("auth.login.success", AuditCategory.AUTH, "Connexion réussie"),
     LOGIN_FAILURE("auth.login.failure", AuditCategory.AUTH, "Échec de connexion"),
+    PASSWORD_CHANGED("auth.password.changed", AuditCategory.AUTH, "Changement de mot de passe"),
+    PASSWORD_RESET("auth.password.reset", AuditCategory.AUTH, "Réinitialisation administrative du mot de passe"),
 
     GROUPE_CREATED("groupe.created", AuditCategory.GROUPE, "Création d'un groupe scolaire"),
     GROUPE_UPDATED("groupe.updated", AuditCategory.GROUPE, "Modification d'un groupe scolaire"),

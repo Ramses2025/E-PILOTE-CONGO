@@ -47,7 +47,8 @@ class JwtAuthFilter(private val jwtService: JwtService) : OncePerRequestFilter()
                 auth.details = mapOf(
                     "schoolId" to (claims["schoolId"] as? String ?: ""),
                     "groupId"  to (claims["groupId"] as? String ?: ""),
-                    "role"     to role
+                    "role"     to role,
+                    "email"    to (claims["email"] as? String ?: "")
                 )
                 SecurityContextHolder.getContext().authentication = auth
             }

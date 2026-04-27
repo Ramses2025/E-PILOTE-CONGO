@@ -35,10 +35,38 @@ class AdminPaymentReceiptRepository(private val bucket: Bucket) {
     private fun newId(): String = "payment_receipt::${UUID.randomUUID()}"
 
     /**
-     * Cherche un reçu déjà enregistré avec la clé d'idempotence donnée. Utilisé
-     * par `recordPayment` pour dédupliquer les retries réseau côté desktop —
-     * pattern officiel Stripe (https://stripe.com/docs/api/idempotent_requests).
+     * Lecture KV (strongly-consistent) d'un reçu par son ID complet.
+     * Utilisée par `recordPayment` pour retourner le reçu caché lors d'un retry
+     * idempotent — référence : https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html#get
      */
+    suspend fun getById(id: String): PaymentReceiptResponse? = runCatching {
+        val doc = col(COLLECTION).get(id).contentAs<Map<String, Any?>>()
+        val methodCode = doc["paymentMethod"] as? String ?: "cash"
+        val method = PaymentMethod.fromCode(methodCode) ?: PaymentMethod.CASH
+        PaymentReceiptResponse(
+            id = id,
+            groupeId = doc["groupeId"] as? String ?: "",
+            subscriptionId = doc["subscriptionId"] as? String ?: "",
+            invoiceId = doc["invoiceId"] as? String,
+            montantXAF = (doc["montantXAF"] as? Number)?.toLong() ?: 0L,
+            paymentMethod = methodCode,
+            paymentMethodLabel = doc["paymentMethodLabel"] as? String ?: method.label,
+            externalReference = doc["externalReference"] as? String,
+            paidBy = doc["paidBy"] as? String,
+            receivedBy = doc["receivedBy"] as? String ?: "",
+            notes = doc["notes"] as? String ?: "",
+            accessStart = (doc["accessStart"] as? Number)?.toLong() ?: 0L,
+            accessEnd = (doc["accessEnd"] as? Number)?.toLong() ?: 0L,
+            receivedAt = (doc["receivedAt"] as? Number)?.toLong() ?: 0L
+        )
+    }.getOrNull()
+
+    @Deprecated(
+        "Cette recherche par requête N1QL est *eventually consistent* — un retry concurrent " +
+        "ne garantit pas la déduplication. Utiliser AdminPaymentClaimRepository.claim(...) (KV strong-consistent) " +
+        "à la place. Conservé pour compatibilité durant la transition.",
+        ReplaceWith("AdminPaymentClaimRepository.claim(key)")
+    )
     suspend fun findByIdempotencyKey(key: String): PaymentReceiptResponse? = runCatching {
         val result = scope.query(
             "SELECT META().id AS id, * FROM `$COLLECTION` WHERE `type` = '$DOC_TYPE' AND `idempotencyKey` = \$key LIMIT 1",

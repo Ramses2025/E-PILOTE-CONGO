@@ -26,6 +26,12 @@ class SecurityConfig(private val jwtAuthFilter: JwtAuthFilter) {
             .csrf { it.disable() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests {
+                // change-password DOIT être authentifié au niveau URL — l'ordre des
+                // matchers est significatif (Spring Security évalue le premier qui
+                // matche). Sans cette règle, /api/auth/** = permitAll laisserait
+                // passer la requête au niveau filtre et seul @PreAuthorize protège,
+                // ce qui est inconsistant avec /api/super-admin/** etc.
+                it.requestMatchers("/api/auth/change-password").authenticated()
                 it.requestMatchers("/api/auth/**").permitAll()
                 it.requestMatchers("/actuator/health").permitAll()
                 it.requestMatchers("/api/super-admin/**").hasRole("SUPER_ADMIN")

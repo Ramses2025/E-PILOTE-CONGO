@@ -35,6 +35,28 @@ data class RefreshRequest(
     @field:NotBlank val refreshToken: String
 )
 
+/**
+ * Demande de changement de mot de passe.
+ *
+ * - `currentPassword` : obligatoire pour les utilisateurs changeant leur propre
+ *   mot de passe. Vérifié contre `passwordHash` en BCrypt.
+ * - `newPassword` : nouveau mot de passe en clair (sera encodé BCrypt).
+ * - `targetUserId` : optionnel. Réservé au SUPER_ADMIN pour réinitialiser le
+ *   mot de passe d'un autre compte (sans `currentPassword`). Si omis, l'opération
+ *   s'applique au porteur du JWT.
+ */
+data class ChangePasswordRequest(
+    val currentPassword: String? = null,
+    @field:NotBlank val newPassword: String,
+    val targetUserId: String? = null
+)
+
+data class ChangePasswordResponse(
+    val userId: String,
+    val mustChangePassword: Boolean,
+    val passwordChangedAt: Long
+)
+
 data class TokenResponse(
     val accessToken: String,
     val expiresIn: Long
