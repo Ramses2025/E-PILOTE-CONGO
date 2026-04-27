@@ -584,20 +584,20 @@ class AdminController(
         //   - https://stripe.com/docs/api/idempotent_requests
         //   - https://docs.spring.io/spring-framework/reference/data-access/transaction.html
         val paidAt = System.currentTimeMillis()
+        // Pré-calcule la période d'accès SANS persister. La mutation sur l'abonnement
+        // (activateOrRenew) est volontairement reportée à la toute dernière étape
+        // pour garantir : si la création de facture ou de reçu échoue, l'abonnement
+        // n'est jamais étendu et un retry (avec une nouvelle clé d'idempotence
+        // selon la sémantique Stripe terminale) ne provoquera PAS de double-extension.
+        val (accessStart, accessEnd) = subscriptionRepo.computeRenewalPeriod(req.durationMonths)
         val receipt: PaymentReceiptResponse = try {
-            // 2.a) Activer/renouveler l'abonnement (dateDebut = maintenant, dateFin = +N mois).
-            val activated = subscriptionRepo.activateOrRenew(
-                subId = req.subscriptionId,
-                durationMonths = req.durationMonths
-            ) ?: throw IllegalStateException("Activation de l'abonnement impossible (${req.subscriptionId})")
-
-            // 2.b) Émettre la facture directement en statut "paid".
+            // 2.a) Émettre la facture directement en statut "paid".
             val invoice = repo.createInvoice(
                 CreateInvoiceRequest(
                     groupeId = req.groupeId,
                     subscriptionId = req.subscriptionId,
                     montantXAF = req.montantXAF,
-                    dateEcheance = activated.dateFin,
+                    dateEcheance = accessEnd,
                     notes = listOfNotNull(
                         "Paiement présentiel — mode : ${method.label}",
                         req.externalReference?.let { "Réf. externe : $it" },
@@ -609,7 +609,7 @@ class AdminController(
                 )
             )
 
-            // 2.c) Enregistrer le reçu pour historique.
+            // 2.b) Enregistrer le reçu pour historique.
             val rec = paymentReceiptRepo.record(
                 groupeId = req.groupeId,
                 subscriptionId = req.subscriptionId,
@@ -620,10 +620,21 @@ class AdminController(
                 paidBy = req.paidBy,
                 receivedBy = auth.userId(),
                 notes = req.notes,
-                accessStart = activated.dateDebut,
-                accessEnd = activated.dateFin,
+                accessStart = accessStart,
+                accessEnd = accessEnd,
                 idempotencyKey = idempotencyKey
             )
+
+            // 2.c) Activer/renouveler l'abonnement EN DERNIER (mutation finale).
+            //      Si cette étape échoue, facture + reçu sont déjà persistés et
+            //      visibles dans le journal — l'opérateur peut réappliquer la
+            //      période manuellement via un endpoint d'admin futur, sans
+            //      double-extension possible.
+            val activated = subscriptionRepo.applyPaidPeriod(
+                subId = req.subscriptionId,
+                dateDebut = accessStart,
+                dateFin = accessEnd
+            ) ?: throw IllegalStateException("Application de la période d'accès impossible (${req.subscriptionId})")
 
             // 2.d) Audit (best-effort — un échec ici ne doit pas annuler le paiement).
             audit(AuditAction.PAYMENT_RECORDED, auth, httpReq,
@@ -644,10 +655,9 @@ class AdminController(
             rec
         } catch (e: Exception) {
             // Échec mid-flow : on marque le claim comme `failed` (best-effort) et on
-            // logge l'incident. L'admin peut investiguer via le journal d'audit ;
-            // l'abonnement éventuellement renouvelé reste cohérent (le scheduler
-            // d'expiration automatique le suspendra à dateFin si pas de paiement
-            // ultérieur ne le confirme).
+            // logge l'incident. Avec le re-ordering ci-dessus, l'abonnement n'est
+            // mis à jour qu'au tout dernier moment, donc un échec de facture ou
+            // de reçu laisse l'abonnement intact — pas de double-extension possible.
             log.warn("Échec recordPayment (sub=${req.subscriptionId}, key=$idempotencyKey) : ${e.message}", e)
             if (idempotencyKey != null && claimToken != null) {
                 runCatching { paymentClaimRepo.markFailed(idempotencyKey, claimToken, e.message) }

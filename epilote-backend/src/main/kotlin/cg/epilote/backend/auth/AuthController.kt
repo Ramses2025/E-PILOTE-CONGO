@@ -83,6 +83,8 @@ class AuthController(
             ?.takeIf { it.isNotBlank() }) ?: httpReq.remoteAddr
         val ua = httpReq.getHeader("User-Agent")
         val actorId = auth.principal as String
+        @Suppress("UNCHECKED_CAST")
+        val actorEmail = (auth.details as? Map<String, String>)?.get("email")?.takeIf { it.isNotBlank() }
         val rawRole = auth.authorities.firstOrNull()?.authority?.removePrefix("ROLE_") ?: "USER"
         val actorRole = runCatching { UserRole.valueOf(rawRole) }.getOrDefault(UserRole.USER)
         val targetId = request.targetUserId?.takeIf { it.isNotBlank() } ?: actorId
@@ -94,6 +96,7 @@ class AuthController(
                 action = if (isAdminReset) AuditAction.PASSWORD_RESET else AuditAction.PASSWORD_CHANGED,
                 outcome = AuditOutcome.SUCCESS,
                 actorId = actorId,
+                actorEmail = actorEmail,
                 actorRole = actorRole.name,
                 targetType = "user",
                 targetId = result.userId,
@@ -115,6 +118,7 @@ class AuthController(
                 action = if (isAdminReset) AuditAction.PASSWORD_RESET else AuditAction.PASSWORD_CHANGED,
                 outcome = AuditOutcome.FAILURE,
                 actorId = actorId,
+                actorEmail = actorEmail,
                 actorRole = actorRole.name,
                 targetType = "user",
                 targetId = targetId,
