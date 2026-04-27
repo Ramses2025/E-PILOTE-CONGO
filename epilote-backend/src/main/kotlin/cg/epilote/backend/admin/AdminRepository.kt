@@ -12,7 +12,9 @@ import java.util.UUID
 @Repository
 class AdminRepository(
     private val bucket: Bucket,
-    private val planRepo: AdminPlanRepository
+    private val planRepo: AdminPlanRepository,
+    private val platformIdentityRepo: AdminPlatformIdentityRepository,
+    private val invoiceCounterRepo: AdminInvoiceCounterRepository
 ) {
 
     private val scope by lazy { runBlocking { bucket.defaultScope() } }
@@ -799,19 +801,58 @@ class AdminRepository(
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Groupe introuvable pour la facture.")
         }
         val id = newId("inv_plat")
-        val ref = "INV-${System.currentTimeMillis().toString().takeLast(8)}"
+        // Numérotation atomique via compteur annuel Couchbase (binary increment).
+        // Fallback sur timestamp si le cluster ne supporte pas l'op pour une raison quelconque.
+        val identity = runCatching { platformIdentityRepo.read() }.getOrNull()
+        val format = identity?.invoiceNumberFormat?.takeIf { it.isNotBlank() } ?: "FAC-{YYYY}-{NNNNNN}"
+        val ref = runCatching { invoiceCounterRepo.nextReference(format) }
+            .getOrElse { "INV-${System.currentTimeMillis().toString().takeLast(8)}" }
         val issuedAt = now()
+        val identitySnapshot = identity?.let {
+            // Snapshot des champs émetteur juridiques au moment de l'émission. La facture
+            // restera fidèle à l'identité plateforme à l'instant où elle a été émise, même
+            // si les paramètres changent ultérieurement (traçabilité juridique).
+            mapOf(
+                "raisonSociale" to it.raisonSociale,
+                "rccm" to it.rccm,
+                "niu" to it.niu,
+                "siege" to it.siege,
+                "city" to it.city,
+                "country" to it.country,
+                "phone" to it.phone,
+                "email" to it.email,
+                "website" to it.website,
+                "iban" to it.iban,
+                "bankName" to it.bankName,
+                "mtnMomoNumber" to it.mtnMomoNumber,
+                "airtelMoneyNumber" to it.airtelMoneyNumber,
+                "tvaRate" to it.tvaRate,
+                "tvaExempted" to it.tvaExempted,
+                "paymentTerms" to it.paymentTerms,
+                "competentCourt" to it.competentCourt,
+                "legalMentions" to it.legalMentions
+            )
+        }
+        // Statut initial : si l'appelant demande "paid" (paiement présentiel reçu au
+        // moment de l'émission), on fige le statut à la création pour éviter le
+        // double-commit non-atomique `create(draft)` → `updateStatus(paid)` qui
+        // pouvait laisser la facture en draft si la 2e étape échouait.
+        val allowedInitialStatus = setOf("draft", "paid")
+        val normalizedInitial = req.initialStatus.trim().lowercase()
+            .takeIf { it in allowedInitialStatus } ?: "draft"
+        val paidAt: Long? = if (normalizedInitial == "paid") (req.datePaiement ?: issuedAt) else null
         val doc = mapOf(
             "type"             to "invoice_platform",
             "groupeId"         to req.groupeId,
             "subscriptionId"   to req.subscriptionId,
             "montantXAF"       to req.montantXAF,
-            "statut"           to "draft",
+            "statut"           to normalizedInitial,
             "dateEmission"     to issuedAt,
             "dateEcheance"     to req.dateEcheance,
-            "datePaiement"     to null,
+            "datePaiement"     to paidAt,
             "reference"        to ref,
             "notes"            to req.notes,
+            "emitterIdentity"  to identitySnapshot,
             "createdAt"        to issuedAt,
             "updatedAt"        to issuedAt
         )

@@ -13,6 +13,7 @@ import cg.epilote.desktop.ui.screens.AdminSupportScreen
 import cg.epilote.desktop.ui.screens.AdminInvoicesScreen
 import cg.epilote.desktop.ui.screens.AdminMessagingScreen
 import cg.epilote.desktop.ui.screens.AdminNotificationsScreen
+import cg.epilote.desktop.ui.screens.AdminPlatformSettingsScreen
 import cg.epilote.desktop.ui.screens.AdminUserDto
 import cg.epilote.desktop.ui.screens.CategorieDto
 import cg.epilote.desktop.ui.screens.GroupeDto
@@ -191,6 +192,9 @@ internal fun SuperAdminDesktopScreenContent(
                 client = adminClient,
                 onRefresh = { adminRepo.refreshDashboardStatsAsync() }
             )
+
+        DesktopScreen.ADMIN_PLATFORM_SETTINGS ->
+            AdminPlatformSettingsScreen(client = adminClient)
 
         else -> Unit
     }

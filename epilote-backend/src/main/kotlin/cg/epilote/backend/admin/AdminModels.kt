@@ -353,7 +353,17 @@ data class CreateInvoiceRequest(
     @field:NotBlank val subscriptionId: String,
     @field:Positive val montantXAF: Long,
     @field:Positive val dateEcheance: Long,
-    val notes: String = ""
+    val notes: String = "",
+    /**
+     * Statut initial de la facture à l'émission. Par défaut `"draft"` (facture
+     * émise mais non encore payée). Pour les paiements enregistrés en
+     * présentiel via `recordPayment`, on positionne `"paid"` directement afin
+     * d'éviter le double-commit non-atomique (create + updateStatus) qui
+     * pouvait laisser la facture en `draft` en cas d'erreur sur la 2e étape.
+     */
+    val initialStatus: String = "draft",
+    /** Horodatage du paiement. Renseigné uniquement si [initialStatus] == "paid". */
+    val datePaiement: Long? = null
 )
 
 data class InvoiceResponse(

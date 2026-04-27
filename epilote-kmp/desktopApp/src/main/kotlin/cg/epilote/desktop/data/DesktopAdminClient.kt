@@ -314,4 +314,29 @@ class DesktopAdminClient(
 
     suspend fun toggleAdminStatus(userId: String, status: String): AdminUserApiDto? =
         put("/api/super-admin/admins/$userId/status", ToggleAdminStatusDto(status))
+
+    // ── Paramètres plateforme (identité juridique) ─────────────────
+    //
+    // Références officielles :
+    // • Spring Web (Kotlin) — REST clients : https://docs.spring.io/spring-framework/reference/web/webflux-client.html
+    // • Ktor client : https://ktor.io/docs/client-requests.html
+
+    suspend fun getPlatformIdentity(): PlatformIdentityDto? =
+        get("/api/super-admin/platform-identity")
+
+    suspend fun updatePlatformIdentity(dto: UpdatePlatformIdentityDto): PlatformIdentityDto? =
+        put("/api/super-admin/platform-identity", dto)
+
+    // ── Paiements présentiels & abonnements ────────────────────────
+    suspend fun listPaymentMethods(): List<PaymentMethodDto>? =
+        get("/api/super-admin/payment-methods")
+
+    suspend fun recordPayment(dto: RecordPaymentDto): PaymentReceiptDto? =
+        post("/api/super-admin/payment-receipts", dto)
+
+    suspend fun listPaymentReceipts(): List<PaymentReceiptDto>? =
+        get("/api/super-admin/payment-receipts")
+
+    suspend fun listPaymentReceiptsByGroupe(groupeId: String): List<PaymentReceiptDto>? =
+        get("/api/super-admin/groupes/$groupeId/payment-receipts")
 }

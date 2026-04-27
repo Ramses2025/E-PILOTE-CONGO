@@ -75,6 +75,8 @@ fun AdminSubscriptionsScreen(
     var formTarget by remember { mutableStateOf<SubscriptionDto?>(null) }
     var showFormDialog by remember { mutableStateOf(false) }
     var confirmStatusChange by remember { mutableStateOf<Pair<SubscriptionDto, String>?>(null) }
+    var recordPaymentTarget by remember { mutableStateOf<SubscriptionDto?>(null) }
+    var historyTarget by remember { mutableStateOf<SubscriptionDto?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
     var submitError by remember { mutableStateOf<String?>(null) }
     var reloadTick by remember { mutableIntStateOf(0) }
@@ -247,7 +249,42 @@ fun AdminSubscriptionsScreen(
             },
             onChangeStatus = { nextStatus ->
                 confirmStatusChange = subscription to nextStatus
+            },
+            onRecordPayment = {
+                recordPaymentTarget = subscription
+                selectedSubscription = null
+            },
+            onShowHistory = {
+                historyTarget = subscription
+                selectedSubscription = null
             }
+        )
+    }
+
+    recordPaymentTarget?.let { target ->
+        RecordPaymentDialog(
+            subscription = target,
+            client = client,
+            scope = scope,
+            onDismiss = { recordPaymentTarget = null },
+            onSuccess = { receipt ->
+                recordPaymentTarget = null
+                actionFeedback = AdminFeedbackMessage(
+                    "Paiement enregistré : ${formatMoneyXaf(receipt.montantXAF)} — accès activé jusqu'au " +
+                        cg.epilote.desktop.ui.screens.superadmin.formatDate(receipt.accessEnd)
+                )
+                onRefresh()
+                reloadTick++
+            }
+        )
+    }
+
+    historyTarget?.let { target ->
+        PaymentHistoryDialog(
+            subscription = target,
+            client = client,
+            scope = scope,
+            onDismiss = { historyTarget = null }
         )
     }
 
