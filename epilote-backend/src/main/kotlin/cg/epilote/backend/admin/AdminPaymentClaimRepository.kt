@@ -19,16 +19,24 @@ import org.springframework.stereotype.Repository
  * Référence officielle Couchbase Kotlin SDK :
  *   https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html#insert
  *
- * Cycle de vie d'un claim :
+ * Cycle de vie d'un claim (sémantique Stripe — clé d'idempotence terminale) :
  *   1. `claim(key)` :
  *      - première fois → renvoie [ClaimOutcome.Acquired], le caller exécute la logique
  *      - retry concurrent → renvoie [ClaimOutcome.AlreadyDone] si un précédent appel
  *        a complété (avec `receiptId` caché), ou [ClaimOutcome.InProgress] si la
  *        première exécution est encore en cours, ou [ClaimOutcome.PreviouslyFailed]
- *        si un précédent appel s'est terminé en échec — auquel cas on accepte une
- *        nouvelle tentative (relâche le claim et ré-acquiert)
+ *        si un précédent appel s'est terminé en échec — auquel cas le client doit
+ *        générer une **nouvelle clé** pour retenter (on NE re-exécute PAS la logique
+ *        métier, ce qui éliminerait l'idempotence et causerait des doubles débits /
+ *        doubles extensions d'abonnement si la première exécution avait partiellement
+ *        muté l'état avant l'erreur).
  *   2. `markDone(key, receiptId)` après succès → cache la réponse
- *   3. `markFailed(key, error)` après échec → permet un retry humain plus tard
+ *   3. `markFailed(key, error)` après échec → l'erreur cachée est rejouée tel quel
+ *      à toute tentative future avec la même clé
+ *
+ * Référence : https://docs.stripe.com/api/idempotent_requests
+ *  > "All POST requests accept idempotency keys. ... If the same idempotency key is
+ *  > used after the request has fully completed, the same response is returned."
  *
  * **Pourquoi pas un check N1QL** : la réplication des index N1QL est *eventually
  * consistent* (un retry survenant 100 ms après le premier appel pouvait ne pas voir
@@ -94,7 +102,7 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
 
             when (status) {
                 STATUS_DONE -> ClaimOutcome.AlreadyDone(receiptId)
-                STATUS_FAILED -> reacquire(id, newClaim)
+                STATUS_FAILED -> ClaimOutcome.PreviouslyFailed(errorMessage)
                 STATUS_IN_PROGRESS -> {
                     // Staleness : si le claim est `in_progress` depuis plus de
                     // STALE_IN_PROGRESS_MS, le caller précédent a probablement
@@ -108,8 +116,6 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
                     }
                 }
                 else -> ClaimOutcome.InProgress
-            }.let {
-                if (it is ClaimOutcome.PreviouslyFailed) it.copy(errorMessage = errorMessage) else it
             }
         }
     }
@@ -168,6 +174,11 @@ sealed class ClaimOutcome {
     /** Un appel concurrent est en cours : retourner 409 Conflict. */
     data object InProgress : ClaimOutcome()
 
-    /** Le précédent essai a échoué (rare — interception interne, normalement transformé en Acquired). */
+    /**
+     * Le précédent essai avec cette clé d'idempotence a échoué. Sémantique Stripe :
+     * la clé est **terminale** — toute tentative future avec la même clé renvoie la
+     * même erreur, sans réexécution métier. Le client doit générer une nouvelle clé
+     * pour retenter, garantissant qu'aucune mutation partielle n'est dupliquée.
+     */
     data class PreviouslyFailed(val errorMessage: String?) : ClaimOutcome()
 }

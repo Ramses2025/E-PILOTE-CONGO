@@ -17,6 +17,7 @@ import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.Authentication
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.web.bind.annotation.*
+import org.springframework.web.server.ResponseStatusException
 import org.springframework.security.crypto.password.PasswordEncoder
 
 @RestController
@@ -554,9 +555,17 @@ class AdminController(
                         .build()
                 }
                 is ClaimOutcome.PreviouslyFailed -> {
-                    // Cas rare : transformé en Acquired par le repository, ne devrait
-                    // pas remonter ici. Garde-fou pour l'exhaustivité des branches.
-                    log.warn("ClaimOutcome.PreviouslyFailed inattendu pour key=$idempotencyKey")
+                    // Sémantique Stripe officielle : une clé d'idempotence est terminale.
+                    // Si le premier appel a échoué, tous les rejeux avec la MÊME clé
+                    // doivent renvoyer la même erreur — pas réexécuter. Le client doit
+                    // générer une nouvelle clé pour retenter. Cela élimine la double-
+                    // extension d'abonnement quand 2.a réussit mais 2.b/2.c échoue.
+                    // https://docs.stripe.com/api/idempotent_requests
+                    val msg = outcome.errorMessage ?: "Le paiement initial avec cette clé d'idempotence a échoué."
+                    throw ResponseStatusException(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "$msg Générer une nouvelle clé d'idempotence pour retenter."
+                    )
                 }
             }
         }
