@@ -108,6 +108,8 @@ fun AdminPlatformSettingsScreen(
         invoiceNumberFormat = dto.invoiceNumberFormat.ifBlank { "FAC-{YYYY}-{NNNNNN}" }
         legalMentions = dto.legalMentions
         logoBase64 = dto.logoBase64
+        logoFileName = ""
+        logoError = null
     }
 
     LaunchedEffect(Unit) {
