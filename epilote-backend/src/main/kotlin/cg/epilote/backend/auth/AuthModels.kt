@@ -28,7 +28,15 @@ data class LoginResponse(
     val groupId: String?,
     val role: String,
     val permissions: List<PermissionDto>,
-    val expiresIn: Long
+    val expiresIn: Long,
+    /**
+     * Indique que le compte doit changer son mot de passe avant toute autre
+     * action. Vrai à la création par un Super Admin (politique de mot de passe
+     * initial à usage unique). Le client desktop doit bloquer la navigation
+     * et présenter le dialogue de changement de mot de passe avant d'autoriser
+     * l'accès au reste de l'application.
+     */
+    val mustChangePassword: Boolean = false
 )
 
 data class RefreshRequest(
@@ -73,7 +81,8 @@ data class EpiloteUserDetails(
     val role: UserRole,
     val permissions: List<PermissionDto>,
     val passwordHash: String,
-    val isActive: Boolean = true
+    val isActive: Boolean = true,
+    val mustChangePassword: Boolean = false
 )
 
 enum class UserRole {

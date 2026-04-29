@@ -97,6 +97,35 @@ fun EpiloteDesktopApp() {
                     }
                 }
             )
+        } else if (session!!.mustChangePassword) {
+            // ── Mot de passe initial à usage unique ──────────────────
+            // Le backend a indiqué `mustChangePassword=true` sur la LoginResponse :
+            // on bloque l'accès aux écrans applicatifs jusqu'à ce que l'utilisateur
+            // ait défini un nouveau mot de passe (politique de mot de passe initial
+            // côté Super Admin). Aucun chargement de données admin n'est lancé
+            // tant que cette étape n'est pas franchie : on monte donc un client
+            // admin minimal dédié uniquement à la route /api/auth/change-password.
+            val s = session!!
+            val forcedAdminClient = remember(s.accessToken) {
+                DesktopAdminClient(
+                    baseUrl = desktopBackendBaseUrl,
+                    tokenProvider = { s.accessToken },
+                    onUnauthorized = { false /* pas de refresh : on reste sur le dialogue forcé */ }
+                )
+            }
+            ForcedChangePasswordDialog(
+                adminClient = forcedAdminClient,
+                onPasswordChanged = {
+                    val cleared = s.copy(mustChangePassword = false)
+                    sessionRepo.saveSession(cleared)
+                    session = cleared
+                    currentScreen = when (cleared.role) {
+                        "SUPER_ADMIN"  -> DesktopScreen.ADMIN_DASHBOARD
+                        "ADMIN_GROUPE" -> DesktopScreen.GROUPE_DASHBOARD
+                        else           -> DesktopScreen.DASHBOARD
+                    }
+                }
+            )
         } else {
             val s  = session!!
             val db = remember(s.userId) {

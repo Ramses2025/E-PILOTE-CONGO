@@ -23,7 +23,14 @@ data class UserSession(
     val refreshToken: String,
     val offlineToken: String,
     val offlineTokenExpiresAt: Long = 0L,
-    val rememberMe: Boolean = false
+    val rememberMe: Boolean = false,
+    /**
+     * Vrai lorsque le compte a été créé avec un mot de passe initial à usage
+     * unique et n'a pas encore été changé. Le client desktop ouvre alors le
+     * dialogue forcé de changement de mot de passe avant tout accès aux écrans
+     * applicatifs ; après succès, ce flag est repassé à `false`.
+     */
+    val mustChangePassword: Boolean = false
 ) {
     fun hasModule(slug: String): Boolean =
         permissions.any { it.moduleSlug == slug && it.canRead }
