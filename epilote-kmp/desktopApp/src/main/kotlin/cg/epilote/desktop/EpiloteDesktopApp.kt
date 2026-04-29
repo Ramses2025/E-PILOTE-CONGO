@@ -105,18 +105,34 @@ fun EpiloteDesktopApp() {
             // côté Super Admin). Aucun chargement de données admin n'est lancé
             // tant que cette étape n'est pas franchie : on monte donc un client
             // admin minimal dédié uniquement à la route /api/auth/change-password.
+            //
+            // Sur 401 (token expiré après auto-login depuis la session
+            // persistée), on tente un refresh ; en cas d'échec on efface la
+            // session locale et on retombe sur LoginScreen — sans cela le
+            // dialogue forcé non-fermable restait verrouillé indéfiniment.
             val s = session!!
-            val forcedAdminClient = remember(s.accessToken) {
+            val forcedUnauthorizedHandler = remember(sessionRepo) {
+                buildDesktopAdminUnauthorizedHandler(desktopBackendBaseUrl, sessionRepo) { refreshedSession ->
+                    session = refreshedSession
+                }
+            }
+            val forcedTokenProvider = remember(sessionRepo) {
+                buildDesktopAdminTokenProvider(sessionRepo) { session }
+            }
+            val forcedAdminClient = remember(sessionRepo) {
                 DesktopAdminClient(
                     baseUrl = desktopBackendBaseUrl,
-                    tokenProvider = { s.accessToken },
-                    onUnauthorized = { false /* pas de refresh : on reste sur le dialogue forcé */ }
+                    tokenProvider = forcedTokenProvider,
+                    onUnauthorized = forcedUnauthorizedHandler
                 )
             }
             ForcedChangePasswordDialog(
                 adminClient = forcedAdminClient,
                 onPasswordChanged = {
-                    val cleared = s.copy(mustChangePassword = false)
+                    // Relit la session courante pour ne pas écraser un éventuel
+                    // refresh de token déclenché entre-temps.
+                    val current = sessionRepo.getSession() ?: s
+                    val cleared = current.copy(mustChangePassword = false)
                     sessionRepo.saveSession(cleared)
                     session = cleared
                     currentScreen = when (cleared.role) {
