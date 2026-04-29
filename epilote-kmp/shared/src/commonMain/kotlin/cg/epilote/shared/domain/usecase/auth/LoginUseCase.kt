@@ -35,6 +35,7 @@ class LoginUseCase(
                 offlineToken         = dto.offlineToken,
                 offlineTokenExpiresAt = dto.offlineTokenExpiresAt,
                 rememberMe           = rememberMe,
+                mustChangePassword   = dto.mustChangePassword,
                 permissions          = dto.permissions.map { p ->
                     cg.epilote.shared.domain.model.ModulePermission(
                         moduleSlug = p.moduleSlug,

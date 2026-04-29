@@ -28,7 +28,14 @@ data class LoginResponseDto(
     val groupId: String?,
     val role: String,
     val permissions: List<PermissionDto> = emptyList(),
-    val expiresIn: Long
+    val expiresIn: Long,
+    /**
+     * Vrai lorsque le compte vient d'être créé (mot de passe initial à usage
+     * unique) et doit changer son mot de passe avant tout accès. Le client
+     * desktop bloque la navigation et ouvre `ChangePasswordDialog` lorsqu'il
+     * reçoit ce flag à `true`.
+     */
+    val mustChangePassword: Boolean = false
 )
 
 @Serializable

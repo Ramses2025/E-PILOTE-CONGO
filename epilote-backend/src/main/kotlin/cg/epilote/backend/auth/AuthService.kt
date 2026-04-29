@@ -78,7 +78,13 @@ class AuthService(
             groupId              = effectiveUser.groupId,
             role                 = effectiveUser.role.name,
             permissions          = effectiveUser.permissions,
-            expiresIn            = 3600
+            expiresIn            = 3600,
+            // Propage le flag pour que le client desktop force le changement
+            // de mot de passe avant tout accès aux écrans applicatifs (politique
+            // de mot de passe initial à usage unique). Le hash courant reste
+            // valable pour la requête de changement (route /auth/change-password
+            // accepte `currentPassword`).
+            mustChangePassword   = effectiveUser.mustChangePassword
         )
     }
 

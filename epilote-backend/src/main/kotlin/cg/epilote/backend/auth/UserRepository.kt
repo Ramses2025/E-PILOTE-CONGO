@@ -48,7 +48,9 @@ class UserRepository(private val bucket: Bucket) {
                 permissions  = parsePermissions(inner),
                 passwordHash = inner["passwordHash"] as? String ?: "",
                 email        = inner["email"] as? String ?: "",
-                isActive     = inner["isActive"] as? Boolean ?: true
+                isActive     = inner["isActive"] as? Boolean ?: true,
+                mustChangePassword = inner["mustChangePassword"] as? Boolean
+                    ?: inner["must_change_password"] as? Boolean ?: false
             )
         }
     }
@@ -67,7 +69,9 @@ class UserRepository(private val bucket: Bucket) {
             role         = migrateRole(doc["role"] as? String),
             permissions  = parsePermissions(doc),
             passwordHash = doc["passwordHash"] as? String ?: "",
-            isActive     = doc["isActive"] as? Boolean ?: true
+            isActive     = doc["isActive"] as? Boolean ?: true,
+            mustChangePassword = doc["mustChangePassword"] as? Boolean
+                ?: doc["must_change_password"] as? Boolean ?: false
         )
     }.getOrNull()
 
