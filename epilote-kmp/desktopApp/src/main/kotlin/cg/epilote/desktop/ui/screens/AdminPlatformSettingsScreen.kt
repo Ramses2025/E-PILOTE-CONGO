@@ -83,6 +83,8 @@ fun AdminPlatformSettingsScreen(
     var invoiceNumberFormat by remember { mutableStateOf("FAC-{YYYY}-{NNNNNN}") }
     var legalMentions by remember { mutableStateOf("") }
     var logoBase64 by remember { mutableStateOf("") }
+    var logoFileName by remember { mutableStateOf("") }
+    var logoError by remember { mutableStateOf<String?>(null) }
 
     fun applyDto(dto: PlatformIdentityDto) {
         current = dto
@@ -237,18 +239,27 @@ fun AdminPlatformSettingsScreen(
                     }
                 }
 
-                SectionCard("Logo (données base64, PNG/JPG)") {
-                    OutlinedTextField(
-                        value = logoBase64,
-                        onValueChange = { logoBase64 = it.take(3_000_000) },
-                        label = { Text("Contenu base64 — data:image/png;base64,…") },
-                        modifier = Modifier.fillMaxWidth().height(110.dp),
-                        maxLines = 4
-                    )
+                SectionCard("Logo de la plateforme") {
                     Text(
-                        "Astuce : convertis ton logo en base64 (copier-coller). Taille max ~3 Mo.",
+                        "Affiché en en-tête de chaque facture émise. Si vide, le logo E-PILOTE par défaut est utilisé.",
                         fontSize = 11.sp,
                         color = Color(0xFF667085)
+                    )
+                    GroupeLogoPicker(
+                        logoData = logoBase64.ifBlank { null },
+                        logoFileName = logoFileName,
+                        errorMessage = logoError,
+                        onLogoSelected = { dataUrl, fileName ->
+                            logoBase64 = dataUrl
+                            logoFileName = fileName
+                            logoError = null
+                        },
+                        onLogoSelectionError = { logoError = it },
+                        onLogoCleared = {
+                            logoBase64 = ""
+                            logoFileName = ""
+                            logoError = null
+                        }
                     )
                 }
 
