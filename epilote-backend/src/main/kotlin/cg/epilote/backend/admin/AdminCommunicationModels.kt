@@ -1,10 +1,11 @@
 package cg.epilote.backend.admin
 
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Size
 
 data class CreateAdminMessageRequest(
-    @field:NotBlank val sujet: String,
-    @field:NotBlank val contenu: String,
+    @field:NotBlank @field:Size(max = 200) val sujet: String,
+    @field:NotBlank @field:Size(max = 50_000) val contenu: String,
     @field:NotBlank val targetType: String,
     val groupId: String? = null,
     val adminId: String? = null

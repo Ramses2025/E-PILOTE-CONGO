@@ -10,9 +10,7 @@ import org.springframework.stereotype.Repository
 @Repository
 class UserRepository(private val bucket: Bucket) {
 
-    private val collection: Collection by lazy {
-        runBlocking { bucket.defaultScope().collection("users") }
-    }
+    private val collection: Collection = runBlocking { bucket.defaultScope().collection("users") }
 
     private fun migrateRole(raw: String?): UserRole = when (raw) {
         "SUPER_ADMIN"   -> UserRole.SUPER_ADMIN
@@ -89,13 +87,14 @@ class UserRepository(private val bucket: Bucket) {
      *   https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html#upsert
      */
     suspend fun updatePasswordHash(userId: String, newPasswordHash: String): Boolean {
-        val doc = runCatching { collection.get(userId).contentAs<MutableMap<String, Any?>>() }.getOrNull()
+        val getResult = runCatching { collection.get(userId) }.getOrNull()
             ?: return false
+        val doc = getResult.contentAs<MutableMap<String, Any?>>()
         doc["passwordHash"] = newPasswordHash
         doc["mustChangePassword"] = false
         doc["passwordChangedAt"] = System.currentTimeMillis()
         doc["updatedAt"] = System.currentTimeMillis()
-        collection.upsert(userId, doc)
+        collection.replace(userId, doc, cas = getResult.cas)
         return true
     }
 

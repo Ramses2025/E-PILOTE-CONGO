@@ -39,7 +39,6 @@ dependencies {
 
     // HTTP client pour appels IA (Mistral / OpenAI)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.apache.pdfbox:pdfbox:3.0.2")
 
     // Test

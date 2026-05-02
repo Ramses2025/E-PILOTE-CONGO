@@ -391,8 +391,8 @@ data class InvoiceResponse(
 
 // ── Annonce Globale ──────────────────────────────────────────────
 data class CreateAnnouncementRequest(
-    @field:NotBlank val titre: String,
-    @field:NotBlank val contenu: String,
+    @field:NotBlank @field:Size(max = 200) val titre: String,
+    @field:NotBlank @field:Size(max = 50_000) val contenu: String,
     val cible: String = "all"
 )
 

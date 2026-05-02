@@ -2,6 +2,7 @@ package cg.epilote.backend.admin
 
 import com.couchbase.client.kotlin.Bucket
 import com.couchbase.client.kotlin.Collection
+import com.couchbase.client.kotlin.query.QueryParameters
 import com.couchbase.client.kotlin.query.execute
 import kotlinx.coroutines.runBlocking
 import org.springframework.stereotype.Repository
@@ -11,7 +12,7 @@ import java.util.UUID
 class AdminCommunicationRepository(
     private val bucket: Bucket
 ) {
-    private val scope by lazy { runBlocking { bucket.defaultScope() } }
+    private val scope = runBlocking { bucket.defaultScope() }
 
     private companion object {
         const val ANNOUNCEMENTS_COLLECTION = "announcements"
@@ -20,7 +21,8 @@ class AdminCommunicationRepository(
         const val MESSAGE_TYPE = "platform_message"
     }
 
-    private fun col(name: String): Collection = runBlocking { scope.collection(name) }
+    private val announcementsCol: Collection = runBlocking { scope.collection(ANNOUNCEMENTS_COLLECTION) }
+    private val messagesCol: Collection = runBlocking { scope.collection(MESSAGES_COLLECTION) }
     private fun newId(prefix: String): String = "$prefix::${UUID.randomUUID()}"
     private fun now(): Long = System.currentTimeMillis()
 
@@ -36,7 +38,7 @@ class AdminCommunicationRepository(
             "createdAt" to currentTime,
             "updatedAt" to currentTime
         )
-        col(ANNOUNCEMENTS_COLLECTION).upsert(id, doc)
+        announcementsCol.upsert(id, doc)
         return AnnouncementResponse(
             id = id,
             titre = doc["titre"] as String,
@@ -49,7 +51,8 @@ class AdminCommunicationRepository(
 
     suspend fun listAnnouncements(): List<AnnouncementResponse> {
         val result = scope.query(
-            "SELECT META(a).id AS id, a.* FROM `${ANNOUNCEMENTS_COLLECTION}` a WHERE a.type = '${ANNOUNCEMENT_TYPE}' ORDER BY a.createdAt DESC"
+            statement = "SELECT META(a).id AS id, a.* FROM `$ANNOUNCEMENTS_COLLECTION` a WHERE a.type = \$docType ORDER BY a.createdAt DESC",
+            parameters = QueryParameters.named("docType" to ANNOUNCEMENT_TYPE)
         ).execute()
         return result.rows.map { row ->
             val data = row.contentAs<Map<String, Any?>>()
@@ -96,7 +99,7 @@ class AdminCommunicationRepository(
             "createdAt" to currentTime,
             "updatedAt" to currentTime
         )
-        col(MESSAGES_COLLECTION).upsert(id, doc)
+        messagesCol.upsert(id, doc)
         return AdminMessageResponse(
             id = id,
             sujet = doc["sujet"] as String,
@@ -115,15 +118,16 @@ class AdminCommunicationRepository(
         val normalizedStatus = status.trim().lowercase()
         if (normalizedStatus !in setOf("sent", "archived", "deleted")) return null
 
-        val current = runCatching {
-            col(MESSAGES_COLLECTION).get(messageId).contentAs<MutableMap<String, Any?>>()
+        val getResult = runCatching {
+            messagesCol.get(messageId)
         }.getOrNull() ?: return null
+        val current = getResult.contentAs<MutableMap<String, Any?>>()
         if ((current["type"] as? String) != MESSAGE_TYPE) return null
 
         val updatedAt = now()
         current["status"] = normalizedStatus
         current["updatedAt"] = updatedAt
-        col(MESSAGES_COLLECTION).upsert(messageId, current)
+        messagesCol.replace(messageId, current, cas = getResult.cas)
 
         return AdminMessageResponse(
             id = messageId,
@@ -141,7 +145,8 @@ class AdminCommunicationRepository(
 
     suspend fun listMessages(): List<AdminMessageResponse> {
         val result = scope.query(
-            "SELECT META(m).id AS id, m.* FROM `${MESSAGES_COLLECTION}` m WHERE m.type = '${MESSAGE_TYPE}' ORDER BY m.createdAt DESC"
+            statement = "SELECT META(m).id AS id, m.* FROM `$MESSAGES_COLLECTION` m WHERE m.type = \$docType ORDER BY m.createdAt DESC",
+            parameters = QueryParameters.named("docType" to MESSAGE_TYPE)
         ).execute()
         return result.rows.map { row ->
             val data = row.contentAs<Map<String, Any?>>()

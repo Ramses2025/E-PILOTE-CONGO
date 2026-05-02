@@ -48,7 +48,7 @@ import java.util.UUID
 @Repository
 class AdminPaymentClaimRepository(private val bucket: Bucket) {
 
-    private val scope by lazy { runBlocking { bucket.defaultScope() } }
+    private val scope = runBlocking { bucket.defaultScope() }
 
     private companion object {
         const val COLLECTION = "payment_receipts"
@@ -67,7 +67,7 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
         const val STALE_IN_PROGRESS_MS = 5 * 60 * 1000L
     }
 
-    private fun col(): Collection = runBlocking { scope.collection(COLLECTION) }
+    private val col: Collection = runBlocking { scope.collection(COLLECTION) }
 
     private fun docId(idempotencyKey: String): String = "$DOC_PREFIX$idempotencyKey"
 
@@ -91,12 +91,12 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
 
         return try {
             // KV insert : strongly-consistent côté cluster.
-            col().insert(id, newClaim)
+            col.insert(id, newClaim)
             ClaimOutcome.Acquired(claimToken)
         } catch (e: DocumentExistsException) {
             // Un autre appel a déjà posé un claim pour cette clé. On lit son état
             // (avec son CAS) pour décider quoi faire.
-            val getResult = runCatching { col().get(id) }.getOrNull()
+            val getResult = runCatching { col.get(id) }.getOrNull()
                 ?: return ClaimOutcome.InProgress
             val existing = runCatching { getResult.contentAs<Map<String, Any?>>() }
                 .getOrNull()
@@ -145,7 +145,7 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
         claimToken: String
     ): ClaimOutcome {
         return try {
-            col().replace(id, newClaim, cas = cas)
+            col.replace(id, newClaim, cas = cas)
             ClaimOutcome.Acquired(claimToken)
         } catch (_: CasMismatchException) {
             // Un autre retry vient de gagner la course de réacquisition.
@@ -197,7 +197,7 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
         mutate: (MutableMap<String, Any?>) -> Unit
     ) {
         val id = docId(idempotencyKey)
-        val getResult = runCatching { col().get(id) }.getOrNull() ?: return
+        val getResult = runCatching { col.get(id) }.getOrNull() ?: return
         val existing = runCatching { getResult.contentAs<MutableMap<String, Any?>>() }
             .getOrNull() ?: return
         val currentToken = existing["claimToken"] as? String
@@ -207,7 +207,7 @@ class AdminPaymentClaimRepository(private val bucket: Bucket) {
         }
         mutate(existing)
         existing["updatedAt"] = System.currentTimeMillis()
-        runCatching { col().replace(id, existing, cas = getResult.cas) }
+        runCatching { col.replace(id, existing, cas = getResult.cas) }
     }
 }
 
