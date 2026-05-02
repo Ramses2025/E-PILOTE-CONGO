@@ -1,4 +1,5 @@
 package cg.epilote.desktop.data
+import java.util.logging.Logger
 
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
@@ -36,6 +37,8 @@ class AdminRealtimeClient(
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
+    private val log = Logger.getLogger(AdminRealtimeClient::class.java.name)
+
     private val httpClient = HttpClient {
         expectSuccess = false
         install(HttpTimeout) {
@@ -55,7 +58,7 @@ class AdminRealtimeClient(
     }
 
     private suspend fun connectOnce(onEvent: suspend (AdminRealtimeEventDto) -> Unit): Boolean {
-        println("[SSE] Connecting to $baseUrl/api/super-admin/events/stream ...")
+        log.info("[SSE] Connecting to $baseUrl/api/super-admin/events/stream ...")
         val response = runCatching {
             httpClient.get("$baseUrl/api/super-admin/events/stream") {
                 header(HttpHeaders.Accept, "text/event-stream")
@@ -63,22 +66,22 @@ class AdminRealtimeClient(
                 lastEventIdProvider()?.let { header("Last-Event-ID", it) }
             }
         }.getOrElse { error ->
-            println("[SSE] Connection failed: ${error.message}")
+            log.warning("[SSE] Connection failed: ${error.message}")
             return false
         }
 
         if (response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden) {
-            println("[SSE] Got ${response.status} — attempting token refresh")
+            log.info("[SSE] Got ${response.status} — attempting token refresh")
             val refreshed = runCatching { onUnauthorized() }.getOrDefault(false)
             return refreshed
         }
 
         if (response.status.value !in 200..299) {
-            println("[SSE] Unexpected status ${response.status}")
+            log.warning("[SSE] Unexpected status ${response.status}")
             return false
         }
 
-        println("[SSE] Connected successfully — reading stream ...")
+        log.info("[SSE] Connected successfully — reading stream ...")
         val channel = response.bodyAsChannel()
         var eventName = "message"
         var dataBuffer = StringBuilder()
@@ -101,20 +104,20 @@ class AdminRealtimeClient(
                     if (payload.isBlank()) { eventName = "message"; continue }
 
                     when (eventName) {
-                        "connected" -> println("[SSE] Server connected event received")
+                        "connected" -> log.info("[SSE] Server connected event received")
                         "heartbeat" -> { /* keep-alive, ignore */ }
                         "reconnect" -> {
-                            println("[SSE] Reconnect hint — triggering full refresh")
+                            log.info("[SSE] Reconnect hint — triggering full refresh")
                             onReconnectNeeded?.invoke()
                         }
                         else -> {
                             val event = runCatching { json.decodeFromString(AdminRealtimeEventDto.serializer(), payload) }
                                 .getOrElse { error ->
-                                    println("[SSE] Decode failed: ${error.message} — raw: ${payload.take(200)}")
+                                    log.warning("[SSE] Decode failed: ${error.message} — raw: ${payload.take(200)}")
                                     null
                                 }
                             if (event != null) {
-                                println("[SSE] Event: ${event.entityType}/${event.action} id=${event.entityId}")
+                                log.info("[SSE] Event: ${event.entityType}/${event.action} id=${event.entityId}")
                                 onEvent(event)
                             }
                         }
@@ -124,7 +127,7 @@ class AdminRealtimeClient(
             }
         }
 
-        println("[SSE] Stream closed — will reconnect")
+        log.warning("[SSE] Stream closed — will reconnect")
         onReconnectNeeded?.invoke()
         return false
     }

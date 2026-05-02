@@ -1,4 +1,5 @@
 package cg.epilote.desktop.data
+import java.util.logging.Logger
 
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -15,6 +16,7 @@ class DesktopAdminClient(
     private val tokenProvider: () -> String?,
     private val onUnauthorized: suspend () -> Boolean = { false }
 ) {
+    private val log = Logger.getLogger(DesktopAdminClient::class.java.name)
     private val httpClient = HttpClient {
         expectSuccess = false
         install(ContentNegotiation) {
@@ -43,41 +45,41 @@ class DesktopAdminClient(
         crossinline request: suspend () -> HttpResponse
     ): T? {
         val firstResponse = runCatching { request() }.getOrElse { error ->
-            println("DesktopAdminClient $method $path request failed: ${error.message}")
+            log.warning("DesktopAdminClient $method $path request failed: ${error.message}")
             return null
         }
 
         if (shouldAttemptRefresh(firstResponse.status)) {
-            println("DesktopAdminClient $method $path returned ${firstResponse.status}; attempting token refresh")
+            log.fine("DesktopAdminClient $method $path returned ${firstResponse.status}; attempting token refresh")
             val refreshed = runCatching { onUnauthorized() }.getOrDefault(false)
             if (refreshed) {
                 val retryResponse = runCatching { request() }.getOrElse { error ->
-                    println("DesktopAdminClient $method $path retry failed: ${error.message}")
+                    log.warning("DesktopAdminClient $method $path retry failed: ${error.message}")
                     return null
                 }
                 if (retryResponse.status.value in 200..299) {
                     return runCatching {
                         retryResponse.body<T>()
                     }.getOrElse { error ->
-                        println("DesktopAdminClient $method $path decode failed: ${error.message}")
+                        log.warning("DesktopAdminClient $method $path decode failed: ${error.message}")
                         null
                     }
                 }
-                println("DesktopAdminClient $method $path retry returned ${retryResponse.status}")
+                log.fine("DesktopAdminClient $method $path retry returned ${retryResponse.status}")
                 return null
             }
             return null
         }
 
         if (firstResponse.status.value !in 200..299) {
-            println("DesktopAdminClient $method $path returned ${firstResponse.status}")
+            log.fine("DesktopAdminClient $method $path returned ${firstResponse.status}")
             return null
         }
 
         return runCatching {
             firstResponse.body<T>()
         }.getOrElse { error ->
-            println("DesktopAdminClient $method $path decode failed: ${error.message}")
+            log.warning("DesktopAdminClient $method $path decode failed: ${error.message}")
             null
         }
     }
@@ -88,16 +90,16 @@ class DesktopAdminClient(
         request: suspend () -> HttpResponse
     ): Boolean {
         val firstResponse = runCatching { request() }.getOrElse { error ->
-            println("DesktopAdminClient $method $path request failed: ${error.message}")
+            log.warning("DesktopAdminClient $method $path request failed: ${error.message}")
             return false
         }
 
         if (shouldAttemptRefresh(firstResponse.status)) {
-            println("DesktopAdminClient $method $path returned ${firstResponse.status}; attempting token refresh")
+            log.fine("DesktopAdminClient $method $path returned ${firstResponse.status}; attempting token refresh")
             val refreshed = runCatching { onUnauthorized() }.getOrDefault(false)
             if (refreshed) {
                 val retryResponse = runCatching { request() }.getOrElse { error ->
-                    println("DesktopAdminClient $method $path retry failed: ${error.message}")
+                    log.warning("DesktopAdminClient $method $path retry failed: ${error.message}")
                     return false
                 }
                 return retryResponse.status.value in 200..299
@@ -114,37 +116,37 @@ class DesktopAdminClient(
         request: suspend () -> HttpResponse
     ): ByteArray? {
         val firstResponse = runCatching { request() }.getOrElse { error ->
-            println("DesktopAdminClient $method $path request failed: ${error.message}")
+            log.warning("DesktopAdminClient $method $path request failed: ${error.message}")
             return null
         }
 
         if (shouldAttemptRefresh(firstResponse.status)) {
-            println("DesktopAdminClient $method $path returned ${firstResponse.status}; attempting token refresh")
+            log.fine("DesktopAdminClient $method $path returned ${firstResponse.status}; attempting token refresh")
             val refreshed = runCatching { onUnauthorized() }.getOrDefault(false)
             if (refreshed) {
                 val retryResponse = runCatching { request() }.getOrElse { error ->
-                    println("DesktopAdminClient $method $path retry failed: ${error.message}")
+                    log.warning("DesktopAdminClient $method $path retry failed: ${error.message}")
                     return null
                 }
                 if (retryResponse.status.value in 200..299) {
                     return runCatching { retryResponse.body<ByteArray>() }.getOrElse { error ->
-                        println("DesktopAdminClient $method $path byte decode failed: ${error.message}")
+                        log.warning("DesktopAdminClient $method $path byte decode failed: ${error.message}")
                         null
                     }
                 }
-                println("DesktopAdminClient $method $path retry returned ${retryResponse.status}")
+                log.fine("DesktopAdminClient $method $path retry returned ${retryResponse.status}")
                 return null
             }
             return null
         }
 
         if (firstResponse.status.value !in 200..299) {
-            println("DesktopAdminClient $method $path returned ${firstResponse.status}")
+            log.fine("DesktopAdminClient $method $path returned ${firstResponse.status}")
             return null
         }
 
         return runCatching { firstResponse.body<ByteArray>() }.getOrElse { error ->
-            println("DesktopAdminClient $method $path byte decode failed: ${error.message}")
+            log.warning("DesktopAdminClient $method $path byte decode failed: ${error.message}")
             null
         }
     }

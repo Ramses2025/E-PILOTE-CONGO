@@ -20,6 +20,7 @@ data class AdminMessageResponse(
     val adminId: String?,
     val threadKey: String,
     val status: String,
+    val readBy: List<String> = emptyList(),
     val createdBy: String,
     val createdAt: Long
 )

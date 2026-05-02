@@ -12,6 +12,7 @@ data class AdminMessageApiDto(
     val adminId: String? = null,
     val threadKey: String = "",
     val status: String = "sent",
+    val readBy: List<String> = emptyList(),
     val createdBy: String = "",
     val createdAt: Long = 0
 )

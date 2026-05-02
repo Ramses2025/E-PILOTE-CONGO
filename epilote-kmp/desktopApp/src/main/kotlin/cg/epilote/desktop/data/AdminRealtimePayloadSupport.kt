@@ -18,6 +18,8 @@ internal fun AdminDataRepository.applyRealtimePayload(event: AdminRealtimeEventD
         "module" -> applyModulePayload(payload)
         "category" -> applyCategoryPayload(payload)
         "admin" -> applyAdminPayload(event, payload)
+        "message" -> applyMessagePayload(payload)
+        "announcement" -> applyAnnouncementPayload(payload)
         else -> false
     }
 
@@ -69,6 +71,22 @@ private fun AdminDataRepository.applyCategoryPayload(payload: JsonObject): Boole
     }.getOrNull() ?: return false
 
     upsertCategory(dto)
+    return true
+}
+
+private fun AdminDataRepository.applyMessagePayload(payload: JsonObject): Boolean {
+    runCatching {
+        realtimePayloadJson.decodeFromJsonElement(AdminMessageApiDto.serializer(), payload)
+    }.getOrNull() ?: return false
+    notifyMessagingReload()
+    return true
+}
+
+private fun AdminDataRepository.applyAnnouncementPayload(payload: JsonObject): Boolean {
+    runCatching {
+        realtimePayloadJson.decodeFromJsonElement(AnnouncementApiDto.serializer(), payload)
+    }.getOrNull() ?: return false
+    notifyMessagingReload()
     return true
 }
 

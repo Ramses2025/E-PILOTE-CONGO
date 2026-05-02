@@ -49,10 +49,13 @@ class AdminCommunicationRepository(
         )
     }
 
-    suspend fun listAnnouncements(): List<AnnouncementResponse> {
+    suspend fun listAnnouncements(page: Int = 1, pageSize: Int = 50): List<AnnouncementResponse> {
+        val safePage = page.coerceAtLeast(1)
+        val safeSize = pageSize.coerceIn(1, 200)
+        val offset = (safePage - 1) * safeSize
         val result = scope.query(
-            statement = "SELECT META(a).id AS id, a.* FROM `$ANNOUNCEMENTS_COLLECTION` a WHERE a.type = \$docType ORDER BY a.createdAt DESC",
-            parameters = QueryParameters.named("docType" to ANNOUNCEMENT_TYPE)
+            statement = "SELECT META(a).id AS id, a.* FROM `$ANNOUNCEMENTS_COLLECTION` a WHERE a.type = \$docType ORDER BY a.createdAt DESC LIMIT \$lim OFFSET \$off",
+            parameters = QueryParameters.named("docType" to ANNOUNCEMENT_TYPE, "lim" to safeSize, "off" to offset)
         ).execute()
         return result.rows.map { row ->
             val data = row.contentAs<Map<String, Any?>>()
@@ -95,6 +98,7 @@ class AdminCommunicationRepository(
             "adminId" to normalizedAdminId,
             "threadKey" to threadKey,
             "status" to "sent",
+            "readBy" to listOf(createdBy),
             "createdBy" to createdBy,
             "createdAt" to currentTime,
             "updatedAt" to currentTime
@@ -109,6 +113,7 @@ class AdminCommunicationRepository(
             adminId = normalizedAdminId,
             threadKey = threadKey,
             status = "sent",
+            readBy = listOf(createdBy),
             createdBy = createdBy,
             createdAt = currentTime
         )
@@ -129,6 +134,7 @@ class AdminCommunicationRepository(
         current["updatedAt"] = updatedAt
         messagesCol.replace(messageId, current, cas = getResult.cas)
 
+        @Suppress("UNCHECKED_CAST")
         return AdminMessageResponse(
             id = messageId,
             sujet = current["sujet"] as? String ?: "",
@@ -138,18 +144,23 @@ class AdminCommunicationRepository(
             adminId = current["adminId"] as? String,
             threadKey = current["threadKey"] as? String ?: "",
             status = normalizedStatus,
+            readBy = (current["readBy"] as? List<String>) ?: emptyList(),
             createdBy = current["createdBy"] as? String ?: "",
             createdAt = (current["createdAt"] as? Number)?.toLong() ?: 0L
         )
     }
 
-    suspend fun listMessages(): List<AdminMessageResponse> {
+    suspend fun listMessages(page: Int = 1, pageSize: Int = 50): List<AdminMessageResponse> {
+        val safePage = page.coerceAtLeast(1)
+        val safeSize = pageSize.coerceIn(1, 200)
+        val offset = (safePage - 1) * safeSize
         val result = scope.query(
-            statement = "SELECT META(m).id AS id, m.* FROM `$MESSAGES_COLLECTION` m WHERE m.type = \$docType ORDER BY m.createdAt DESC",
-            parameters = QueryParameters.named("docType" to MESSAGE_TYPE)
+            statement = "SELECT META(m).id AS id, m.* FROM `$MESSAGES_COLLECTION` m WHERE m.type = \$docType ORDER BY m.createdAt DESC LIMIT \$lim OFFSET \$off",
+            parameters = QueryParameters.named("docType" to MESSAGE_TYPE, "lim" to safeSize, "off" to offset)
         ).execute()
         return result.rows.map { row ->
             val data = row.contentAs<Map<String, Any?>>()
+            @Suppress("UNCHECKED_CAST")
             AdminMessageResponse(
                 id = data["id"] as? String ?: "",
                 sujet = data["sujet"] as? String ?: "",
@@ -159,9 +170,41 @@ class AdminCommunicationRepository(
                 adminId = data["adminId"] as? String,
                 threadKey = data["threadKey"] as? String ?: "",
                 status = data["status"] as? String ?: "sent",
+                readBy = (data["readBy"] as? List<String>) ?: emptyList(),
                 createdBy = data["createdBy"] as? String ?: "",
                 createdAt = (data["createdAt"] as? Number)?.toLong() ?: 0L
             )
         }
+    }
+
+    suspend fun markMessageAsRead(messageId: String, userId: String): AdminMessageResponse? {
+        val getResult = runCatching {
+            messagesCol.get(messageId)
+        }.getOrNull() ?: return null
+        val current = getResult.contentAs<MutableMap<String, Any?>>()
+        if ((current["type"] as? String) != MESSAGE_TYPE) return null
+
+        @Suppress("UNCHECKED_CAST")
+        val readBy = ((current["readBy"] as? List<String>) ?: emptyList()).toMutableList()
+        if (userId !in readBy) {
+            readBy.add(userId)
+            current["readBy"] = readBy
+            current["updatedAt"] = now()
+            messagesCol.replace(messageId, current, cas = getResult.cas)
+        }
+
+        return AdminMessageResponse(
+            id = messageId,
+            sujet = current["sujet"] as? String ?: "",
+            contenu = current["contenu"] as? String ?: "",
+            targetType = current["targetType"] as? String ?: "all_groups",
+            groupId = current["groupId"] as? String,
+            adminId = current["adminId"] as? String,
+            threadKey = current["threadKey"] as? String ?: "",
+            status = current["status"] as? String ?: "sent",
+            readBy = readBy,
+            createdBy = current["createdBy"] as? String ?: "",
+            createdAt = (current["createdAt"] as? Number)?.toLong() ?: 0L
+        )
     }
 }
