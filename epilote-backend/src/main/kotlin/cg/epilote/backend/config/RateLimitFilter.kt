@@ -51,7 +51,7 @@ class RateLimitFilter : OncePerRequestFilter() {
         }!!
 
         if (window.count.get() > MAX_ATTEMPTS) {
-            response.status = HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE
+            response.status = 429
             response.contentType = "application/json"
             response.writer.write("""{"code":"RATE_LIMITED","message":"Trop de tentatives — réessayez dans une minute"}""")
             return

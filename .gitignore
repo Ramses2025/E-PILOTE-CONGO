@@ -40,5 +40,11 @@ Thumbs.db
 epilote-kmp/*/build/
 epilote-kmp/**/build/
 
+# Couchbase Lite native binaries (generated at runtime)
+epilote-kmp/desktopApp/CouchbaseLiteTemp/
+
 # Spring Boot
 epilote-backend/build/
+
+# Gradle wrapper jar (binary, downloadable)
+gradle/wrapper/gradle-wrapper.jar

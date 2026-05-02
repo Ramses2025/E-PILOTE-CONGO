@@ -51,7 +51,7 @@ class RateLimitFilterTest {
         request.remoteAddr = "10.0.0.2"
         val response = MockHttpServletResponse()
         filter.doFilter(request, response, chain)
-        assertEquals(413, response.status)
+        assertEquals(429, response.status)
         assertTrue(response.contentAsString.contains("RATE_LIMITED"))
     }
 
@@ -84,7 +84,7 @@ class RateLimitFilterTest {
         request.remoteAddr = "10.0.0.5"
         val response = MockHttpServletResponse()
         filter.doFilter(request, response, chain)
-        assertEquals(413, response.status)
+        assertEquals(429, response.status)
     }
 
     @Test
@@ -102,7 +102,7 @@ class RateLimitFilterTest {
         request.addHeader("X-Forwarded-For", "192.168.1.100, 10.0.0.1")
         val response = MockHttpServletResponse()
         filter.doFilter(request, response, chain)
-        assertEquals(413, response.status)
+        assertEquals(429, response.status)
 
         val request2 = MockHttpServletRequest("POST", "/api/auth/login")
         request2.remoteAddr = "10.0.0.6"
