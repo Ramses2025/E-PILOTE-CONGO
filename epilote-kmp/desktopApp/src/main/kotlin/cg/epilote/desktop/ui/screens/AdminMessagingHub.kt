@@ -39,6 +39,7 @@ import cg.epilote.desktop.ui.theme.EpiloteGreen
 import cg.epilote.desktop.ui.theme.EpiloteTextMuted
 import cg.epilote.shared.domain.model.UserSession
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 @Composable
@@ -50,7 +51,8 @@ internal fun AdminMessagingHub(
     scope: CoroutineScope,
     client: DesktopAdminClient,
     onRefresh: () -> Unit,
-    initialMailbox: AdminMessagingMailbox
+    initialMailbox: AdminMessagingMailbox,
+    sseReloadTick: StateFlow<Int>? = null
 ) {
     val scrollState = rememberScrollState()
     var mailbox by remember(initialMailbox) { mutableStateOf(initialMailbox) }
@@ -130,6 +132,10 @@ internal fun AdminMessagingHub(
             runCatching { client.updateMessageStatus(message.id, status) }.getOrNull()
         }
         return results.all { it != null }
+    }
+
+    LaunchedEffect(sseReloadTick) {
+        sseReloadTick?.collect { reloadTick = it }
     }
 
     LaunchedEffect(reloadTick) {

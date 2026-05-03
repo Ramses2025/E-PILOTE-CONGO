@@ -61,6 +61,7 @@ class RateLimitFilter : OncePerRequestFilter() {
     }
 
     private fun extractIp(request: HttpServletRequest): String {
-        return request.remoteAddr ?: "unknown"
+        return request.getHeader("X-Forwarded-For")?.split(",")?.firstOrNull()?.trim()
+            ?.takeIf { it.isNotBlank() } ?: request.remoteAddr ?: "unknown"
     }
 }
