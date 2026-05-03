@@ -135,7 +135,7 @@ internal fun AdminMessagingHub(
     }
 
     LaunchedEffect(sseReloadTick) {
-        sseReloadTick?.collect { reloadTick++ }
+        sseReloadTick?.drop(1)?.collect { reloadTick++ }
     }
 
     LaunchedEffect(reloadTick) {
