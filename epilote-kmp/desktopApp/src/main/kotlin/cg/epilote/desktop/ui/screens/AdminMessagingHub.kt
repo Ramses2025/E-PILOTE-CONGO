@@ -40,6 +40,7 @@ import cg.epilote.desktop.ui.theme.EpiloteTextMuted
 import cg.epilote.shared.domain.model.UserSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 @Composable
