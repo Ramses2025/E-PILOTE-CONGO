@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Rate limiter basé sur l'IP pour les endpoints d'authentification.
@@ -22,11 +23,14 @@ class RateLimitFilter : OncePerRequestFilter() {
     private companion object {
         const val MAX_ATTEMPTS = 10
         const val WINDOW_MS = 60_000L
+        const val MAX_TRACKED_IPS = 100_000
+        const val CLEANUP_INTERVAL_MS = 60_000L
     }
 
     private data class RateWindow(val count: AtomicInteger = AtomicInteger(0), val windowStart: Long = System.currentTimeMillis())
 
     private val ipWindows = ConcurrentHashMap<String, RateWindow>()
+    private val lastCleanup = AtomicLong(System.currentTimeMillis())
 
     override fun shouldNotFilter(request: HttpServletRequest): Boolean {
         val path = request.requestURI ?: return true
@@ -40,6 +44,13 @@ class RateLimitFilter : OncePerRequestFilter() {
     ) {
         val ip = extractIp(request)
         val now = System.currentTimeMillis()
+
+        evictExpiredEntries(now)
+
+        if (ipWindows.size >= MAX_TRACKED_IPS && !ipWindows.containsKey(ip)) {
+            filterChain.doFilter(request, response)
+            return
+        }
 
         val window = ipWindows.compute(ip) { _, existing ->
             if (existing == null || now - existing.windowStart > WINDOW_MS) {
@@ -58,6 +69,13 @@ class RateLimitFilter : OncePerRequestFilter() {
         }
 
         filterChain.doFilter(request, response)
+    }
+
+    private fun evictExpiredEntries(now: Long) {
+        val last = lastCleanup.get()
+        if (now - last > CLEANUP_INTERVAL_MS && lastCleanup.compareAndSet(last, now)) {
+            ipWindows.entries.removeIf { now - it.value.windowStart > WINDOW_MS }
+        }
     }
 
     private fun extractIp(request: HttpServletRequest): String {
