@@ -27,7 +27,7 @@ class AdminRepository(
         const val SUBSCRIPTIONS_COLLECTION = "subscriptions"
     }
 
-    private val collections = mutableMapOf<String, Collection>()
+    private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
 
     private fun col(name: String): Collection =
         collections.getOrPut(name) { runBlocking { scope.collection(name) } }

@@ -20,11 +20,11 @@ CREATE INDEX idx_modules_type ON `modules`(`type`) WHERE `type` = 'module';
 -- Collection: profils
 CREATE INDEX idx_profils_group ON `profils`(`type`, IFMISSINGORNULL(`groupId`, `groupeId`)) WHERE `type` = 'profil';
 
--- Collection: announcements
-CREATE INDEX idx_announcements_type ON `announcements`(`type`, `createdAt` DESC) WHERE `type` = 'announcement';
+-- Collection: announcements (type = platform_announcement)
+CREATE INDEX idx_announcements_type ON `announcements`(`type`, `createdAt` DESC) WHERE `type` = 'platform_announcement';
 
--- Collection: admin_messages
-CREATE INDEX idx_messages_type ON `admin_messages`(`type`, `createdAt` DESC) WHERE `type` = 'admin_message';
+-- Collection: messages (type = platform_message)
+CREATE INDEX idx_messages_type ON `messages`(`type`, `createdAt` DESC) WHERE `type` = 'platform_message';
 
 -- Collection: audit_logs
 CREATE INDEX idx_audit_type ON `audit_logs`(`type`, `timestamp` DESC) WHERE `type` = 'audit_log';

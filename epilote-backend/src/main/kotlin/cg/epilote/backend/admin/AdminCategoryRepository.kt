@@ -17,7 +17,7 @@ class AdminCategoryRepository(private val bucket: Bucket) {
         const val CATEGORIES_DOC_ID = "config::categories"
     }
 
-    private val collections = mutableMapOf<String, Collection>()
+    private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
     private fun col(name: String): Collection = collections.getOrPut(name) { runBlocking { scope.collection(name) } }
 
     private fun now(): String = Instant.now().toString()

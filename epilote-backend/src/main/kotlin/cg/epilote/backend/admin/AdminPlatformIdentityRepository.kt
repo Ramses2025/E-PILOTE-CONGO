@@ -31,7 +31,7 @@ class AdminPlatformIdentityRepository(private val bucket: Bucket) {
         val SEQUENCE_PLACEHOLDER: Regex = Regex("\\{N+}")
     }
 
-    private val collections = mutableMapOf<String, Collection>()
+    private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
     private fun col(name: String): Collection = collections.getOrPut(name) { runBlocking { scope.collection(name) } }
 
     suspend fun read(): PlatformIdentity {

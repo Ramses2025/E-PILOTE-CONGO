@@ -88,18 +88,18 @@ class RateLimitFilterTest {
     }
 
     @Test
-    fun `should use X-Forwarded-For header for IP`() {
+    fun `should ignore X-Forwarded-For and use remoteAddr`() {
         repeat(10) {
             val request = MockHttpServletRequest("POST", "/api/auth/login")
             request.remoteAddr = "10.0.0.6"
-            request.addHeader("X-Forwarded-For", "192.168.1.100, 10.0.0.1")
+            request.addHeader("X-Forwarded-For", "192.168.1.100")
             val response = MockHttpServletResponse()
             filter.doFilter(request, response, chain)
         }
 
         val request = MockHttpServletRequest("POST", "/api/auth/login")
         request.remoteAddr = "10.0.0.6"
-        request.addHeader("X-Forwarded-For", "192.168.1.100, 10.0.0.1")
+        request.addHeader("X-Forwarded-For", "192.168.1.100")
         val response = MockHttpServletResponse()
         filter.doFilter(request, response, chain)
         assertEquals(429, response.status)
@@ -108,6 +108,6 @@ class RateLimitFilterTest {
         request2.remoteAddr = "10.0.0.6"
         val response2 = MockHttpServletResponse()
         filter.doFilter(request2, response2, chain)
-        assertEquals(200, response2.status)
+        assertEquals(429, response2.status)
     }
 }

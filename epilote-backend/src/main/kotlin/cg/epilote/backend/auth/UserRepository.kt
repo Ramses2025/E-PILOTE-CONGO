@@ -1,11 +1,12 @@
 package cg.epilote.backend.auth
 
+import com.couchbase.client.core.error.CasMismatchException
 import com.couchbase.client.kotlin.Bucket
 import com.couchbase.client.kotlin.Collection
 import com.couchbase.client.kotlin.query.execute
 import kotlinx.coroutines.runBlocking
 import org.springframework.stereotype.Repository
- import java.util.UUID
+import java.util.UUID
 
 @Repository
 class UserRepository(private val bucket: Bucket) {
@@ -87,15 +88,22 @@ class UserRepository(private val bucket: Bucket) {
      *   https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html#upsert
      */
     suspend fun updatePasswordHash(userId: String, newPasswordHash: String): Boolean {
-        val getResult = runCatching { collection.get(userId) }.getOrNull()
-            ?: return false
-        val doc = getResult.contentAs<MutableMap<String, Any?>>()
-        doc["passwordHash"] = newPasswordHash
-        doc["mustChangePassword"] = false
-        doc["passwordChangedAt"] = System.currentTimeMillis()
-        doc["updatedAt"] = System.currentTimeMillis()
-        collection.replace(userId, doc, cas = getResult.cas)
-        return true
+        repeat(3) {
+            val getResult = runCatching { collection.get(userId) }.getOrNull()
+                ?: return false
+            val doc = getResult.contentAs<MutableMap<String, Any?>>()
+            doc["passwordHash"] = newPasswordHash
+            doc["mustChangePassword"] = false
+            doc["passwordChangedAt"] = System.currentTimeMillis()
+            doc["updatedAt"] = System.currentTimeMillis()
+            try {
+                collection.replace(userId, doc, cas = getResult.cas)
+                return true
+            } catch (_: CasMismatchException) {
+                // Concurrent modification — retry with fresh document
+            }
+        }
+        return false
     }
 
     suspend fun ensureSyncToken(userId: String): String {

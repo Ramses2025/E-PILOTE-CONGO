@@ -25,7 +25,7 @@ class AdminSubscriptionRepository(
         const val ONE_YEAR_MS = 365L * 86_400_000L
     }
 
-    private val collections = mutableMapOf<String, Collection>()
+    private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
     private fun col(name: String): Collection = collections.getOrPut(name) { runBlocking { scope.collection(name) } }
 
     private fun now(): Long = System.currentTimeMillis()

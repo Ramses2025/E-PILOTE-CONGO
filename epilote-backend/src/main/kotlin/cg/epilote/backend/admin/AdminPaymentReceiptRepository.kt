@@ -28,7 +28,7 @@ class AdminPaymentReceiptRepository(private val bucket: Bucket) {
         const val DOC_TYPE = "payment_receipt"
     }
 
-    private val collections = mutableMapOf<String, Collection>()
+    private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
     private fun col(name: String): Collection = collections.getOrPut(name) { runBlocking { scope.collection(name) } }
 
     private fun now(): Long = System.currentTimeMillis()

@@ -1,5 +1,6 @@
 package cg.epilote.backend.admin
 
+import com.couchbase.client.core.error.CasMismatchException
 import com.couchbase.client.kotlin.Bucket
 import com.couchbase.client.kotlin.Collection
 import com.couchbase.client.kotlin.query.QueryParameters
@@ -123,31 +124,37 @@ class AdminCommunicationRepository(
         val normalizedStatus = status.trim().lowercase()
         if (normalizedStatus !in setOf("sent", "archived", "deleted")) return null
 
-        val getResult = runCatching {
-            messagesCol.get(messageId)
-        }.getOrNull() ?: return null
-        val current = getResult.contentAs<MutableMap<String, Any?>>()
-        if ((current["type"] as? String) != MESSAGE_TYPE) return null
+        repeat(3) {
+            val getResult = runCatching {
+                messagesCol.get(messageId)
+            }.getOrNull() ?: return null
+            val current = getResult.contentAs<MutableMap<String, Any?>>()
+            if ((current["type"] as? String) != MESSAGE_TYPE) return null
 
-        val updatedAt = now()
-        current["status"] = normalizedStatus
-        current["updatedAt"] = updatedAt
-        messagesCol.replace(messageId, current, cas = getResult.cas)
+            current["status"] = normalizedStatus
+            current["updatedAt"] = now()
+            try {
+                messagesCol.replace(messageId, current, cas = getResult.cas)
+            } catch (_: CasMismatchException) {
+                return@repeat
+            }
 
-        @Suppress("UNCHECKED_CAST")
-        return AdminMessageResponse(
-            id = messageId,
-            sujet = current["sujet"] as? String ?: "",
-            contenu = current["contenu"] as? String ?: "",
-            targetType = current["targetType"] as? String ?: "all_groups",
-            groupId = current["groupId"] as? String,
-            adminId = current["adminId"] as? String,
-            threadKey = current["threadKey"] as? String ?: "",
-            status = normalizedStatus,
-            readBy = (current["readBy"] as? List<String>) ?: emptyList(),
-            createdBy = current["createdBy"] as? String ?: "",
-            createdAt = (current["createdAt"] as? Number)?.toLong() ?: 0L
-        )
+            @Suppress("UNCHECKED_CAST")
+            return AdminMessageResponse(
+                id = messageId,
+                sujet = current["sujet"] as? String ?: "",
+                contenu = current["contenu"] as? String ?: "",
+                targetType = current["targetType"] as? String ?: "all_groups",
+                groupId = current["groupId"] as? String,
+                adminId = current["adminId"] as? String,
+                threadKey = current["threadKey"] as? String ?: "",
+                status = normalizedStatus,
+                readBy = (current["readBy"] as? List<String>) ?: emptyList(),
+                createdBy = current["createdBy"] as? String ?: "",
+                createdAt = (current["createdAt"] as? Number)?.toLong() ?: 0L
+            )
+        }
+        return null
     }
 
     suspend fun listMessages(page: Int = 1, pageSize: Int = 50): List<AdminMessageResponse> {
@@ -178,33 +185,40 @@ class AdminCommunicationRepository(
     }
 
     suspend fun markMessageAsRead(messageId: String, userId: String): AdminMessageResponse? {
-        val getResult = runCatching {
-            messagesCol.get(messageId)
-        }.getOrNull() ?: return null
-        val current = getResult.contentAs<MutableMap<String, Any?>>()
-        if ((current["type"] as? String) != MESSAGE_TYPE) return null
+        repeat(3) {
+            val getResult = runCatching {
+                messagesCol.get(messageId)
+            }.getOrNull() ?: return null
+            val current = getResult.contentAs<MutableMap<String, Any?>>()
+            if ((current["type"] as? String) != MESSAGE_TYPE) return null
 
-        @Suppress("UNCHECKED_CAST")
-        val readBy = ((current["readBy"] as? List<String>) ?: emptyList()).toMutableList()
-        if (userId !in readBy) {
-            readBy.add(userId)
-            current["readBy"] = readBy
-            current["updatedAt"] = now()
-            messagesCol.replace(messageId, current, cas = getResult.cas)
+            @Suppress("UNCHECKED_CAST")
+            val readBy = ((current["readBy"] as? List<String>) ?: emptyList()).toMutableList()
+            if (userId !in readBy) {
+                readBy.add(userId)
+                current["readBy"] = readBy
+                current["updatedAt"] = now()
+                try {
+                    messagesCol.replace(messageId, current, cas = getResult.cas)
+                } catch (_: CasMismatchException) {
+                    return@repeat
+                }
+            }
+
+            return AdminMessageResponse(
+                id = messageId,
+                sujet = current["sujet"] as? String ?: "",
+                contenu = current["contenu"] as? String ?: "",
+                targetType = current["targetType"] as? String ?: "all_groups",
+                groupId = current["groupId"] as? String,
+                adminId = current["adminId"] as? String,
+                threadKey = current["threadKey"] as? String ?: "",
+                status = current["status"] as? String ?: "sent",
+                readBy = readBy,
+                createdBy = current["createdBy"] as? String ?: "",
+                createdAt = (current["createdAt"] as? Number)?.toLong() ?: 0L
+            )
         }
-
-        return AdminMessageResponse(
-            id = messageId,
-            sujet = current["sujet"] as? String ?: "",
-            contenu = current["contenu"] as? String ?: "",
-            targetType = current["targetType"] as? String ?: "all_groups",
-            groupId = current["groupId"] as? String,
-            adminId = current["adminId"] as? String,
-            threadKey = current["threadKey"] as? String ?: "",
-            status = current["status"] as? String ?: "sent",
-            readBy = readBy,
-            createdBy = current["createdBy"] as? String ?: "",
-            createdAt = (current["createdAt"] as? Number)?.toLong() ?: 0L
-        )
+        return null
     }
 }
