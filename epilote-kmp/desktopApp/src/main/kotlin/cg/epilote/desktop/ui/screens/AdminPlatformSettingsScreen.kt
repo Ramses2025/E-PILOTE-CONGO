@@ -143,7 +143,7 @@ fun AdminPlatformSettingsScreen(
 
             feedback?.let { fb ->
                 AssistChip(
-                    onClick = {},
+                    onClick = { feedback = null },
                     label = { Text(fb.message) },
                     colors = if (fb.isError)
                         AssistChipDefaults.assistChipColors(labelColor = Color(0xFFB42318))
@@ -346,6 +346,15 @@ fun AdminPlatformSettingsScreen(
                     Button(
                         enabled = !saving,
                         onClick = {
+                            val trimmedFormat = invoiceNumberFormat.trim().ifBlank { "FAC-{YYYY}-{NNNNNN}" }
+                            val sequencePlaceholder = Regex("\\{N+}")
+                            if (!sequencePlaceholder.containsMatchIn(trimmedFormat)) {
+                                feedback = AdminFeedbackMessage(
+                                    "Le format de numéro de facture doit contenir au moins un bloc {N+} (ex. {NNNNNN}) pour la séquence.",
+                                    isError = true
+                                )
+                                return@Button
+                            }
                             val payload = UpdatePlatformIdentityDto(
                                 raisonSociale = raisonSociale.trim(),
                                 rccm = rccm.trim(),
@@ -357,7 +366,7 @@ fun AdminPlatformSettingsScreen(
                                 email = email.trim(),
                                 website = website.trim(),
                                 logoBase64 = logoBase64.trim(),
-                                tvaRate = tvaRateText.trim().replace(',', '.').toDoubleOrNull() ?: 0.0,
+                                tvaRate = if (tvaExempted) null else (tvaRateText.trim().replace(',', '.').toDoubleOrNull() ?: 0.0),
                                 tvaExempted = tvaExempted,
                                 paymentTerms = paymentTerms.trim(),
                                 competentCourt = competentCourt.trim(),
@@ -365,7 +374,7 @@ fun AdminPlatformSettingsScreen(
                                 bankName = bankName.trim(),
                                 mtnMomoNumber = mtnMomoNumber.trim(),
                                 airtelMoneyNumber = airtelMoneyNumber.trim(),
-                                invoiceNumberFormat = invoiceNumberFormat.trim().ifBlank { "FAC-{YYYY}-{NNNNNN}" },
+                                invoiceNumberFormat = trimmedFormat,
                                 legalMentions = legalMentions.trim()
                             )
                             scope.launch {
