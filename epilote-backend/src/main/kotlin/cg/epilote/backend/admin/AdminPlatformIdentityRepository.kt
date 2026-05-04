@@ -2,7 +2,11 @@ package cg.epilote.backend.admin
 
 import com.couchbase.client.kotlin.Bucket
 import com.couchbase.client.kotlin.Collection
+import com.couchbase.client.core.error.CasMismatchException
+import com.couchbase.client.core.error.DocumentExistsException
+import com.couchbase.client.core.error.DocumentNotFoundException
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Repository
 
 /**
@@ -16,12 +20,14 @@ import org.springframework.stereotype.Repository
  */
 @Repository
 class AdminPlatformIdentityRepository(private val bucket: Bucket) {
+    private val log = LoggerFactory.getLogger(AdminPlatformIdentityRepository::class.java)
     private val scope = runBlocking { bucket.defaultScope() }
 
     private companion object {
         const val CONFIG_COLLECTION = "config"
         const val DOC_ID = "config::platform_identity"
         const val DOC_TYPE = "config_platform_identity"
+        const val MAX_CAS_RETRIES = 5
         /**
          * Tout format de numérotation de facture doit contenir au moins un bloc `{N+}`
          * (ex. `{N}`, `{NN}`, `{NNNNNN}`) — c'est ce bloc qui reçoit le numéro séquentiel
@@ -38,36 +44,79 @@ class AdminPlatformIdentityRepository(private val bucket: Bucket) {
         val doc = runCatching {
             col(CONFIG_COLLECTION).get(DOC_ID).contentAs<Map<String, Any?>>()
         }.getOrNull() ?: return PlatformIdentity()
-
-        return PlatformIdentity(
-            raisonSociale = doc["raisonSociale"] as? String ?: "",
-            rccm = doc["rccm"] as? String ?: "",
-            niu = doc["niu"] as? String ?: "",
-            siege = doc["siege"] as? String ?: "",
-            city = doc["city"] as? String ?: "",
-            country = doc["country"] as? String ?: "Congo",
-            phone = doc["phone"] as? String ?: "",
-            email = doc["email"] as? String ?: "",
-            website = doc["website"] as? String ?: "",
-            logoBase64 = doc["logoBase64"] as? String ?: "",
-            tvaRate = (doc["tvaRate"] as? Number)?.toDouble() ?: 0.0,
-            tvaExempted = doc["tvaExempted"] as? Boolean ?: true,
-            paymentTerms = doc["paymentTerms"] as? String ?: "",
-            competentCourt = doc["competentCourt"] as? String ?: "",
-            iban = doc["iban"] as? String ?: "",
-            bankName = doc["bankName"] as? String ?: "",
-            mtnMomoNumber = doc["mtnMomoNumber"] as? String ?: "",
-            airtelMoneyNumber = doc["airtelMoneyNumber"] as? String ?: "",
-            invoiceNumberFormat = doc["invoiceNumberFormat"] as? String ?: "FAC-{YYYY}-{NNNNNN}",
-            legalMentions = doc["legalMentions"] as? String ?: "",
-            updatedAt = (doc["updatedAt"] as? Number)?.toLong() ?: 0L
-        )
+        return mapToPlatformIdentity(doc)
     }
 
+    /**
+     * Met à jour l'identité plateforme avec CAS retry (optimistic locking).
+     *
+     * Pattern officiel Couchbase SDK Kotlin :
+     * https://docs.couchbase.com/kotlin-sdk/current/howtos/kv-operations.html
+     * (section « Compare and swap (CAS) »)
+     *
+     * Si le document n'existe pas encore, un upsert initial est effectué.
+     */
     suspend fun update(req: UpdatePlatformIdentityRequest): PlatformIdentity {
-        val current = read()
         val now = System.currentTimeMillis()
-        val next = current.copy(
+        val collection = col(CONFIG_COLLECTION)
+
+        val getResult = try {
+            collection.get(DOC_ID)
+        } catch (_: DocumentNotFoundException) {
+            null
+        }
+
+        if (getResult == null) {
+            val next = applyRequest(PlatformIdentity(), req, now)
+            try {
+                collection.insert(DOC_ID, buildPayload(next))
+                return next
+            } catch (_: DocumentExistsException) {
+                log.info("Concurrent insert detected on platform identity, falling through to CAS loop")
+            }
+        }
+
+        for (attempt in 1..MAX_CAS_RETRIES) {
+            val currentGet = if (attempt == 1 && getResult != null) getResult else collection.get(DOC_ID)
+            val doc = currentGet.contentAs<Map<String, Any?>>()
+            val current = mapToPlatformIdentity(doc)
+            val next = applyRequest(current, req, now)
+            try {
+                collection.replace(DOC_ID, buildPayload(next), cas = currentGet.cas)
+                return next
+            } catch (_: CasMismatchException) {
+                log.info("CAS mismatch on platform identity update, retry {}/{}", attempt, MAX_CAS_RETRIES)
+            }
+        }
+        throw IllegalStateException("Failed to update platform identity after $MAX_CAS_RETRIES CAS retries")
+    }
+
+    private fun mapToPlatformIdentity(doc: Map<String, Any?>): PlatformIdentity = PlatformIdentity(
+        raisonSociale = doc["raisonSociale"] as? String ?: "",
+        rccm = doc["rccm"] as? String ?: "",
+        niu = doc["niu"] as? String ?: "",
+        siege = doc["siege"] as? String ?: "",
+        city = doc["city"] as? String ?: "",
+        country = doc["country"] as? String ?: "Congo",
+        phone = doc["phone"] as? String ?: "",
+        email = doc["email"] as? String ?: "",
+        website = doc["website"] as? String ?: "",
+        logoBase64 = doc["logoBase64"] as? String ?: "",
+        tvaRate = (doc["tvaRate"] as? Number)?.toDouble() ?: 0.0,
+        tvaExempted = doc["tvaExempted"] as? Boolean ?: true,
+        paymentTerms = doc["paymentTerms"] as? String ?: "",
+        competentCourt = doc["competentCourt"] as? String ?: "",
+        iban = doc["iban"] as? String ?: "",
+        bankName = doc["bankName"] as? String ?: "",
+        mtnMomoNumber = doc["mtnMomoNumber"] as? String ?: "",
+        airtelMoneyNumber = doc["airtelMoneyNumber"] as? String ?: "",
+        invoiceNumberFormat = doc["invoiceNumberFormat"] as? String ?: "FAC-{YYYY}-{NNNNNN}",
+        legalMentions = doc["legalMentions"] as? String ?: "",
+        updatedAt = (doc["updatedAt"] as? Number)?.toLong() ?: 0L
+    )
+
+    private fun applyRequest(current: PlatformIdentity, req: UpdatePlatformIdentityRequest, now: Long): PlatformIdentity =
+        current.copy(
             raisonSociale = req.raisonSociale ?: current.raisonSociale,
             rccm = req.rccm ?: current.rccm,
             niu = req.niu ?: current.niu,
@@ -92,31 +141,29 @@ class AdminPlatformIdentityRepository(private val bucket: Bucket) {
             legalMentions = req.legalMentions ?: current.legalMentions,
             updatedAt = now
         )
-        val payload = mapOf(
-            "type" to DOC_TYPE,
-            "raisonSociale" to next.raisonSociale,
-            "rccm" to next.rccm,
-            "niu" to next.niu,
-            "siege" to next.siege,
-            "city" to next.city,
-            "country" to next.country,
-            "phone" to next.phone,
-            "email" to next.email,
-            "website" to next.website,
-            "logoBase64" to next.logoBase64,
-            "tvaRate" to next.tvaRate,
-            "tvaExempted" to next.tvaExempted,
-            "paymentTerms" to next.paymentTerms,
-            "competentCourt" to next.competentCourt,
-            "iban" to next.iban,
-            "bankName" to next.bankName,
-            "mtnMomoNumber" to next.mtnMomoNumber,
-            "airtelMoneyNumber" to next.airtelMoneyNumber,
-            "invoiceNumberFormat" to next.invoiceNumberFormat,
-            "legalMentions" to next.legalMentions,
-            "updatedAt" to now
-        )
-        col(CONFIG_COLLECTION).upsert(DOC_ID, payload)
-        return next
-    }
+
+    private fun buildPayload(p: PlatformIdentity): Map<String, Any?> = mapOf(
+        "type" to DOC_TYPE,
+        "raisonSociale" to p.raisonSociale,
+        "rccm" to p.rccm,
+        "niu" to p.niu,
+        "siege" to p.siege,
+        "city" to p.city,
+        "country" to p.country,
+        "phone" to p.phone,
+        "email" to p.email,
+        "website" to p.website,
+        "logoBase64" to p.logoBase64,
+        "tvaRate" to p.tvaRate,
+        "tvaExempted" to p.tvaExempted,
+        "paymentTerms" to p.paymentTerms,
+        "competentCourt" to p.competentCourt,
+        "iban" to p.iban,
+        "bankName" to p.bankName,
+        "mtnMomoNumber" to p.mtnMomoNumber,
+        "airtelMoneyNumber" to p.airtelMoneyNumber,
+        "invoiceNumberFormat" to p.invoiceNumberFormat,
+        "legalMentions" to p.legalMentions,
+        "updatedAt" to p.updatedAt
+    )
 }
