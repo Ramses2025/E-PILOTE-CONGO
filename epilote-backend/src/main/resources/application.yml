@@ -12,7 +12,7 @@ couchbase:
   bucket: ${CB_BUCKET:epilote_prod}
 
 jwt:
-  secret: ${JWT_SECRET:epilote-secret-key-change-in-production-min-256-bits-2026-secure}
+  secret: ${JWT_SECRET}
   expiration-ms: 3600000        # 1 heure
   refresh-expiration-ms: 2592000000  # 30 jours
   offline-expiration-ms: 2592000000  # 30 jours offline token

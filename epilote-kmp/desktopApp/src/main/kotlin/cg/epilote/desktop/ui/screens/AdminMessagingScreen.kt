@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import cg.epilote.desktop.data.DesktopAdminClient
 import cg.epilote.shared.domain.model.UserSession
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun AdminMessagingScreen(
@@ -14,7 +15,8 @@ fun AdminMessagingScreen(
     scope: CoroutineScope,
     client: DesktopAdminClient,
     onRefresh: () -> Unit,
-    initialMailbox: AdminMessagingMailbox = AdminMessagingMailbox.INBOX
+    initialMailbox: AdminMessagingMailbox = AdminMessagingMailbox.INBOX,
+    sseReloadTick: StateFlow<Int>? = null
 ) {
     AdminMessagingHub(
         session = session,
@@ -24,6 +26,7 @@ fun AdminMessagingScreen(
         scope = scope,
         client = client,
         onRefresh = onRefresh,
-        initialMailbox = initialMailbox
+        initialMailbox = initialMailbox,
+        sseReloadTick = sseReloadTick
     )
 }

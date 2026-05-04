@@ -1,4 +1,5 @@
 package cg.epilote.desktop.data
+import java.util.logging.Logger
 
 import cg.epilote.desktop.ui.screens.AdminUserDto
 import cg.epilote.desktop.ui.screens.CategorieDto
@@ -24,6 +25,7 @@ import kotlinx.coroutines.launch
 class AdminDataRepository(
     private val client: DesktopAdminClient
 ) {
+    private val log = Logger.getLogger(AdminDataRepository::class.java.name)
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val inFlightRefreshes = ConcurrentHashMap<String, AtomicBoolean>()
 
@@ -54,6 +56,9 @@ class AdminDataRepository(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _messagingReloadTick = MutableStateFlow(0)
+    val messagingReloadTick: StateFlow<Int> = _messagingReloadTick.asStateFlow()
+
     var lastEventId: String? = null
 
     fun refreshAllAsync() {
@@ -78,6 +83,10 @@ class AdminDataRepository(
 
     fun refreshAdminsAsync() {
         launchRefreshOnce("admins") { refreshAdmins() }
+    }
+
+    fun notifyMessagingReload() {
+        _messagingReloadTick.value++
     }
 
     fun refreshDashboardStatsAsync() {
@@ -133,7 +142,7 @@ class AdminDataRepository(
     }
 
     suspend fun refreshAll() {
-        println("[AdminRepo] refreshAll START")
+        log.info("[AdminRepo] refreshAll START")
         _isLoading.value = true
         try {
             coroutineScope {
@@ -176,10 +185,10 @@ class AdminDataRepository(
                 _adminUsers.value = adminsApi.map { it.toAdminUserDto() }
             }
         } catch (e: Exception) {
-            println("[AdminRepo] refreshAll FAILED: ${e.message}")
+            log.warning("[AdminRepo] refreshAll FAILED: ${e.message}")
         }
         _isLoading.value = false
-        println("[AdminRepo] refreshAll DONE — groupes=${_groupes.value.size} plans=${_plans.value.size} admins=${_adminUsers.value.size}")
+        log.info("[AdminRepo] refreshAll DONE — groupes=${_groupes.value.size} plans=${_plans.value.size} admins=${_adminUsers.value.size}")
     }
 
     suspend fun refreshGroupes() {
@@ -238,7 +247,7 @@ class AdminDataRepository(
 
     fun onSseEvent(event: AdminRealtimeEventDto) {
         lastEventId = event.eventId
-        println("[AdminRepo] SSE event: type=${event.eventType} entity=${event.entityType} action=${event.action} hasPayload=${event.payload != null}")
+        log.info("[AdminRepo] SSE event: type=${event.eventType} entity=${event.entityType} action=${event.action} hasPayload=${event.payload != null}")
         if (applyRealtimePayload(event)) return
 
         when (event.entityType) {

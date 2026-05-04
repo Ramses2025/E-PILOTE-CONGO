@@ -21,14 +21,15 @@ import java.util.UUID
  */
 @Repository
 class AdminPaymentReceiptRepository(private val bucket: Bucket) {
-    private val scope by lazy { runBlocking { bucket.defaultScope() } }
+    private val scope = runBlocking { bucket.defaultScope() }
 
     private companion object {
         const val COLLECTION = "payment_receipts"
         const val DOC_TYPE = "payment_receipt"
     }
 
-    private fun col(name: String): Collection = runBlocking { scope.collection(name) }
+    private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
+    private fun col(name: String): Collection = collections.getOrPut(name) { runBlocking { scope.collection(name) } }
 
     private fun now(): Long = System.currentTimeMillis()
 

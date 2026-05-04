@@ -1,7 +1,9 @@
 package cg.epilote.backend.admin
 
+import com.couchbase.client.core.error.CasMismatchException
 import com.couchbase.client.kotlin.Bucket
 import com.couchbase.client.kotlin.Collection
+import com.couchbase.client.kotlin.query.QueryParameters
 import com.couchbase.client.kotlin.query.execute
 import kotlinx.coroutines.runBlocking
 import org.springframework.stereotype.Repository
@@ -11,7 +13,7 @@ import java.util.UUID
 class AdminCommunicationRepository(
     private val bucket: Bucket
 ) {
-    private val scope by lazy { runBlocking { bucket.defaultScope() } }
+    private val scope = runBlocking { bucket.defaultScope() }
 
     private companion object {
         const val ANNOUNCEMENTS_COLLECTION = "announcements"
@@ -20,7 +22,8 @@ class AdminCommunicationRepository(
         const val MESSAGE_TYPE = "platform_message"
     }
 
-    private fun col(name: String): Collection = runBlocking { scope.collection(name) }
+    private val announcementsCol: Collection = runBlocking { scope.collection(ANNOUNCEMENTS_COLLECTION) }
+    private val messagesCol: Collection = runBlocking { scope.collection(MESSAGES_COLLECTION) }
     private fun newId(prefix: String): String = "$prefix::${UUID.randomUUID()}"
     private fun now(): Long = System.currentTimeMillis()
 
@@ -36,7 +39,7 @@ class AdminCommunicationRepository(
             "createdAt" to currentTime,
             "updatedAt" to currentTime
         )
-        col(ANNOUNCEMENTS_COLLECTION).upsert(id, doc)
+        announcementsCol.upsert(id, doc)
         return AnnouncementResponse(
             id = id,
             titre = doc["titre"] as String,
@@ -47,9 +50,13 @@ class AdminCommunicationRepository(
         )
     }
 
-    suspend fun listAnnouncements(): List<AnnouncementResponse> {
+    suspend fun listAnnouncements(page: Int = 1, pageSize: Int = 50): List<AnnouncementResponse> {
+        val safePage = page.coerceAtLeast(1)
+        val safeSize = pageSize.coerceIn(1, 200)
+        val offset = (safePage - 1) * safeSize
         val result = scope.query(
-            "SELECT META(a).id AS id, a.* FROM `${ANNOUNCEMENTS_COLLECTION}` a WHERE a.type = '${ANNOUNCEMENT_TYPE}' ORDER BY a.createdAt DESC"
+            statement = "SELECT META(a).id AS id, a.* FROM `$ANNOUNCEMENTS_COLLECTION` a WHERE a.type = \$docType ORDER BY a.createdAt DESC LIMIT \$lim OFFSET \$off",
+            parameters = QueryParameters.named("docType" to ANNOUNCEMENT_TYPE, "lim" to safeSize, "off" to offset)
         ).execute()
         return result.rows.map { row ->
             val data = row.contentAs<Map<String, Any?>>()
@@ -92,11 +99,12 @@ class AdminCommunicationRepository(
             "adminId" to normalizedAdminId,
             "threadKey" to threadKey,
             "status" to "sent",
+            "readBy" to listOf(createdBy),
             "createdBy" to createdBy,
             "createdAt" to currentTime,
             "updatedAt" to currentTime
         )
-        col(MESSAGES_COLLECTION).upsert(id, doc)
+        messagesCol.upsert(id, doc)
         return AdminMessageResponse(
             id = id,
             sujet = doc["sujet"] as String,
@@ -106,6 +114,7 @@ class AdminCommunicationRepository(
             adminId = normalizedAdminId,
             threadKey = threadKey,
             status = "sent",
+            readBy = listOf(createdBy),
             createdBy = createdBy,
             createdAt = currentTime
         )
@@ -115,36 +124,50 @@ class AdminCommunicationRepository(
         val normalizedStatus = status.trim().lowercase()
         if (normalizedStatus !in setOf("sent", "archived", "deleted")) return null
 
-        val current = runCatching {
-            col(MESSAGES_COLLECTION).get(messageId).contentAs<MutableMap<String, Any?>>()
-        }.getOrNull() ?: return null
-        if ((current["type"] as? String) != MESSAGE_TYPE) return null
+        repeat(3) {
+            val getResult = runCatching {
+                messagesCol.get(messageId)
+            }.getOrNull() ?: return null
+            val current = getResult.contentAs<MutableMap<String, Any?>>()
+            if ((current["type"] as? String) != MESSAGE_TYPE) return null
 
-        val updatedAt = now()
-        current["status"] = normalizedStatus
-        current["updatedAt"] = updatedAt
-        col(MESSAGES_COLLECTION).upsert(messageId, current)
+            current["status"] = normalizedStatus
+            current["updatedAt"] = now()
+            try {
+                messagesCol.replace(messageId, current, cas = getResult.cas)
+            } catch (_: CasMismatchException) {
+                return@repeat
+            }
 
-        return AdminMessageResponse(
-            id = messageId,
-            sujet = current["sujet"] as? String ?: "",
-            contenu = current["contenu"] as? String ?: "",
-            targetType = current["targetType"] as? String ?: "all_groups",
-            groupId = current["groupId"] as? String,
-            adminId = current["adminId"] as? String,
-            threadKey = current["threadKey"] as? String ?: "",
-            status = normalizedStatus,
-            createdBy = current["createdBy"] as? String ?: "",
-            createdAt = (current["createdAt"] as? Number)?.toLong() ?: 0L
-        )
+            @Suppress("UNCHECKED_CAST")
+            return AdminMessageResponse(
+                id = messageId,
+                sujet = current["sujet"] as? String ?: "",
+                contenu = current["contenu"] as? String ?: "",
+                targetType = current["targetType"] as? String ?: "all_groups",
+                groupId = current["groupId"] as? String,
+                adminId = current["adminId"] as? String,
+                threadKey = current["threadKey"] as? String ?: "",
+                status = normalizedStatus,
+                readBy = (current["readBy"] as? List<String>) ?: emptyList(),
+                createdBy = current["createdBy"] as? String ?: "",
+                createdAt = (current["createdAt"] as? Number)?.toLong() ?: 0L
+            )
+        }
+        return null
     }
 
-    suspend fun listMessages(): List<AdminMessageResponse> {
+    suspend fun listMessages(page: Int = 1, pageSize: Int = 50): List<AdminMessageResponse> {
+        val safePage = page.coerceAtLeast(1)
+        val safeSize = pageSize.coerceIn(1, 200)
+        val offset = (safePage - 1) * safeSize
         val result = scope.query(
-            "SELECT META(m).id AS id, m.* FROM `${MESSAGES_COLLECTION}` m WHERE m.type = '${MESSAGE_TYPE}' ORDER BY m.createdAt DESC"
+            statement = "SELECT META(m).id AS id, m.* FROM `$MESSAGES_COLLECTION` m WHERE m.type = \$docType ORDER BY m.createdAt DESC LIMIT \$lim OFFSET \$off",
+            parameters = QueryParameters.named("docType" to MESSAGE_TYPE, "lim" to safeSize, "off" to offset)
         ).execute()
         return result.rows.map { row ->
             val data = row.contentAs<Map<String, Any?>>()
+            @Suppress("UNCHECKED_CAST")
             AdminMessageResponse(
                 id = data["id"] as? String ?: "",
                 sujet = data["sujet"] as? String ?: "",
@@ -154,9 +177,48 @@ class AdminCommunicationRepository(
                 adminId = data["adminId"] as? String,
                 threadKey = data["threadKey"] as? String ?: "",
                 status = data["status"] as? String ?: "sent",
+                readBy = (data["readBy"] as? List<String>) ?: emptyList(),
                 createdBy = data["createdBy"] as? String ?: "",
                 createdAt = (data["createdAt"] as? Number)?.toLong() ?: 0L
             )
         }
+    }
+
+    suspend fun markMessageAsRead(messageId: String, userId: String): AdminMessageResponse? {
+        repeat(3) {
+            val getResult = runCatching {
+                messagesCol.get(messageId)
+            }.getOrNull() ?: return null
+            val current = getResult.contentAs<MutableMap<String, Any?>>()
+            if ((current["type"] as? String) != MESSAGE_TYPE) return null
+
+            @Suppress("UNCHECKED_CAST")
+            val readBy = ((current["readBy"] as? List<String>) ?: emptyList()).toMutableList()
+            if (userId !in readBy) {
+                readBy.add(userId)
+                current["readBy"] = readBy
+                current["updatedAt"] = now()
+                try {
+                    messagesCol.replace(messageId, current, cas = getResult.cas)
+                } catch (_: CasMismatchException) {
+                    return@repeat
+                }
+            }
+
+            return AdminMessageResponse(
+                id = messageId,
+                sujet = current["sujet"] as? String ?: "",
+                contenu = current["contenu"] as? String ?: "",
+                targetType = current["targetType"] as? String ?: "all_groups",
+                groupId = current["groupId"] as? String,
+                adminId = current["adminId"] as? String,
+                threadKey = current["threadKey"] as? String ?: "",
+                status = current["status"] as? String ?: "sent",
+                readBy = readBy,
+                createdBy = current["createdBy"] as? String ?: "",
+                createdAt = (current["createdAt"] as? Number)?.toLong() ?: 0L
+            )
+        }
+        return null
     }
 }

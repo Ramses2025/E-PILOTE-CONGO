@@ -39,12 +39,12 @@ dependencies {
 
     // HTTP client pour appels IA (Mistral / OpenAI)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.apache.pdfbox:pdfbox:3.0.2")
 
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 }
 
 tasks.withType<KotlinCompile> {

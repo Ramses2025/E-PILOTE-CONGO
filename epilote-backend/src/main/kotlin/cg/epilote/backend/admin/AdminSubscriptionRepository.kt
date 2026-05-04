@@ -16,7 +16,7 @@ class AdminSubscriptionRepository(
     private val bucket: Bucket,
     private val planRepo: AdminPlanRepository
 ) {
-    private val scope by lazy { runBlocking { bucket.defaultScope() } }
+    private val scope = runBlocking { bucket.defaultScope() }
 
     private companion object {
         const val GROUPS_COLLECTION = "school_groups"
@@ -25,7 +25,8 @@ class AdminSubscriptionRepository(
         const val ONE_YEAR_MS = 365L * 86_400_000L
     }
 
-    private fun col(name: String): Collection = runBlocking { scope.collection(name) }
+    private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
+    private fun col(name: String): Collection = collections.getOrPut(name) { runBlocking { scope.collection(name) } }
 
     private fun now(): Long = System.currentTimeMillis()
 

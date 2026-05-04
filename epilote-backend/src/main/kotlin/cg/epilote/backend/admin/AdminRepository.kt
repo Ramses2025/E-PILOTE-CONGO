@@ -17,7 +17,7 @@ class AdminRepository(
     private val invoiceCounterRepo: AdminInvoiceCounterRepository
 ) {
 
-    private val scope by lazy { runBlocking { bucket.defaultScope() } }
+    private val scope = runBlocking { bucket.defaultScope() }
 
     private companion object {
         const val GROUPS_COLLECTION = "school_groups"
@@ -27,7 +27,10 @@ class AdminRepository(
         const val SUBSCRIPTIONS_COLLECTION = "subscriptions"
     }
 
-    private fun col(name: String): Collection = runBlocking { scope.collection(name) }
+    private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
+
+    private fun col(name: String): Collection =
+        collections.getOrPut(name) { runBlocking { scope.collection(name) } }
 
     // ── Helpers ──────────────────────────────────────────────────
 

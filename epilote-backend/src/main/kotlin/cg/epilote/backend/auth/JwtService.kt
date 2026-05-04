@@ -3,6 +3,7 @@ package cg.epilote.backend.auth
 import io.jsonwebtoken.Claims
 import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.security.Keys
+import jakarta.annotation.PostConstruct
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.util.*
@@ -25,6 +26,12 @@ class JwtService {
 
     private val signingKey: SecretKey by lazy {
         Keys.hmacShaKeyFor(secret.toByteArray())
+    }
+
+    @PostConstruct
+    fun validateSecret() {
+        require(secret.isNotBlank()) { "JWT_SECRET must be set — refusing to start with empty secret" }
+        require(secret.toByteArray().size >= 32) { "JWT_SECRET must be at least 256 bits (32 bytes)" }
     }
 
     fun generateAccessToken(user: EpiloteUserDetails): String = buildToken(

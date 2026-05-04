@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository
  */
 @Repository
 class AdminPlatformIdentityRepository(private val bucket: Bucket) {
-    private val scope by lazy { runBlocking { bucket.defaultScope() } }
+    private val scope = runBlocking { bucket.defaultScope() }
 
     private companion object {
         const val CONFIG_COLLECTION = "config"
@@ -31,7 +31,8 @@ class AdminPlatformIdentityRepository(private val bucket: Bucket) {
         val SEQUENCE_PLACEHOLDER: Regex = Regex("\\{N+}")
     }
 
-    private fun col(name: String): Collection = runBlocking { scope.collection(name) }
+    private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
+    private fun col(name: String): Collection = collections.getOrPut(name) { runBlocking { scope.collection(name) } }
 
     suspend fun read(): PlatformIdentity {
         val doc = runCatching {

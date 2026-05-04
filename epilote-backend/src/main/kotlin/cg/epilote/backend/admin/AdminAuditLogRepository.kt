@@ -24,7 +24,7 @@ import java.util.UUID
 @Repository
 class AdminAuditLogRepository(private val bucket: Bucket) {
     private val log = LoggerFactory.getLogger(AdminAuditLogRepository::class.java)
-    private val scope by lazy { runBlocking { bucket.defaultScope() } }
+    private val scope = runBlocking { bucket.defaultScope() }
 
     private companion object {
         const val COLLECTION = "audit_logs"
@@ -32,7 +32,7 @@ class AdminAuditLogRepository(private val bucket: Bucket) {
         const val MAX_PAGE_SIZE = 200
     }
 
-    private fun col(): Collection = runBlocking { scope.collection(COLLECTION) }
+    private val col: Collection = runBlocking { scope.collection(COLLECTION) }
 
     private fun newId(): String = "audit::${UUID.randomUUID()}"
 
@@ -77,7 +77,7 @@ class AdminAuditLogRepository(private val bucket: Bucket) {
             "message" to message,
             "metadata" to metadata
         )
-        col().upsert(id, doc)
+        col.upsert(id, doc)
         AuditEventResponse(
             id = id,
             timestamp = timestamp,
@@ -127,8 +127,8 @@ class AdminAuditLogRepository(private val bucket: Bucket) {
         val safeSize = pageSize.coerceIn(1, MAX_PAGE_SIZE)
         val offset = (safePage - 1) * safeSize
 
-        val filters = mutableListOf("`type` = '$DOC_TYPE'")
-        val params = mutableMapOf<String, Any>()
+        val filters = mutableListOf("`type` = \$docType")
+        val params = mutableMapOf<String, Any>("docType" to DOC_TYPE)
         if (!category.isNullOrBlank()) { filters += "`category` = \$category"; params["category"] = category }
         if (!action.isNullOrBlank())   { filters += "`action` = \$action";     params["action"]   = action }
         if (!outcome.isNullOrBlank())  { filters += "`outcome` = \$outcome";   params["outcome"]  = outcome }

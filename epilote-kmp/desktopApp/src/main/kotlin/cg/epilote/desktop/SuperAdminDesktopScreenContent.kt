@@ -148,7 +148,8 @@ internal fun SuperAdminDesktopScreenContent(
                 scope = appScope,
                 client = adminClient,
                 onRefresh = { adminRepo.refreshDashboardStatsAsync() },
-                initialMailbox = AdminMessagingMailbox.ANNOUNCEMENTS
+                initialMailbox = AdminMessagingMailbox.ANNOUNCEMENTS,
+                sseReloadTick = adminRepo.messagingReloadTick
             )
 
         DesktopScreen.ADMIN_NOTIFICATIONS ->
@@ -170,7 +171,8 @@ internal fun SuperAdminDesktopScreenContent(
                 isLoading = adminLoading,
                 scope = appScope,
                 client = adminClient,
-                onRefresh = { adminRepo.refreshDashboardStatsAsync() }
+                onRefresh = { adminRepo.refreshDashboardStatsAsync() },
+                sseReloadTick = adminRepo.messagingReloadTick
             )
 
         DesktopScreen.ADMIN_TICKETS ->

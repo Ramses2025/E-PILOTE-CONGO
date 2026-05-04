@@ -18,14 +18,15 @@ import java.time.ZoneId
  */
 @Repository
 class AdminInvoiceCounterRepository(private val bucket: Bucket) {
-    private val scope by lazy { runBlocking { bucket.defaultScope() } }
+    private val scope = runBlocking { bucket.defaultScope() }
 
     private companion object {
         const val CONFIG_COLLECTION = "config"
         const val DOC_PREFIX = "config::invoice_counter::"
     }
 
-    private fun col(name: String): Collection = runBlocking { scope.collection(name) }
+    private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
+    private fun col(name: String): Collection = collections.getOrPut(name) { runBlocking { scope.collection(name) } }
 
     private fun currentYear(): Int =
         Instant.now().atZone(ZoneId.of("UTC")).year

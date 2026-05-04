@@ -10,14 +10,15 @@ import java.time.Instant
 
 @Repository
 class AdminModuleRepository(private val bucket: Bucket) {
-    private val scope by lazy { runBlocking { bucket.defaultScope() } }
+    private val scope = runBlocking { bucket.defaultScope() }
 
     private companion object {
         const val CONFIG_COLLECTION = "config"
         const val MODULES_DOC_ID = "config::modules"
     }
 
-    private fun col(name: String): Collection = runBlocking { scope.collection(name) }
+    private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
+    private fun col(name: String): Collection = collections.getOrPut(name) { runBlocking { scope.collection(name) } }
 
     private fun now(): String = Instant.now().toString()
 

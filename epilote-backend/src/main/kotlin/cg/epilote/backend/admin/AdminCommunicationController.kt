@@ -22,8 +22,11 @@ class AdminCommunicationController(
     private fun Authentication.userId() = principal as String
 
     @GetMapping("/announcements")
-    fun listAnnouncements(): ResponseEntity<List<AnnouncementResponse>> =
-        runBlocking { ResponseEntity.ok(communicationRepo.listAnnouncements()) }
+    fun listAnnouncements(
+        @RequestParam(required = false, defaultValue = "1") page: Int,
+        @RequestParam(required = false, defaultValue = "50") pageSize: Int
+    ): ResponseEntity<List<AnnouncementResponse>> =
+        runBlocking { ResponseEntity.ok(communicationRepo.listAnnouncements(page, pageSize)) }
 
     @PostMapping("/announcements")
     fun createAnnouncement(
@@ -34,8 +37,11 @@ class AdminCommunicationController(
     }
 
     @GetMapping("/messages")
-    fun listMessages(): ResponseEntity<List<AdminMessageResponse>> =
-        runBlocking { ResponseEntity.ok(communicationRepo.listMessages()) }
+    fun listMessages(
+        @RequestParam(required = false, defaultValue = "1") page: Int,
+        @RequestParam(required = false, defaultValue = "50") pageSize: Int
+    ): ResponseEntity<List<AdminMessageResponse>> =
+        runBlocking { ResponseEntity.ok(communicationRepo.listMessages(page, pageSize)) }
 
     @PostMapping("/messages")
     fun createMessage(
@@ -55,5 +61,15 @@ class AdminCommunicationController(
         communicationRepo.updateMessageStatus(messageId, status)?.let {
             ResponseEntity.ok(it)
         } ?: ResponseEntity.badRequest().build()
+    }
+
+    @PutMapping("/messages/{messageId}/read")
+    fun markMessageAsRead(
+        @PathVariable messageId: String,
+        auth: Authentication
+    ): ResponseEntity<AdminMessageResponse> = runBlocking {
+        communicationRepo.markMessageAsRead(messageId, auth.userId())?.let {
+            ResponseEntity.ok(it)
+        } ?: ResponseEntity.notFound().build()
     }
 }
