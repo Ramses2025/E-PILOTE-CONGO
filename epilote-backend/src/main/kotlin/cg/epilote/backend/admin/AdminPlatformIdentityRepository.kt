@@ -3,6 +3,8 @@ package cg.epilote.backend.admin
 import com.couchbase.client.kotlin.Bucket
 import com.couchbase.client.kotlin.Collection
 import com.couchbase.client.core.error.CasMismatchException
+import com.couchbase.client.core.error.DocumentExistsException
+import com.couchbase.client.core.error.DocumentNotFoundException
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Repository
@@ -58,16 +60,24 @@ class AdminPlatformIdentityRepository(private val bucket: Bucket) {
         val now = System.currentTimeMillis()
         val collection = col(CONFIG_COLLECTION)
 
-        val getResult = runCatching { collection.get(DOC_ID) }.getOrNull()
+        val getResult = try {
+            collection.get(DOC_ID)
+        } catch (_: DocumentNotFoundException) {
+            null
+        }
 
         if (getResult == null) {
             val next = applyRequest(PlatformIdentity(), req, now)
-            collection.upsert(DOC_ID, buildPayload(next))
-            return next
+            try {
+                collection.insert(DOC_ID, buildPayload(next))
+                return next
+            } catch (_: DocumentExistsException) {
+                log.info("Concurrent insert detected on platform identity, falling through to CAS loop")
+            }
         }
 
         for (attempt in 1..MAX_CAS_RETRIES) {
-            val currentGet = if (attempt == 1) getResult else collection.get(DOC_ID)
+            val currentGet = if (attempt == 1 && getResult != null) getResult else collection.get(DOC_ID)
             val doc = currentGet.contentAs<Map<String, Any?>>()
             val current = mapToPlatformIdentity(doc)
             val next = applyRequest(current, req, now)
