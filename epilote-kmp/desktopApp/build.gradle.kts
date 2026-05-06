@@ -1,10 +1,27 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.gradle.api.tasks.JavaExec
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.compose.desktop)
     alias(libs.plugins.kotlin.serialization)
 }
+
+ val couchbaseLiteLibDir = providers.gradleProperty("epilote.cblite.lib.dir")
+    .orElse(providers.environmentVariable("EPILOTE_CBLITE_LIB_DIR"))
+    .orNull
+
+ tasks.withType<JavaExec>().configureEach {
+    if (!couchbaseLiteLibDir.isNullOrBlank()) {
+        environment(
+            "LD_LIBRARY_PATH",
+            listOfNotNull(
+                couchbaseLiteLibDir,
+                System.getenv("LD_LIBRARY_PATH")?.takeIf { it.isNotBlank() }
+            ).joinToString(":")
+        )
+    }
+ }
 
 kotlin {
     jvm("desktop") {
@@ -44,6 +61,9 @@ kotlin {
 compose.desktop {
     application {
         mainClass = "cg.epilote.desktop.MainKt"
+        if (!couchbaseLiteLibDir.isNullOrBlank()) {
+            jvmArgs += listOf("-Djava.library.path=$couchbaseLiteLibDir")
+        }
 
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)

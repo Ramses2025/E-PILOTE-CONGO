@@ -2,6 +2,7 @@ package cg.epilote.backend.config
 
 import com.couchbase.client.core.error.CollectionExistsException
 import com.couchbase.client.kotlin.Bucket
+import com.couchbase.client.kotlin.query.execute
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -58,9 +59,18 @@ class CollectionBootstrap(
         "audit_logs",
     )
 
+    private val requiredIndexes = listOf(
+        "CREATE INDEX IF NOT EXISTS idx_school_groups_created ON school_groups(createdAt) WHERE type IN ['school_group', 'groupe']",
+        "CREATE INDEX IF NOT EXISTS idx_school_groups_plan ON school_groups(IFMISSINGORNULL(planId, '')) WHERE type IN ['school_group', 'groupe']",
+        "CREATE INDEX IF NOT EXISTS idx_school_groups_active ON school_groups(IFMISSINGORNULL(isActive, is_active, true)) WHERE type IN ['school_group', 'groupe']",
+        "CREATE INDEX IF NOT EXISTS idx_schools_group_any ON schools(IFMISSINGORNULL(groupId, groupeId)) WHERE type = 'school'",
+        "CREATE INDEX IF NOT EXISTS idx_users_group_any ON users(IFMISSINGORNULL(groupId, groupeId)) WHERE type = 'user'"
+    )
+
     @EventListener(ApplicationReadyEvent::class)
     fun ensureCollections() = runBlocking {
         val mgr = bucket.collections
+        val scope = bucket.defaultScope()
         for (name in requiredCollections) {
             try {
                 mgr.createCollection(scopeName = "_default", collectionName = name)
@@ -72,6 +82,14 @@ class CollectionBootstrap(
                 // (quota, permission), les endpoints qui en dépendent lèveront
                 // une erreur claire au moment de l'usage.
                 log.warn("Impossible de créer la collection `${name}` : ${e.javaClass.simpleName} — ${e.message}")
+            }
+        }
+        for (statement in requiredIndexes) {
+            try {
+                scope.query(statement).execute()
+                log.info("Index assuré via SQL++ : {}", statement.substringBefore(" ON "))
+            } catch (e: Exception) {
+                log.warn("Impossible d'assurer l'index SQL++ `${statement}` : ${e.javaClass.simpleName} — ${e.message}")
             }
         }
     }
