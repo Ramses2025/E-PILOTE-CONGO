@@ -33,7 +33,8 @@ fun GroupeDetailDialog(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggleStatus: () -> Unit,
-    onAddAdmin: () -> Unit
+    onAddAdmin: () -> Unit,
+    onViewFullDetail: (() -> Unit)? = null
 ) {
     val planLabel = resolvePlanLabel(groupe.planId)
     val planColor = resolvePlanColor(groupe.planId)
@@ -159,6 +160,13 @@ fun GroupeDetailDialog(
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = onDismiss, modifier = Modifier.cursorHand()) { Text("Fermer") }
+                        if (onViewFullDetail != null) {
+                            OutlinedButton(onClick = { onDismiss(); onViewFullDetail() }, shape = RoundedCornerShape(10.dp), modifier = Modifier.cursorHand()) {
+                                Icon(Icons.Default.OpenInFull, null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Fiche complète", fontSize = 13.sp)
+                            }
+                        }
                         Button(onClick = { onDismiss(); onEdit() }, shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D3557)), modifier = Modifier.cursorHand()) {
                             Icon(Icons.Default.Edit, null, Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))

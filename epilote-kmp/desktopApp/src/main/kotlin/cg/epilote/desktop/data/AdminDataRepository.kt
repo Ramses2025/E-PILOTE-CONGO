@@ -56,6 +56,27 @@ class AdminDataRepository(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _rawSubscriptions = MutableStateFlow<List<SubscriptionApiDto>>(emptyList())
+    val rawSubscriptions: StateFlow<List<SubscriptionApiDto>> = _rawSubscriptions.asStateFlow()
+
+    private val _rawInvoices = MutableStateFlow<List<InvoiceApiDto>>(emptyList())
+    val rawInvoices: StateFlow<List<InvoiceApiDto>> = _rawInvoices.asStateFlow()
+
+    private val _messages = MutableStateFlow<List<AdminMessageApiDto>>(emptyList())
+    val messages: StateFlow<List<AdminMessageApiDto>> = _messages.asStateFlow()
+
+    private val _announcements = MutableStateFlow<List<AnnouncementApiDto>>(emptyList())
+    val announcements: StateFlow<List<AnnouncementApiDto>> = _announcements.asStateFlow()
+
+    private val _auditLogs = MutableStateFlow<List<AuditEventApiDto>>(emptyList())
+    val auditLogs: StateFlow<List<AuditEventApiDto>> = _auditLogs.asStateFlow()
+
+    private val _auditTotal = MutableStateFlow(0L)
+    val auditTotal: StateFlow<Long> = _auditTotal.asStateFlow()
+
+    private val _paymentReceipts = MutableStateFlow<List<PaymentReceiptDto>>(emptyList())
+    val paymentReceipts: StateFlow<List<PaymentReceiptDto>> = _paymentReceipts.asStateFlow()
+
     private val _messagingReloadTick = MutableStateFlow(0)
     val messagingReloadTick: StateFlow<Int> = _messagingReloadTick.asStateFlow()
 
@@ -91,6 +112,27 @@ class AdminDataRepository(
 
     fun notifyMessagingReload() {
         _messagingReloadTick.value++
+        refreshMessagingAsync()
+    }
+
+    fun refreshSubscriptionsAsync() {
+        launchRefreshOnce("subscriptions") { refreshSubscriptions() }
+    }
+
+    fun refreshInvoicesAsync() {
+        launchRefreshOnce("invoices") { refreshInvoices() }
+    }
+
+    fun refreshMessagingAsync() {
+        launchRefreshOnce("messaging") { refreshMessaging() }
+    }
+
+    fun refreshAuditAsync() {
+        launchRefreshOnce("audit") { refreshAudit() }
+    }
+
+    fun refreshPaymentsAsync() {
+        launchRefreshOnce("payments") { refreshPayments() }
     }
 
     fun refreshDashboardStatsAsync() {
@@ -166,8 +208,14 @@ class AdminDataRepository(
                     CategorieDto(code = it.code, nom = it.nom, isCore = it.isCore, ordre = it.ordre, isActive = it.isActive)
                 } }
                 val dAdmins = async { runCatching { client.listAllAdmins() }.getOrNull()?.map { it.toAdminUserDto() } }
+                val dSubs = async { runCatching { client.listSubscriptions() }.getOrNull() }
+                val dInvoices = async { runCatching { client.listInvoices() }.getOrNull() }
+                val dMessages = async { runCatching { client.listMessages() }.getOrNull() }
+                val dAnnouncements = async { runCatching { client.listAnnouncements() }.getOrNull() }
+                val dAudit = async { runCatching { client.listAuditLogs(page = 1, pageSize = 50) }.getOrNull() }
+                val dPayments = async { runCatching { client.listPaymentReceipts() }.getOrNull() }
 
-                awaitAll(dStats, dGroupes, dPlans, dModules, dCategories, dAdmins)
+                awaitAll(dStats, dGroupes, dPlans, dModules, dCategories, dAdmins, dSubs, dInvoices, dMessages, dAnnouncements, dAudit, dPayments)
 
                 val stats = dStats.await() ?: _dashboardStats.value
                 val groupes = dGroupes.await() ?: _groupes.value
@@ -181,6 +229,12 @@ class AdminDataRepository(
                 _modules.value = dModules.await() ?: _modules.value
                 _categories.value = dCategories.await() ?: _categories.value
                 _adminUsers.value = admins
+                dSubs.await()?.let { _rawSubscriptions.value = it }
+                dInvoices.await()?.let { _rawInvoices.value = it }
+                dMessages.await()?.let { _messages.value = it }
+                dAnnouncements.await()?.let { _announcements.value = it }
+                dAudit.await()?.let { _auditLogs.value = it.items; _auditTotal.value = it.total }
+                dPayments.await()?.let { _paymentReceipts.value = it }
             }
         } catch (e: Exception) {
             log.warning("[AdminRepo] refreshAll FAILED: ${e.message}")
@@ -232,6 +286,36 @@ class AdminDataRepository(
         refreshDashboardStats()
     }
 
+    suspend fun refreshSubscriptions() {
+        val subs = runCatching { client.listSubscriptions() }.getOrNull()
+        if (subs != null) _rawSubscriptions.value = subs
+    }
+
+    suspend fun refreshInvoices() {
+        val invoices = runCatching { client.listInvoices() }.getOrNull()
+        if (invoices != null) _rawInvoices.value = invoices
+    }
+
+    suspend fun refreshMessaging() {
+        val msgs = runCatching { client.listMessages() }.getOrNull()
+        val anns = runCatching { client.listAnnouncements() }.getOrNull()
+        if (msgs != null) _messages.value = msgs
+        if (anns != null) _announcements.value = anns
+    }
+
+    suspend fun refreshAudit() {
+        val page = runCatching { client.listAuditLogs(page = 1, pageSize = 50) }.getOrNull()
+        if (page != null) {
+            _auditLogs.value = page.items
+            _auditTotal.value = page.total
+        }
+    }
+
+    suspend fun refreshPayments() {
+        val list = runCatching { client.listPaymentReceipts() }.getOrNull()
+        if (list != null) _paymentReceipts.value = list
+    }
+
     suspend fun refreshDashboardStats() {
         val stats = runCatching { client.getDashboardStats() }.getOrNull() ?: _dashboardStats.value
         _dashboardStats.value = stats
@@ -249,7 +333,11 @@ class AdminDataRepository(
             "module" -> refreshModulesAsync()
             "category" -> refreshCategoriesAsync()
             "admin" -> refreshAdminsAsync()
-            "invoice", "subscription", "announcement", "message" -> refreshDashboardStatsAsync()
+            "subscription" -> { refreshSubscriptionsAsync(); refreshDashboardStatsAsync() }
+            "invoice" -> { refreshInvoicesAsync(); refreshDashboardStatsAsync() }
+            "announcement", "message" -> refreshMessagingAsync()
+            "audit" -> refreshAuditAsync()
+            "payment", "payment_receipt" -> refreshPaymentsAsync()
             else -> refreshAllAsync(showLoading = false)
         }
     }

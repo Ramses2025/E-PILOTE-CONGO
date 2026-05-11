@@ -3,6 +3,7 @@ package cg.epilote.backend.admin
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
+import jakarta.validation.constraints.PositiveOrZero
 import jakarta.validation.constraints.Size
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.ResponseStatus
@@ -361,7 +362,7 @@ data class SubscriptionResponse(
 data class CreateInvoiceRequest(
     @field:NotBlank val groupeId: String,
     @field:NotBlank val subscriptionId: String,
-    @field:Positive val montantXAF: Long,
+    @field:PositiveOrZero val montantXAF: Long,
     @field:Positive val dateEcheance: Long,
     val notes: String = "",
     /**
@@ -389,18 +390,3 @@ data class InvoiceResponse(
     val notes: String
 )
 
-// ── Annonce Globale ──────────────────────────────────────────────
-data class CreateAnnouncementRequest(
-    @field:NotBlank @field:Size(max = 200) val titre: String,
-    @field:NotBlank @field:Size(max = 50_000) val contenu: String,
-    val cible: String = "all"
-)
-
-data class AnnouncementResponse(
-    val id: String,
-    val titre: String,
-    val contenu: String,
-    val cible: String,
-    val createdBy: String,
-    val createdAt: Long
-)

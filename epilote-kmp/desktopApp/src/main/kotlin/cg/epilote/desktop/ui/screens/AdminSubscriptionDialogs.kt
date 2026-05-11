@@ -3,6 +3,7 @@ package cg.epilote.desktop.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -51,7 +52,8 @@ internal fun SubscriptionDetailDialog(
     onChangePlan: () -> Unit,
     onChangeStatus: (String) -> Unit,
     onRecordPayment: () -> Unit = {},
-    onShowHistory: () -> Unit = {}
+    onShowHistory: () -> Unit = {},
+    onRenew: (() -> Unit)? = null
 ) {
     val scrollState = rememberScrollState()
     val statusColor = subscriptionStatusColor(subscription.statut)
@@ -66,7 +68,7 @@ internal fun SubscriptionDetailDialog(
         title = subscription.groupeNom,
         subtitle = "${subscription.planNom} • ${formatMoneyXaf(subscription.prixXAF)}",
         onDismiss = onDismiss,
-        size = DpSize(660.dp, 540.dp),
+        size = DpSize(1020.dp, 620.dp),
         content = {
             Column(modifier = Modifier.verticalScroll(scrollState), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -108,6 +110,7 @@ internal fun SubscriptionDetailDialog(
                     color = if (nextStatus == "suspended") Color(0xFFD97706) else Color(0xFF059669)
                 )
             }
+            Spacer(Modifier.weight(1f))
             OutlinedButton(onClick = onChangePlan, modifier = Modifier.cursorHand(), shape = RoundedCornerShape(10.dp)) {
                 Icon(Icons.Default.Paid, null, modifier = Modifier.size(16.dp))
                 Text("Changer de plan", modifier = Modifier.padding(start = 6.dp))
@@ -120,6 +123,17 @@ internal fun SubscriptionDetailDialog(
             ) {
                 Icon(Icons.Default.Payments, null, modifier = Modifier.size(16.dp))
                 Text("Enregistrer paiement", modifier = Modifier.padding(start = 6.dp))
+            }
+            if (onRenew != null) {
+                Button(
+                    onClick = { onDismiss(); onRenew() },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.cursorHand(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                ) {
+                    Icon(Icons.Default.Autorenew, null, modifier = Modifier.size(16.dp))
+                    Text("Renouveler", modifier = Modifier.padding(start = 6.dp))
+                }
             }
             Button(onClick = onDismiss, shape = RoundedCornerShape(10.dp), modifier = Modifier.cursorHand()) {
                 Text("Fermer")
@@ -150,8 +164,8 @@ internal fun SubscriptionFormDialog(
     val availablePlans = plans.filter { it.isActive }.sortedBy { it.prixXAF }
 
     AdminDialogWindow(
-        title = if (existing == null) "Nouvel abonnement" else "Modifier l'abonnement",
-        subtitle = if (existing == null) "Attribuez un plan à un groupe scolaire" else "Changez le plan ou le renouvellement",
+        title = if (existing == null) "Attribuer un plan" else "Modifier l'abonnement",
+        subtitle = if (existing == null) "Attribuez un plan à un groupe scolaire" else "Changez le plan ou les paramètres sans prolonger l'accès",
         onDismiss = onDismiss,
         size = DpSize(620.dp, 460.dp),
         content = {

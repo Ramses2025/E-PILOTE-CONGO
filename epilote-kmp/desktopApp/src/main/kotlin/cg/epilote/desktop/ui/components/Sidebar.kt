@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cg.epilote.desktop.data.CategorieWithModulesDto
 import cg.epilote.desktop.ui.theme.*
 import cg.epilote.desktop.ui.theme.cursorHand
 import cg.epilote.shared.domain.model.UserSession
@@ -40,6 +41,7 @@ enum class DesktopScreen(
 ) {
     // ── 1. Pilotage ─────────────────────────────────────────────
     ADMIN_DASHBOARD      ("Tableau de bord",     Icons.Default.Dashboard,          null, SidebarSection.SA_PILOTAGE,       "SUPER_ADMIN"),
+    ADMIN_ALERTS         ("Alertes & Seuils",    Icons.Default.Warning,            null, SidebarSection.SA_PILOTAGE,       "SUPER_ADMIN"),
 
     // ── 2. Organisation ─────────────────────────────────────────
     ADMIN_GROUPES        ("Groupes scolaires",   Icons.Default.Business,           null, SidebarSection.SA_ORGANISATION,   "SUPER_ADMIN"),
@@ -53,6 +55,7 @@ enum class DesktopScreen(
     ADMIN_PLANS          ("Plans & Tarifs",      Icons.Default.CreditCard,         null, SidebarSection.SA_MONETISATION,   "SUPER_ADMIN"),
     ADMIN_SUBSCRIPTIONS  ("Abonnements",         Icons.Default.Subscriptions,      null, SidebarSection.SA_MONETISATION,   "SUPER_ADMIN"),
     ADMIN_INVOICES       ("Factures",            Icons.Default.Receipt,            null, SidebarSection.SA_MONETISATION,   "SUPER_ADMIN"),
+    ADMIN_PAYMENTS       ("Paiements",           Icons.Default.Payments,           null, SidebarSection.SA_MONETISATION,   "SUPER_ADMIN"),
 
     // ── 5. Communication ────────────────────────────────────────
     ADMIN_NOTIFICATIONS  ("Notifications",       Icons.Default.Notifications,      null, SidebarSection.SA_COMMUNICATION,  "SUPER_ADMIN"),
@@ -67,6 +70,9 @@ enum class DesktopScreen(
 
     // ── 8. Paramètres plateforme ────────────────────────────────
     ADMIN_PLATFORM_SETTINGS ("Paramètres",       Icons.Default.Settings,           null, SidebarSection.SA_PARAMETRES,     "SUPER_ADMIN"),
+
+    // ── Fiche groupe (navigation drill-down, non visible en sidebar) ────
+    ADMIN_GROUPE_DETAIL  ("Fiche Groupe",        Icons.Default.Business,           null, SidebarSection.SA_ORGANISATION,   "SUPER_ADMIN", false),
 
     // ── Admin Groupe : Gestion de son tenant ────────────────────
     GROUPE_DASHBOARD     ("Dashboard Groupe",    Icons.Default.Dashboard,          null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
@@ -115,7 +121,8 @@ fun Sidebar(
     currentScreen: DesktopScreen,
     onScreenSelected: (DesktopScreen) -> Unit,
     isExpanded: Boolean = true,
-    onToggleExpanded: () -> Unit = {}
+    onToggleExpanded: () -> Unit = {},
+    dynamicCategories: List<CategorieWithModulesDto> = emptyList()
 ) {
     val sidebarWidth = if (isExpanded) 220.dp else 64.dp
 
@@ -124,6 +131,17 @@ fun Sidebar(
         // SUPER_ADMIN only sees ADMIN section
         if (session.role == "SUPER_ADMIN") {
             return@filter screen.requiredRole == "SUPER_ADMIN"
+        }
+        // ADMIN_GROUPE: fixed screens always visible, module screens controlled by dynamicCategories
+        if (session.role == "ADMIN_GROUPE") {
+            if (screen.requiredRole == "ADMIN_GROUPE") return@filter true
+            if (screen.requiredRole == "SUPER_ADMIN") return@filter false
+            // Module-based screens: check if module slug is in dynamic categories
+            if (screen.moduleSlug != null && dynamicCategories.isNotEmpty()) {
+                val allModuleCodes = dynamicCategories.flatMap { cat -> cat.modules.map { it.code } }
+                return@filter screen.moduleSlug in allModuleCodes
+            }
+            return@filter screen.moduleSlug == null || session.hasModule(screen.moduleSlug)
         }
         val roleOk = screen.requiredRole == null || session.role == screen.requiredRole
         val moduleOk = screen.moduleSlug == null || session.hasModule(screen.moduleSlug)

@@ -2,6 +2,7 @@ package cg.epilote.backend.admin
 
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
+import jakarta.validation.constraints.PositiveOrZero
 
 /**
  * Reçu de paiement manuel enregistré par le Super Admin lorsqu'un groupe scolaire
@@ -34,7 +35,7 @@ enum class PaymentMethod(val code: String, val enabled: Boolean, val label: Stri
 data class RecordPaymentRequest(
     @field:NotBlank val groupeId: String,
     @field:NotBlank val subscriptionId: String,
-    @field:Positive val montantXAF: Long,
+    @field:PositiveOrZero val montantXAF: Long,
     /** Code du mode de paiement (voir [PaymentMethod]). */
     @field:NotBlank val paymentMethod: String,
     /**
@@ -58,7 +59,14 @@ data class RecordPaymentRequest(
      *  - https://stripe.com/docs/api/idempotent_requests
      *  - https://docs.spring.io/spring-framework/reference/web/webmvc-functional.html
      */
-    val idempotencyKey: String? = null
+    val idempotencyKey: String? = null,
+    /**
+     * Optionnel : identifiant d'une facture existante (statut pending/sent/overdue).
+     * Si fourni, le backend marque cette facture comme « paid » au lieu d'en créer
+     * une nouvelle — élimine le doublon de facturation et suit le flux comptable
+     * standard : Facture → Paiement → Reçu.
+     */
+    val invoiceId: String? = null
 )
 
 data class PaymentReceiptResponse(

@@ -184,6 +184,41 @@ class AdminCommunicationRepository(
         }
     }
 
+    suspend fun createSubscriptionRequest(groupeId: String, groupeNom: String, requestType: String, requestMessage: String?, createdBy: String): Boolean {
+        val allowedTypes = setOf("RENEWAL_REQUEST", "PLAN_CHANGE_REQUEST")
+        val normalizedType = requestType.trim().uppercase()
+        if (normalizedType !in allowedTypes) return false
+
+        val typeLabel = if (normalizedType == "RENEWAL_REQUEST") "Renouvellement d'abonnement" else "Changement de plan"
+        val sujet = "Demande de $typeLabel — $groupeNom"
+        val contenu = buildString {
+            append("Groupe : $groupeNom (ID: $groupeId)\n")
+            append("Type de demande : $typeLabel\n")
+            if (!requestMessage.isNullOrBlank()) {
+                append("\nMessage de l'administrateur :\n${requestMessage.trim()}")
+            }
+        }
+        val currentTime = now()
+        val id = newId("sub_req")
+        val doc = mapOf(
+            "type" to MESSAGE_TYPE,
+            "sujet" to sujet,
+            "contenu" to contenu,
+            "targetType" to "all_admins",
+            "groupId" to groupeId,
+            "adminId" to null,
+            "threadKey" to "group::$groupeId",
+            "status" to "sent",
+            "readBy" to emptyList<String>(),
+            "requestType" to normalizedType,
+            "createdBy" to createdBy,
+            "createdAt" to currentTime,
+            "updatedAt" to currentTime
+        )
+        messagesCol.upsert(id, doc)
+        return true
+    }
+
     suspend fun markMessageAsRead(messageId: String, userId: String): AdminMessageResponse? {
         repeat(3) {
             val getResult = runCatching {

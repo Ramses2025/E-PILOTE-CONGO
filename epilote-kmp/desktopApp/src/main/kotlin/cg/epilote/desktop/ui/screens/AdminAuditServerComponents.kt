@@ -20,7 +20,13 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Surface
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.DpSize
+import cg.epilote.desktop.ui.theme.cursorHand
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -69,6 +75,36 @@ private val AuditOutcomes = listOf(
     "all" to "Tous résultats",
     "success" to "Succès",
     "failure" to "Échec"
+)
+
+private val AuditActionOptions = listOf(
+    "all"                         to "Toutes actions",
+    "auth.login.success"          to "Connexion réussie",
+    "auth.login.failure"          to "Échec connexion",
+    "auth.password.changed"       to "Changement MDP",
+    "auth.password.reset"         to "Réinit. MDP (admin)",
+    "groupe.created"              to "Création groupe",
+    "groupe.updated"              to "Modification groupe",
+    "groupe.deleted"              to "Suppression groupe",
+    "admin.created"               to "Création admin",
+    "admin.updated"               to "Modification admin",
+    "admin.deleted"               to "Suppression admin",
+    "subscription.created"        to "Création abonnement",
+    "subscription.status_changed" to "Statut abonnement",
+    "subscription.renewed"        to "Renouvellement abonnement",
+    "invoice.created"             to "Émission facture",
+    "invoice.deleted"             to "Suppression facture",
+    "invoice.status_changed"      to "Statut facture",
+    "payment.recorded"            to "Paiement enregistré",
+    "payment.deleted"             to "Suppression paiement",
+    "platform.identity_updated"   to "Paramètres plateforme",
+    "system.scheduler.expiry_run" to "Job expiration"
+)
+
+private val PageSizeOptions = listOf(
+    "25" to "25 / page",
+    "50" to "50 / page",
+    "100" to "100 / page"
 )
 
 @Composable
@@ -130,6 +166,10 @@ internal fun AuditServerToolbar(
     onCategoryChange: (String) -> Unit,
     selectedOutcome: String,
     onOutcomeChange: (String) -> Unit,
+    selectedAction: String,
+    onActionChange: (String) -> Unit,
+    pageSize: Int,
+    onPageSizeChange: (Int) -> Unit,
     totalResults: Long,
     onRefresh: () -> Unit
 ) {
@@ -138,43 +178,43 @@ internal fun AuditServerToolbar(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = onSearchChange,
                     leadingIcon = { Icon(Icons.Default.Search, null) },
-                    placeholder = { Text("Rechercher (acteur, action, message…)") },
+                    placeholder = { Text("Rechercher (acteur, IP, message…)") },
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
-                AuditDropdownPicker(
-                    label = "Catégorie",
-                    options = AuditCategories,
-                    selectedKey = selectedCategory,
-                    onSelect = onCategoryChange
-                )
-                AuditDropdownPicker(
-                    label = "Résultat",
-                    options = AuditOutcomes,
-                    selectedKey = selectedOutcome,
-                    onSelect = onOutcomeChange
-                )
-                OutlinedButton(onClick = onRefresh) {
+                OutlinedButton(onClick = onRefresh, modifier = Modifier.cursorHand()) {
                     Icon(Icons.Default.Refresh, null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Actualiser")
                 }
             }
-            Text(
-                text = "$totalResults événement(s) correspondant(s) — pagination 50 / page.",
-                fontSize = 12.sp,
-                color = EpiloteTextMuted
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AuditDropdownPicker(label = "Catégorie", options = AuditCategories,    selectedKey = selectedCategory, onSelect = onCategoryChange)
+                AuditDropdownPicker(label = "Résultat",  options = AuditOutcomes,      selectedKey = selectedOutcome,  onSelect = onOutcomeChange)
+                AuditDropdownPicker(label = "Action",    options = AuditActionOptions, selectedKey = selectedAction,   onSelect = onActionChange)
+                Spacer(modifier = Modifier.weight(1f))
+                AuditDropdownPicker(
+                    label   = "Lignes",
+                    options = PageSizeOptions,
+                    selectedKey = pageSize.toString(),
+                    onSelect    = { onPageSizeChange(it.toIntOrNull() ?: 50) }
+                )
+                Text(text = "$totalResults événement(s)", fontSize = 12.sp, color = EpiloteTextMuted)
+            }
         }
     }
 }
@@ -230,28 +270,33 @@ internal fun AuditServerEntriesPanel(
 @Composable
 private fun AuditServerEntryRow(entry: AuditEventApiDto, onClick: () -> Unit) {
     val outcomeColor = when (entry.outcome.lowercase()) {
-        "success" -> Color(0xFF1B5E20)
-        "failure" -> Color(0xFFB71C1C)
-        "denied" -> Color(0xFFE65100)
-        else -> EpiloteTextMuted
+        "success" -> Color(0xFF16A34A)
+        "failure" -> Color(0xFFDC2626)
+        "denied"  -> Color(0xFFE65100)
+        else      -> EpiloteTextMuted
+    }
+    val categoryColor = when (entry.category.lowercase()) {
+        "auth"         -> Color(0xFF2563EB)
+        "groupe"       -> Color(0xFF7C3AED)
+        "admin"        -> Color(0xFF0891B2)
+        "subscription" -> Color(0xFF0D9488)
+        "invoice"      -> Color(0xFF1D4ED8)
+        "payment"      -> Color(0xFF15803D)
+        "platform"     -> Color(0xFFB45309)
+        else           -> Color(0xFF64748B)
     }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(outcomeColor, RoundedCornerShape(4.dp))
-        )
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(entry.actionLabel.ifBlank { entry.action }, fontWeight = FontWeight.SemiBold)
-                Text("[${entry.category}]", fontSize = 12.sp, color = EpiloteTextMuted)
+                Text(entry.actionLabel.ifBlank { entry.action }, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                AuditPillBadge(entry.category, categoryColor)
             }
             Text(
                 text = entry.message ?: entry.action,
@@ -260,11 +305,34 @@ private fun AuditServerEntryRow(entry: AuditEventApiDto, onClick: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            entry.ipAddress?.let { Text("IP $it", fontSize = 10.sp, color = Color(0xFF94A3B8)) }
         }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(formatDate(entry.timestamp), fontSize = 12.sp, color = EpiloteTextMuted)
-            Text(entry.actorEmail ?: entry.actorId ?: "—", fontSize = 11.sp, color = EpiloteTextMuted)
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(formatDate(entry.timestamp), fontSize = 11.sp, color = EpiloteTextMuted)
+            Text(entry.actorEmail ?: entry.actorId ?: "\u2014", fontSize = 11.sp, color = EpiloteTextMuted, maxLines = 1)
+            AuditPillBadge(
+                text = when (entry.outcome.lowercase()) {
+                    "success" -> "Succès"
+                    "failure" -> "Échec"
+                    "denied"  -> "Refusé"
+                    else      -> entry.outcome
+                },
+                color = outcomeColor
+            )
         }
+    }
+}
+
+@Composable
+private fun AuditPillBadge(text: String, color: Color) {
+    Surface(shape = RoundedCornerShape(999.dp), color = color.copy(alpha = 0.12f)) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = color
+        )
     }
 }
 
@@ -273,34 +341,53 @@ internal fun AuditServerEntryDetailDialog(
     entry: AuditEventApiDto,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
-        title = { Text(entry.actionLabel.ifBlank { entry.action }) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                LineKv("Date", formatDate(entry.timestamp))
-                LineKv("Catégorie", entry.category)
-                LineKv("Résultat", entry.outcome)
-                LineKv("Acteur", entry.actorEmail ?: entry.actorId ?: "—")
-                entry.actorRole?.let { LineKv("Rôle", it) }
-                entry.targetType?.let { LineKv("Cible", "${entry.targetType} ${entry.targetId ?: ""}") }
-                entry.ipAddress?.let { LineKv("IP", it) }
-                entry.userAgent?.let { LineKv("User-Agent", it) }
-                entry.message?.let { LineKv("Message", it) }
+    val scrollState = rememberScrollState()
+    val clipboardManager = LocalClipboardManager.current
+    AdminDialogWindow(
+        title    = entry.actionLabel.ifBlank { entry.action },
+        subtitle = "${entry.category}  \u00b7  ${entry.outcome}",
+        onDismiss = onDismiss,
+        size = DpSize(760.dp, 580.dp),
+        content = {
+            Column(modifier = Modifier.verticalScroll(scrollState), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                LineKv("Date",       formatDate(entry.timestamp))
+                LineKv("Catégorie",  entry.category)
+                LineKv("Action",     entry.action)
+                LineKv("Résultat",   entry.outcome)
+                LineKv("Acteur",     entry.actorEmail ?: entry.actorId ?: "\u2014")
+                entry.actorRole?.let   { LineKv("Rôle",        it) }
+                entry.targetType?.let  { LineKv("Cible",       "${entry.targetType} ${entry.targetId ?: ""}") }
+                entry.targetLabel?.let { LineKv("Label cible",  it) }
+                entry.ipAddress?.let   { LineKv("IP",           it) }
+                entry.userAgent?.let   { LineKv("User-Agent",   it) }
+                entry.message?.let     { LineKv("Message",      it) }
                 if (entry.metadata.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text("Métadonnées", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    HorizontalDivider(color = Color(0xFFE2E8F0))
                     entry.metadata.forEach { (k, v) ->
-                        // JsonPrimitive.toString() encodes strings WITH surrounding double-quotes
-                        // (`"cash"` au lieu de `cash`). On utilise `.content` pour récupérer la
-                        // valeur brute. Les nombres et booléens passent par `toString()` (pas de quotes).
-                        // Doc : https://kotlinlang.org/api/kotlinx.serialization/kotlinx-serialization-json/kotlinx.serialization.json/-json-primitive/
                         val display = if (v is kotlinx.serialization.json.JsonPrimitive && v.isString) v.content else v.toString()
                         LineKv(k, display)
                     }
                 }
             }
+        },
+        actions = {
+            OutlinedButton(
+                onClick = {
+                    val actor  = entry.actorEmail ?: entry.actorId ?: ""
+                    val ip      = entry.ipAddress ?: ""
+                    val message = entry.message ?: ""
+                    val json = "{\"id\":\"${entry.id}\",\"timestamp\":${entry.timestamp}" +
+                        ",\"action\":\"${entry.action}\",\"category\":\"${entry.category}\"" +
+                        ",\"outcome\":\"${entry.outcome}\",\"actor\":\"$actor\"" +
+                        ",\"ip\":\"$ip\",\"message\":\"$message\"}"
+                    clipboardManager.setText(AnnotatedString(json))
+                },
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.cursorHand()
+            ) { Text("Copier JSON") }
+            TextButton(onClick = onDismiss, modifier = Modifier.cursorHand()) { Text("Fermer") }
         }
     )
 }
@@ -308,7 +395,7 @@ internal fun AuditServerEntryDetailDialog(
 @Composable
 private fun LineKv(key: String, value: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("$key :", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.width(100.dp))
-        Text(value, fontSize = 12.sp, color = EpiloteTextMuted)
+        Text("$key :", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.width(120.dp))
+        Text(value, fontSize = 12.sp, color = EpiloteTextMuted, modifier = Modifier.weight(1f))
     }
 }

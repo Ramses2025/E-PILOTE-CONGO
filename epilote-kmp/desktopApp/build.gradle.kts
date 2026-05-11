@@ -1,5 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.testing.Test
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -10,6 +11,10 @@ plugins {
  val couchbaseLiteLibDir = providers.gradleProperty("epilote.cblite.lib.dir")
     .orElse(providers.environmentVariable("EPILOTE_CBLITE_LIB_DIR"))
     .orNull
+
+ tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+ }
 
  tasks.withType<JavaExec>().configureEach {
     if (!couchbaseLiteLibDir.isNullOrBlank()) {
@@ -30,6 +35,13 @@ kotlin {
         }
     }
     sourceSets {
+        val desktopTest by getting {
+            kotlin.srcDirs("src/test/kotlin")
+            dependencies {
+                implementation(kotlin("test"))
+                implementation(kotlin("test-junit5"))
+            }
+        }
         val desktopMain by getting {
             kotlin.srcDirs("src/main/kotlin")
             resources.srcDirs("src/main/resources")

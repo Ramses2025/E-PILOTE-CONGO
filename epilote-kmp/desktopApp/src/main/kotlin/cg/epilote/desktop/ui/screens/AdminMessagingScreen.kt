@@ -1,6 +1,8 @@
 package cg.epilote.desktop.ui.screens
 
 import androidx.compose.runtime.Composable
+import cg.epilote.desktop.data.AdminMessageApiDto
+import cg.epilote.desktop.data.AnnouncementApiDto
 import cg.epilote.desktop.data.DesktopAdminClient
 import cg.epilote.shared.domain.model.UserSession
 import kotlinx.coroutines.CoroutineScope

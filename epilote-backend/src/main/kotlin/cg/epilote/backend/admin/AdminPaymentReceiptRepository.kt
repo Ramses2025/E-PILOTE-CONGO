@@ -132,6 +132,11 @@ class AdminPaymentReceiptRepository(private val bucket: Bucket) {
         )
     }
 
+    suspend fun deleteById(id: String): Boolean = runCatching {
+        col(COLLECTION).remove(id)
+        true
+    }.getOrDefault(false)
+
     suspend fun listByGroupe(groupeId: String): List<PaymentReceiptResponse> = runCatching {
         val result = scope.query(
             "SELECT META().id AS id, * FROM `$COLLECTION` WHERE `type` = '$DOC_TYPE' AND `groupeId` = \$groupeId",

@@ -65,13 +65,15 @@ import cg.epilote.desktop.ui.theme.hoverScale
 
 internal fun subscriptionStatusColor(status: String): Color = when (status.lowercase()) {
     "active" -> Color(0xFF059669)
-    "suspended" -> Color(0xFFD97706)
+    "pending" -> Color(0xFFD97706)
+    "suspended" -> Color(0xFF7C3AED)
     "cancelled" -> Color(0xFFB91C1C)
     else -> Color(0xFF64748B)
 }
 
 internal fun subscriptionStatusLabel(status: String): String = when (status.lowercase()) {
     "active" -> "Actif"
+    "pending" -> "En attente de paiement"
     "suspended" -> "Suspendu"
     "cancelled" -> "Annulé"
     else -> status.replaceFirstChar { it.uppercase() }
@@ -168,7 +170,7 @@ internal fun SubscriptionToolbar(
                     colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFF1D3557), contentColor = Color.White)
                 ) {
                     Icon(Icons.Default.AddCard, null, modifier = Modifier.size(16.dp))
-                    Text("Nouvel abonnement", modifier = Modifier.padding(start = 4.dp), fontSize = 12.sp)
+                    Text("Attribuer un plan", modifier = Modifier.padding(start = 4.dp), fontSize = 12.sp)
                 }
             }
         }

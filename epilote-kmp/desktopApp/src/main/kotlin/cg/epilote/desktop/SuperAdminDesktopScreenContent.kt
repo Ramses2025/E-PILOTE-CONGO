@@ -1,9 +1,22 @@
 package cg.epilote.desktop
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import cg.epilote.desktop.data.AdminDataRepository
+import cg.epilote.desktop.data.AdminMessageApiDto
+import cg.epilote.desktop.data.AnnouncementApiDto
+import cg.epilote.desktop.data.AuditEventApiDto
 import cg.epilote.desktop.data.DashboardStatsDto
 import cg.epilote.desktop.data.DesktopAdminClient
+import cg.epilote.desktop.data.InvoiceApiDto
+import cg.epilote.desktop.data.PaymentReceiptDto
+import cg.epilote.desktop.data.SubscriptionApiDto
+import cg.epilote.desktop.ui.screens.AdminAlertsScreen
+import cg.epilote.desktop.ui.screens.AdminGroupeDetailScreen
+import cg.epilote.desktop.ui.screens.AdminPaymentsScreen
 import cg.epilote.desktop.ui.components.DesktopScreen
 import cg.epilote.desktop.ui.screens.AdminAdminsScreen
 import cg.epilote.desktop.ui.screens.AdminMessagingMailbox
@@ -38,11 +51,20 @@ internal fun SuperAdminDesktopScreenContent(
     adminCategories: List<CategorieDto>,
     adminUsers: List<AdminUserDto>,
     adminLoading: Boolean,
+    adminRawSubscriptions: List<SubscriptionApiDto>,
+    adminRawInvoices: List<InvoiceApiDto>,
+    adminMessages: List<AdminMessageApiDto>,
+    adminAnnouncements: List<AnnouncementApiDto>,
+    adminAuditLogs: List<AuditEventApiDto>,
+    adminAuditTotal: Long,
+    adminPaymentReceipts: List<PaymentReceiptDto>,
     appScope: CoroutineScope,
     adminClient: DesktopAdminClient,
     adminRepo: AdminDataRepository,
     onScreenChange: (DesktopScreen) -> Unit
 ) {
+    var drilldownGroupe by remember { mutableStateOf<GroupeDto?>(null) }
+
     when (currentScreen) {
         DesktopScreen.ADMIN_DASHBOARD ->
             SuperAdminDashboardScreen(
@@ -71,7 +93,12 @@ internal fun SuperAdminDesktopScreenContent(
                 onDeleteGroupe = { gId, onResult -> appScope.deleteGroupeAndRefresh(adminClient, adminRepo, gId, onResult) },
                 onToggleGroupeStatus = { gId, active, onResult -> appScope.toggleGroupeStatusAndRefresh(adminClient, adminRepo, gId, active, onResult) },
                 onCreateAdminGroupe = { gId, pw, n, p, e, onResult -> appScope.createAdminGroupeAndRefresh(adminClient, adminRepo, gId, pw, n, p, e, onResult) },
-                onRefresh = { adminRepo.refreshGroupesAsync() }
+                onNavigateDetail = { groupe ->
+                    drilldownGroupe = groupe
+                    onScreenChange(DesktopScreen.ADMIN_GROUPE_DETAIL)
+                },
+                onRefresh = { adminRepo.refreshGroupesAsync() },
+                scope = appScope
             )
 
         DesktopScreen.ADMIN_PLANS ->
@@ -114,7 +141,7 @@ internal fun SuperAdminDesktopScreenContent(
                 isLoading = adminLoading,
                 scope = appScope,
                 client = adminClient,
-                onRefresh = { adminRepo.refreshDashboardStatsAsync() }
+                onRefresh = { adminRepo.refreshSubscriptionsAsync(); adminRepo.refreshDashboardStatsAsync() }
             )
 
         DesktopScreen.ADMIN_INVOICES ->
@@ -124,7 +151,7 @@ internal fun SuperAdminDesktopScreenContent(
                 isLoading = adminLoading,
                 scope = appScope,
                 client = adminClient,
-                onRefresh = { adminRepo.refreshDashboardStatsAsync() }
+                onRefresh = { adminRepo.refreshInvoicesAsync(); adminRepo.refreshSubscriptionsAsync(); adminRepo.refreshDashboardStatsAsync() }
             )
 
         DesktopScreen.ADMIN_ADMINISTRATORS ->
@@ -147,7 +174,7 @@ internal fun SuperAdminDesktopScreenContent(
                 isLoading = adminLoading,
                 scope = appScope,
                 client = adminClient,
-                onRefresh = { adminRepo.refreshDashboardStatsAsync() },
+                onRefresh = { adminRepo.refreshMessagingAsync() },
                 initialMailbox = AdminMessagingMailbox.ANNOUNCEMENTS,
                 sseReloadTick = adminRepo.messagingReloadTick
             )
@@ -160,7 +187,7 @@ internal fun SuperAdminDesktopScreenContent(
                 isLoading = adminLoading,
                 scope = appScope,
                 client = adminClient,
-                onRefresh = { adminRepo.refreshDashboardStatsAsync() }
+                onRefresh = { adminRepo.refreshSubscriptionsAsync(); adminRepo.refreshInvoicesAsync() }
             )
 
         DesktopScreen.ADMIN_MESSAGING ->
@@ -171,7 +198,7 @@ internal fun SuperAdminDesktopScreenContent(
                 isLoading = adminLoading,
                 scope = appScope,
                 client = adminClient,
-                onRefresh = { adminRepo.refreshDashboardStatsAsync() },
+                onRefresh = { adminRepo.refreshMessagingAsync() },
                 sseReloadTick = adminRepo.messagingReloadTick
             )
 
@@ -183,8 +210,55 @@ internal fun SuperAdminDesktopScreenContent(
                 isLoading = adminLoading,
                 scope = appScope,
                 client = adminClient,
-                onRefresh = { adminRepo.refreshDashboardStatsAsync() }
+                onRefresh = { adminRepo.refreshSubscriptionsAsync(); adminRepo.refreshInvoicesAsync() }
             )
+
+        DesktopScreen.ADMIN_ALERTS ->
+            AdminAlertsScreen(
+                groupes = adminGroupes,
+                rawSubscriptions = adminRawSubscriptions,
+                rawInvoices = adminRawInvoices,
+                plans = adminPlans,
+                isLoading = adminLoading,
+                scope = appScope,
+                client = adminClient,
+                onRefresh = { adminRepo.refreshAllInBackgroundAsync() },
+                onNavigateSubscriptions = { onScreenChange(DesktopScreen.ADMIN_SUBSCRIPTIONS) },
+                onNavigateInvoices = { onScreenChange(DesktopScreen.ADMIN_INVOICES) },
+                onNavigatePayments = {
+                    adminRepo.refreshPaymentsAsync()
+                    onScreenChange(DesktopScreen.ADMIN_PAYMENTS)
+                }
+            )
+
+        DesktopScreen.ADMIN_PAYMENTS ->
+            AdminPaymentsScreen(
+                groupes = adminGroupes,
+                plans = adminPlans,
+                rawSubscriptions = adminRawSubscriptions,
+                rawInvoices = adminRawInvoices,
+                paymentReceipts = adminPaymentReceipts,
+                isLoading = adminLoading,
+                scope = appScope,
+                client = adminClient,
+                onRefresh = { adminRepo.refreshPaymentsAsync(); adminRepo.refreshSubscriptionsAsync() }
+            )
+
+        DesktopScreen.ADMIN_GROUPE_DETAIL -> {
+            val groupe = drilldownGroupe
+            if (groupe != null) {
+                AdminGroupeDetailScreen(
+                    groupe = groupe,
+                    plans = adminPlans,
+                    rawSubscriptions = adminRawSubscriptions,
+                    rawInvoices = adminRawInvoices,
+                    scope = appScope,
+                    client = adminClient,
+                    onBack = { onScreenChange(DesktopScreen.ADMIN_GROUPES) },
+                    onRefresh = { adminRepo.refreshAllInBackgroundAsync() }
+                )
+            }
+        }
 
         DesktopScreen.ADMIN_AUDIT_LOG ->
             cg.epilote.desktop.ui.screens.AdminAuditScreen(
@@ -192,7 +266,7 @@ internal fun SuperAdminDesktopScreenContent(
                 admins = adminUsers,
                 isLoading = adminLoading,
                 client = adminClient,
-                onRefresh = { adminRepo.refreshDashboardStatsAsync() }
+                onRefresh = { adminRepo.refreshAuditAsync() }
             )
 
         DesktopScreen.ADMIN_PLATFORM_SETTINGS ->

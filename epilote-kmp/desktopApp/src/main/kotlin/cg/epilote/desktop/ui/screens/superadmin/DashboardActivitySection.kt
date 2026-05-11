@@ -147,7 +147,11 @@ private fun RecentGroupesCard(
                 EmptyListPlaceholder(Icons.Default.FolderOpen, "Aucune création récente")
             } else {
                 groupes.forEach { g ->
-                    Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFF8FAFC), modifier = Modifier.fillMaxWidth()) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFF8FAFC),
+                        modifier = Modifier.fillMaxWidth().clickable { onNavigateGroupes() }
+                    ) {
                         Row(
                             modifier = Modifier.padding(14.dp).fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -165,9 +169,12 @@ private fun RecentGroupesCard(
                                     Text(g.department ?: "", fontSize = 11.sp, color = EpiloteTextMuted)
                                 }
                             }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("${g.ecolesCount} école(s)", fontSize = 11.sp, color = Color(0xFF64748B))
-                                Text(formatDate(g.createdAt), fontSize = 10.sp, color = EpiloteTextMuted)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text("${g.ecolesCount} école(s)", fontSize = 11.sp, color = Color(0xFF64748B))
+                                    Text(formatDate(g.createdAt), fontSize = 10.sp, color = EpiloteTextMuted)
+                                }
+                                Icon(Icons.Default.ChevronRight, null, tint = Color(0xFFCBD5E1), modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -213,7 +220,11 @@ private fun RecentInvoicesCard(
                 EmptyListPlaceholder(Icons.Default.Receipt, "Aucune facture récente")
             } else {
                 invoices.forEach { inv ->
-                    Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFF8FAFC), modifier = Modifier.fillMaxWidth()) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFF8FAFC),
+                        modifier = Modifier.fillMaxWidth().clickable { onNavigateInvoices() }
+                    ) {
                         Row(
                             modifier = Modifier.padding(14.dp).fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -223,9 +234,12 @@ private fun RecentInvoicesCard(
                                 Text(inv.reference, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF0F172A))
                                 Text(formatDate(inv.dateEmission), fontSize = 11.sp, color = EpiloteTextMuted)
                             }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(formatXAF(inv.montantXAF), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
-                                InvoiceStatusBadge(inv.statut)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(formatXAF(inv.montantXAF), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                                    InvoiceStatusBadge(inv.statut)
+                                }
+                                Icon(Icons.Default.ChevronRight, null, tint = Color(0xFFCBD5E1), modifier = Modifier.size(16.dp))
                             }
                         }
                     }

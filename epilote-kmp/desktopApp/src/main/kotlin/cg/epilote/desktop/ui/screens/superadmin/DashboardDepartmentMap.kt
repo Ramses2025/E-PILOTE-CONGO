@@ -116,8 +116,11 @@ fun DepartmentMapSection(
                 // Panneau détail à droite
                 DepartmentDetailPanel(
                     selectedDepartment = selectedDepartment,
+                    provinceStats = stats.groupesByProvince,
                     totalDepts = totalDepts,
                     deptsWithGroupes = deptsWithGroupes,
+                    totalGroupes = totalGroupes,
+                    totalEcoles = totalEcoles,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -215,15 +218,26 @@ private fun DepartmentChip(
     }
 }
 
-// ── Panneau détail (droite) ─────────────────────────────────────────────────
+// ── Panneau détail (droite) ───────────────────────────────────────────────
 
 @Composable
 private fun DepartmentDetailPanel(
     selectedDepartment: DepartmentInfo?,
+    provinceStats: List<ProvinceStatsDto>,
     totalDepts: Int,
     deptsWithGroupes: Int,
+    totalGroupes: Long,
+    totalEcoles: Long,
     modifier: Modifier = Modifier
 ) {
+    val uncovered = totalDepts - deptsWithGroupes
+    val coveragePct = if (totalDepts > 0) (deptsWithGroupes * 100) / totalDepts else 0
+    val statsMap = provinceStats.associateBy { it.province }
+    val deptStat = selectedDepartment?.let { statsMap[it.nom] }
+    val deptGroupes = deptStat?.groupesCount ?: 0L
+    val deptEcoles = deptStat?.ecolesCount ?: 0L
+    val deptCovered = deptGroupes > 0
+
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(12.dp),
@@ -231,64 +245,184 @@ private fun DepartmentDetailPanel(
         elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.padding(18.dp).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (selectedDepartment == null) {
-                Spacer(Modifier.height(12.dp))
-                Icon(
-                    Icons.Default.LocationOn,
-                    contentDescription = null,
-                    tint = Color(0xFFCBD5E1),
-                    modifier = Modifier.size(32.dp)
-                )
-                Text(
-                    "Survolez un département",
-                    fontSize = 12.sp,
-                    color = Color(0xFF94A3B8),
-                    textAlign = TextAlign.Center
-                )
-            } else {
+                // ── Vue nationale par défaut
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Public, null, tint = Color(0xFF3B82F6), modifier = Modifier.size(18.dp))
+                    Text("Vue nationale", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                }
+
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                // Couverture en %
                 Surface(
                     shape = RoundedCornerShape(10.dp),
-                    color = selectedDepartment.color.copy(alpha = 0.15f)
+                    color = Color(0xFF3B82F6).copy(alpha = 0.08f),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        modifier = Modifier.padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        Text(
-                            selectedDepartment.nom,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0F172A)
+                        Text("$coveragePct%", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF3B82F6))
+                        Text("couverture nationale", fontSize = 10.sp, color = Color(0xFF64748B))
+                    }
+                }
+
+                // KPIs en grille 2×2
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        NationalKpiMini(
+                            label = "Groupes",
+                            value = "$totalGroupes",
+                            color = Color(0xFF10B981),
+                            modifier = Modifier.weight(1f)
                         )
-                        Text(
-                            "Chef-lieu : ${selectedDepartment.chefLieu}",
-                            fontSize = 11.sp,
-                            color = Color(0xFF64748B)
+                        NationalKpiMini(
+                            label = "Écoles",
+                            value = "$totalEcoles",
+                            color = Color(0xFF6366F1),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        NationalKpiMini(
+                            label = "Dépts couverts",
+                            value = "$deptsWithGroupes / $totalDepts",
+                            color = Color(0xFFF59E0B),
+                            modifier = Modifier.weight(1f)
+                        )
+                        NationalKpiMini(
+                            label = "Zones vides",
+                            value = "$uncovered",
+                            color = if (uncovered > 0) Color(0xFFEF4444) else Color(0xFF10B981),
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
-            }
 
-            HorizontalDivider(color = Color(0xFFE2E8F0))
+                HorizontalDivider(color = Color(0xFFE2E8F0))
 
-            // Statistiques globales
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Légende tiers
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("Légende", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF94A3B8))
+                    DepartmentTier.entries.forEach { tier ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(Modifier.size(8.dp).background(tier.color, CircleShape))
+                            Text(tier.label, fontSize = 10.sp, color = Color(0xFF64748B))
+                        }
+                    }
+                }
+
                 Text(
-                    "$totalDepts départements",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF3B82F6)
+                    "‹ Sélectionnez un département",
+                    fontSize = 10.sp, color = Color(0xFFCBD5E1), textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Text(
-                    "$deptsWithGroupes avec des groupes scolaires",
-                    fontSize = 11.sp,
-                    color = Color(0xFF64748B)
-                )
+            } else {
+                // ── Détail département sélectionné
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = selectedDepartment.color.copy(alpha = 0.12f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            selectedDepartment.nom,
+                            fontSize = 15.sp, fontWeight = FontWeight.ExtraBold,
+                            color = selectedDepartment.color
+                        )
+                        Text(
+                            "📍 ${selectedDepartment.chefLieu}",
+                            fontSize = 11.sp, color = Color(0xFF64748B)
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                // Stats départementales
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NationalKpiMini(
+                        label = "Groupes scolaires",
+                        value = "$deptGroupes",
+                        color = Color(0xFF10B981),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    NationalKpiMini(
+                        label = "Écoles",
+                        value = "$deptEcoles",
+                        color = Color(0xFF6366F1),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Statut couverture
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (deptCovered) Color(0xFF10B981).copy(alpha = 0.1f) else Color(0xFFEF4444).copy(alpha = 0.1f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(Modifier.size(8.dp).background(
+                            if (deptCovered) Color(0xFF10B981) else Color(0xFFEF4444), CircleShape
+                        ))
+                        Text(
+                            if (deptCovered) "Zone couverte" else "Zone non couverte",
+                            fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                            color = if (deptCovered) Color(0xFF10B981) else Color(0xFFEF4444)
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                // KPIs nationaux en bas pour référence
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Référence nationale", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF94A3B8))
+                    Text("$totalGroupes groupes · $deptsWithGroupes/$totalDepts dépts", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                    Text("Couverture $coveragePct%", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun NationalKpiMini(
+    label: String,
+    value: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = color.copy(alpha = 0.07f),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = color)
+            Text(label, fontSize = 9.sp, color = Color(0xFF64748B))
         }
     }
 }

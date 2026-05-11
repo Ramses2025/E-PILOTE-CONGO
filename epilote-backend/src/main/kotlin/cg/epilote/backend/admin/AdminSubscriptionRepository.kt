@@ -6,7 +6,9 @@ import com.couchbase.client.kotlin.Bucket
 import com.couchbase.client.kotlin.Collection
 import com.couchbase.client.kotlin.query.execute
 import kotlinx.coroutines.runBlocking
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Repository
+import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -62,12 +64,13 @@ class AdminSubscriptionRepository(
         if (planId.isBlank()) return null
 
         val subscription = mutableMap(groupDoc["subscription"])
+        if (subscription.isEmpty()) return null
         val createdAt = parseTimestamp(subscription["createdAt"] ?: groupDoc["createdAt"] ?: groupDoc["updatedAt"]).takeIf { it > 0 }
             ?: now()
         val dateDebut = parseTimestamp(subscription["dateDebut"] ?: subscription["startDate"]).takeIf { it > 0 } ?: createdAt
-        val dateFin = parseTimestamp(subscription["dateFin"] ?: subscription["endDate"]).takeIf { it > 0 } ?: (dateDebut + ONE_YEAR_MS)
+        val dateFin = parseTimestamp(subscription["dateFin"] ?: subscription["endDate"]).takeIf { it > 0 } ?: 0L
         val statut = ((subscription["statut"] ?: subscription["status"]) as? String)?.lowercase()?.ifBlank { null }
-            ?: if ((groupDoc["isActive"] as? Boolean) != false) "active" else "suspended"
+            ?: "pending"
         val renouvellementAuto = subscription["renouvellementAuto"] as? Boolean
             ?: subscription["autoRenew"] as? Boolean
             ?: false
@@ -148,19 +151,40 @@ class AdminSubscriptionRepository(
     suspend fun createSubscription(req: CreateSubscriptionRequest): SubscriptionResponse? {
         val groupDoc = runCatching { col(GROUPS_COLLECTION).get(req.groupeId).contentAs<MutableMap<String, Any?>>() }.getOrNull() ?: return null
         val plan = planRepo.getPlanById(req.planId) ?: return null
+        if (!plan.isActive) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Le plan ${plan.nom} est suspendu et ne peut pas être attribué.")
+        }
         val currentTime = now()
         val subscription = mutableMap(groupDoc["subscription"])
-        val createdAt = parseTimestamp(subscription["createdAt"]).takeIf { it > 0 } ?: currentTime
+        val existing = buildSubscriptionResponse(req.groupeId, groupDoc)
+        val hasPersistedSubscription = subscription.isNotEmpty()
+        val currentAutoRenew = subscription["renouvellementAuto"] as? Boolean
+            ?: subscription["autoRenew"] as? Boolean
+            ?: existing?.renouvellementAuto
+            ?: false
+        val createdAt = parseTimestamp(subscription["createdAt"] ?: groupDoc["createdAt"]).takeIf { it > 0 } ?: currentTime
+
+        if (hasPersistedSubscription && existing != null && existing.planId == plan.id && currentAutoRenew == req.renouvellementAuto) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Le renouvellement de l'abonnement doit être enregistré via un paiement pour prolonger l'accès."
+            )
+        }
+
+        val dateDebut = existing?.dateDebut ?: currentTime
+        val dateFin = existing?.dateFin?.takeIf { it > 0L } ?: 0L
+        val statut = existing?.statut?.ifBlank { "pending" } ?: "pending"
+        val subscriptionId = subscription["id"] as? String ?: existing?.id ?: "sub::${req.groupeId}"
 
         groupDoc["planId"] = plan.id
         groupDoc["subscription"] = mutableMapOf(
-            "id" to (subscription["id"] as? String ?: "sub::${req.groupeId}"),
-            "statut" to "active",
-            "status" to "active",
-            "dateDebut" to currentTime,
-            "startDate" to formatDateIso(currentTime),
-            "dateFin" to (currentTime + ONE_YEAR_MS),
-            "endDate" to formatDateIso(currentTime + ONE_YEAR_MS),
+            "id" to subscriptionId,
+            "statut" to statut,
+            "status" to statut,
+            "dateDebut" to dateDebut,
+            "startDate" to formatDateIso(dateDebut),
+            "dateFin" to dateFin,
+            "endDate" to if (dateFin > 0L) formatDateIso(dateFin) else null,
             "renouvellementAuto" to req.renouvellementAuto,
             "autoRenew" to req.renouvellementAuto,
             "createdAt" to createdAt,

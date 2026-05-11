@@ -1,8 +1,10 @@
 package cg.epilote.backend.admin
 
+import jakarta.validation.Valid
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -12,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
-import jakarta.validation.Valid
 
 @RestController
 @RequestMapping("/api/super-admin/communications")
@@ -21,6 +22,7 @@ class AdminCommunicationController(
 ) {
     private fun Authentication.userId() = principal as String
 
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @GetMapping("/announcements")
     fun listAnnouncements(
         @RequestParam(required = false, defaultValue = "1") page: Int,
@@ -28,6 +30,7 @@ class AdminCommunicationController(
     ): ResponseEntity<List<AnnouncementResponse>> =
         runBlocking { ResponseEntity.ok(communicationRepo.listAnnouncements(page, pageSize)) }
 
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PostMapping("/announcements")
     fun createAnnouncement(
         @Valid @RequestBody req: CreateAnnouncementRequest,
@@ -36,6 +39,7 @@ class AdminCommunicationController(
         ResponseEntity.status(HttpStatus.CREATED).body(communicationRepo.createAnnouncement(req, auth.userId()))
     }
 
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @GetMapping("/messages")
     fun listMessages(
         @RequestParam(required = false, defaultValue = "1") page: Int,
@@ -43,6 +47,7 @@ class AdminCommunicationController(
     ): ResponseEntity<List<AdminMessageResponse>> =
         runBlocking { ResponseEntity.ok(communicationRepo.listMessages(page, pageSize)) }
 
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PostMapping("/messages")
     fun createMessage(
         @Valid @RequestBody req: CreateAdminMessageRequest,
@@ -53,6 +58,7 @@ class AdminCommunicationController(
         } ?: ResponseEntity.badRequest().build()
     }
 
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PutMapping("/messages/{messageId}/status")
     fun updateMessageStatus(
         @PathVariable messageId: String,
@@ -63,6 +69,7 @@ class AdminCommunicationController(
         } ?: ResponseEntity.badRequest().build()
     }
 
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PutMapping("/messages/{messageId}/read")
     fun markMessageAsRead(
         @PathVariable messageId: String,

@@ -56,10 +56,12 @@ enum class AuditAction(val code: String, val category: AuditCategory, val label:
     SUBSCRIPTION_AUTO_SUSPENDED("subscription.auto_suspended", AuditCategory.SUBSCRIPTION, "Suspension automatique (expiration)"),
 
     INVOICE_CREATED("invoice.created", AuditCategory.INVOICE, "Émission d'une facture"),
+    INVOICE_DELETED("invoice.deleted", AuditCategory.INVOICE, "Suppression d'une facture"),
     INVOICE_STATUS_CHANGED("invoice.status_changed", AuditCategory.INVOICE, "Changement de statut de facture"),
     INVOICE_PDF_GENERATED("invoice.pdf_generated", AuditCategory.INVOICE, "Téléchargement PDF facture"),
 
     PAYMENT_RECORDED("payment.recorded", AuditCategory.PAYMENT, "Enregistrement d'un paiement présentiel"),
+    PAYMENT_DELETED("payment.deleted", AuditCategory.PAYMENT, "Suppression d'un paiement présentiel"),
 
     PLATFORM_IDENTITY_UPDATED("platform.identity_updated", AuditCategory.PLATFORM, "Mise à jour des paramètres plateforme"),
 

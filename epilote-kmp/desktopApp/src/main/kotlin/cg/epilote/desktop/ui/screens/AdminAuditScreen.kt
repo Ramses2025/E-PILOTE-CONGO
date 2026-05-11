@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cg.epilote.desktop.data.AuditEventApiDto
 import cg.epilote.desktop.data.DesktopAdminClient
+import cg.epilote.desktop.data.*
 import cg.epilote.desktop.ui.theme.EpiloteGreen
 import cg.epilote.desktop.ui.theme.EpiloteTextMuted
 
@@ -61,8 +62,9 @@ internal fun AdminAuditScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("all") }
     var selectedOutcome by remember { mutableStateOf("all") }
+    var selectedAction by remember { mutableStateOf("all") }
     var page by remember { mutableIntStateOf(1) }
-    val pageSize = 50
+    var pageSize by remember { mutableIntStateOf(50) }
 
     var pageData by remember { mutableStateOf<List<AuditEventApiDto>>(emptyList()) }
     var total by remember { mutableStateOf(0L) }
@@ -79,6 +81,7 @@ internal fun AdminAuditScreen(
                 page = page,
                 pageSize = pageSize,
                 category = selectedCategory.takeIf { it != "all" },
+                action = selectedAction.takeIf { it != "all" },
                 outcome = selectedOutcome.takeIf { it != "all" },
                 search = searchQuery.takeIf { it.isNotBlank() }
             )
@@ -94,7 +97,7 @@ internal fun AdminAuditScreen(
         pageLoading = false
     }
 
-    LaunchedEffect(page, selectedCategory, selectedOutcome, searchQuery, reloadTick) {
+    LaunchedEffect(page, selectedCategory, selectedOutcome, selectedAction, pageSize, searchQuery, reloadTick) {
         refreshAudit()
     }
 
@@ -144,6 +147,10 @@ internal fun AdminAuditScreen(
             onCategoryChange = { selectedCategory = it; page = 1 },
             selectedOutcome = selectedOutcome,
             onOutcomeChange = { selectedOutcome = it; page = 1 },
+            selectedAction = selectedAction,
+            onActionChange = { selectedAction = it; page = 1 },
+            pageSize = pageSize,
+            onPageSizeChange = { pageSize = it; page = 1 },
             totalResults = total,
             onRefresh = {
                 onRefresh()
