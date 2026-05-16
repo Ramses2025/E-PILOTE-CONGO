@@ -113,6 +113,7 @@ data class PlanApiDto(
     val type: String = "gratuit",
     val prixXAF: Long = 0,
     val currency: String = "XAF",
+    val maxEcoles: Int = 3,
     val maxStudents: Int = 0,
     val maxPersonnel: Int = 0,
     val modulesIncluded: List<String> = emptyList(),
@@ -124,6 +125,7 @@ data class CreatePlanDto(
     val nom: String,
     val type: String,
     val prixXAF: Long = 0,
+    val maxEcoles: Int = 3,
     val maxStudents: Int = 100,
     val maxPersonnel: Int = 10,
     val modulesIncluded: List<String> = emptyList(),
@@ -135,6 +137,7 @@ data class UpdatePlanDto(
     val nom: String? = null,
     val type: String? = null,
     val prixXAF: Long? = null,
+    val maxEcoles: Int? = null,
     val maxStudents: Int? = null,
     val maxPersonnel: Int? = null,
     val modulesIncluded: List<String>? = null,
@@ -346,4 +349,22 @@ data class ChangePasswordResponseDto(
     val userId: String = "",
     val mustChangePassword: Boolean = false,
     val passwordChangedAt: Long = 0
+)
+
+// \u2500\u2500 Demandes d\u2019abonnement (SUPER_ADMIN) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+@Serializable
+data class SubscriptionRequestApiDto(
+    val id: String = "",
+    val groupeId: String = "",
+    val groupeNom: String = "",
+    val requestType: String = "",
+    val typeLabel: String = "",
+    val message: String? = null,
+    val status: String = "sent",
+    val createdBy: String = "",
+    val createdAt: Long = 0,
+    val resolvedBy: String? = null,
+    val resolvedAt: Long? = null,
+    val resolutionNotes: String? = null
 )

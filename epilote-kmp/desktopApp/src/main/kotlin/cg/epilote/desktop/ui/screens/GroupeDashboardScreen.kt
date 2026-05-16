@@ -30,6 +30,9 @@ fun GroupeDashboardScreen(
     val isOffline by groupeRepo.isOffline.collectAsState()
     val categoriesWithModules by groupeRepo.categoriesWithModules.collectAsState()
     val invoiceTimeline by groupeRepo.invoiceTimeline.collectAsState()
+    val activityTimeline by groupeRepo.activityTimeline.collectAsState()
+    val notifications by groupeRepo.notifications.collectAsState()
+    val moduleKpis by groupeRepo.moduleKpis.collectAsState()
     val scope = rememberCoroutineScope()
     var showPlanDetail by remember { mutableStateOf(false) }
 
@@ -80,16 +83,12 @@ fun GroupeDashboardScreen(
         // ── 5. KPI ROW — ORGANISATION ──
         stats?.let { s ->
             GroupeOrgKpiRow(
-                stats             = s,
-                onNavigateEcoles  = onNavigateEcoles,
-                onNavigateUsers   = onNavigateUtilisateurs,
-                onNavigateProfils = onNavigateProfils
+                stats            = s,
+                onNavigateEcoles = onNavigateEcoles,
+                onNavigateUsers  = onNavigateUtilisateurs
             )
 
-            // ── 6. KPI ROW — MONÉTISATION ──
-            GroupeMonetisationRow(stats = s)
-
-            // ── 7. GRAPHIQUES — Indicateurs + Province ──
+            // ── 6. GRAPHIQUES — Indicateurs + Province ──
             GroupeChartsRow1(stats = s, categoriesWithModules = categoriesWithModules)
 
             // ── 8. GRAPHIQUES — Facturation + Modules par catégorie ──
@@ -98,16 +97,49 @@ fun GroupeDashboardScreen(
             // ── 9. ÉVOLUTION FACTURATION (LineChart) ──
             GroupeInvoiceTimelineChart(invoiceTimeline = invoiceTimeline)
 
-            // ── 10. MODULES ACTIFS ──
-            if (s.modulesActifs.isNotEmpty()) {
-                GroupeModulesSection(modules = s.modulesActifs)
+            // ── 9B. ACTIVITÉ DU GROUPE + NOTIFICATIONS ──
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Box(modifier = Modifier.weight(2f)) {
+                    GroupeActivitySection(timeline = activityTimeline)
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    GroupeNotificationsPanel(notifications = notifications)
+                }
             }
+
+            // ── 10. KPI DYNAMIQUES PAR MODULE ──
+            GroupeDynamicModuleKpis(
+                categoriesWithModules = categoriesWithModules,
+                stats = s,
+                moduleKpis = moduleKpis
+            )
 
             // ── 11. LISTE DES ÉCOLES ──
             GroupeEcolesSection(
                 ecoles           = s.ecoles,
                 onNavigateEcoles = onNavigateEcoles
             )
+        } ?: run {
+            if (!isLoading) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("Données du dashboard indisponibles", style = MaterialTheme.typography.titleMedium, color = Color(0xFF0F172A))
+                        Text("Nous n'avons pas pu charger les indicateurs du groupe pour le moment.", color = Color(0xFF64748B))
+                        Button(onClick = { scope.launch { groupeRepo.refreshAll() } }, shape = RoundedCornerShape(10.dp)) {
+                            Text("Réessayer")
+                        }
+                    }
+                }
+            }
         }
 
         // ── 12. ACTIONS RAPIDES ──
@@ -123,6 +155,7 @@ fun GroupeDashboardScreen(
         GroupePlanDetailDialog(
             stats      = stats!!,
             groupeRepo = groupeRepo,
+            isOffline  = isOffline,
             onDismiss  = { showPlanDetail = false }
         )
     }

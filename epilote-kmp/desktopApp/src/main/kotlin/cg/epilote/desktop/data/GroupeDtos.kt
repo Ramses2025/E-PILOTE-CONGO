@@ -28,7 +28,12 @@ data class GroupeDashboardStatsDto(
     val montantDuXAF: Long = 0,
     val nbFactures: Long = 0,
     val nbFacturesEnRetard: Long = 0,
-    val derniereFacture: InvoiceApiDto? = null
+    val derniereFacture: InvoiceApiDto? = null,
+    val quotaEcoles: Int = 3,
+    val quotaEleves: Int = 100,
+    val quotaUtilisateurs: Int = 50,
+    val nbEleves: Long = 0,
+    val nbClasses: Long = 0
 )
 
 // ── ADMIN_GROUPE — Entités ───────────────────────────────────────────────────
@@ -109,6 +114,56 @@ data class CategorieWithModulesDto(
     val modules: List<ModuleApiDto> = emptyList()
 )
 
+// ── ADMIN_GROUPE — KPI par module ────────────────────────────────────────────
+
+@Serializable
+data class LabelCountDto(
+    val label: String = "",
+    val count: Long = 0
+)
+
+@Serializable
+data class ScolarisationKpiDto(
+    val nbEcoles: Long = 0,
+    val nbUtilisateurs: Long = 0,
+    val ecolesByProvince: List<LabelCountDto> = emptyList(),
+    val ecolesByNiveau: List<LabelCountDto> = emptyList(),
+    val usersPerEcole: List<LabelCountDto> = emptyList()
+)
+
+@Serializable
+data class FinanceStatutItemDto(
+    val statut: String = "",
+    val count: Long = 0,
+    val totalXAF: Long = 0
+)
+
+@Serializable
+data class FinanceKpiDto(
+    val totalXAF: Long = 0,
+    val paidXAF: Long = 0,
+    val dueXAF: Long = 0,
+    val nbFactures: Long = 0,
+    val nbOverdue: Long = 0,
+    val tauxRecouvrement: Int = 0,
+    val byStatut: List<FinanceStatutItemDto> = emptyList()
+)
+
+@Serializable
+data class RhKpiDto(
+    val nbTotal: Long = 0,
+    val byRole: List<LabelCountDto> = emptyList(),
+    val usersPerEcole: List<LabelCountDto> = emptyList()
+)
+
+@Serializable
+data class ModuleKpiDto(
+    val category: String = "",
+    val scolarisation: ScolarisationKpiDto? = null,
+    val finance: FinanceKpiDto? = null,
+    val rh: RhKpiDto? = null
+)
+
 // ── ADMIN_GROUPE — Timeline factures ────────────────────────────────────────
 
 @Serializable
@@ -117,4 +172,26 @@ data class MonthlyInvoiceStatsDto(
     val totalXAF: Long = 0,
     val paidXAF: Long = 0,
     val count: Long = 0
+)
+
+// ── ADMIN_GROUPE — Timeline activité ────────────────────────────────────────
+
+@Serializable
+data class MonthlyActivityDto(
+    val month: String = "",
+    val nbUsersCreated: Long = 0,
+    val nbEcolesCreated: Long = 0
+)
+
+// ── ADMIN_GROUPE — Notifications ────────────────────────────────────────────
+
+@Serializable
+data class GroupeNotificationDto(
+    val id: String = "",
+    val type: String = "info",
+    val titre: String = "",
+    val message: String = "",
+    val date: Long = 0,
+    val category: String = "systeme",
+    val isRead: Boolean = false
 )

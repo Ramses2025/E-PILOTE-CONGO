@@ -52,6 +52,15 @@ fun NonAdminScreenContent(
             if (groupeRepo != null) GroupeProfilsScreen(groupeRepo = groupeRepo)
             else PlaceholderScreen("Profils d'accès", "Groupe non associé à ce compte")
 
+        DesktopScreen.GROUPE_ANNEES_SCOLAIRES ->
+            PlaceholderScreen("Années scolaires", "Gestion des années et périodes scolaires")
+
+        DesktopScreen.GROUPE_MODULES_PAR_ECOLE ->
+            PlaceholderScreen("Modules par école", "Attribution et suivi des modules par école")
+
+        DesktopScreen.GROUPE_PARAMETRES ->
+            PlaceholderScreen("Paramètres", "Configuration de votre groupe scolaire")
+
         DesktopScreen.DASHBOARD -> DashboardScreen(session)
         DesktopScreen.CLASSES   -> ClassesScreen(session, classesVm)
         DesktopScreen.NOTES     -> NotesScreen(session, classesVm, notesVm)

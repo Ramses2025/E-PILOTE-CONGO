@@ -23,7 +23,8 @@ class AdminMonetisationController(
     private val invoicePdfService: AdminInvoicePdfService,
     private val paymentReceiptRepo: AdminPaymentReceiptRepository,
     private val paymentClaimRepo: AdminPaymentClaimRepository,
-    private val auditHelper: AdminAuditHelper
+    private val auditHelper: AdminAuditHelper,
+    private val communicationRepo: AdminCommunicationRepository
 ) {
     private val log = LoggerFactory.getLogger(AdminMonetisationController::class.java)
     private val allowedInvoiceStatuses = setOf("draft", "sent", "paid", "overdue", "cancelled")
@@ -38,6 +39,9 @@ class AdminMonetisationController(
         return full.ifEmpty { d["email"] ?: userId() }
     }
 
+    private fun safeLimit(limit: Int?): Int = (limit ?: 200).coerceIn(1, 500)
+    private fun safeOffset(offset: Int?): Int = (offset ?: 0).coerceAtLeast(0)
+
     // ── Super Admin : Factures ───────────────────────────────────
 
     @DeleteMapping("/api/super-admin/invoices/{invoiceId}")
@@ -49,7 +53,7 @@ class AdminMonetisationController(
     ): ResponseEntity<Any> = runBlocking {
         val existing = repo.getInvoiceById(invoiceId)
             ?: return@runBlocking ResponseEntity.notFound().build()
-        val linkedReceipt = paymentReceiptRepo.listAll().firstOrNull { it.invoiceId == invoiceId }
+        val linkedReceipt = paymentReceiptRepo.findByInvoiceId(invoiceId)
         if (linkedReceipt != null) {
             throw ResponseStatusException(
                 HttpStatus.CONFLICT,
@@ -131,6 +135,44 @@ class AdminMonetisationController(
         } else ResponseEntity.notFound().build()
     }
 
+    // ── Super Admin : Demandes d’abonnement ───────────────────────────
+
+    @GetMapping("/api/super-admin/subscription-requests")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun listSubscriptionRequests(
+        @RequestParam(required = false) status: String?,
+        @RequestParam(required = false) limit: Int?,
+        @RequestParam(required = false) offset: Int?
+    ): ResponseEntity<List<SubscriptionRequestInfo>> = runBlocking {
+        ResponseEntity.ok(communicationRepo.listSubscriptionRequests(status, safeLimit(limit), safeOffset(offset)))
+    }
+
+    @PostMapping("/api/super-admin/subscription-requests/{id}/resolve")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun resolveSubscriptionRequest(
+        @PathVariable id: String,
+        @RequestParam action: String,
+        @RequestParam(required = false) notes: String?,
+        auth: Authentication,
+        httpReq: HttpServletRequest
+    ): ResponseEntity<Map<String, Any>> = runBlocking {
+        if (action !in setOf("approved", "rejected"))
+            return@runBlocking ResponseEntity.badRequest().body(mapOf("success" to false, "error" to "Action invalide"))
+        val success = communicationRepo.resolveSubscriptionRequest(id, action, auth.userId(), notes)
+        if (success) {
+            auditHelper.audit(
+                if (action == "approved") AuditAction.SUBSCRIPTION_RENEWED else AuditAction.SUBSCRIPTION_STATUS_CHANGED,
+                auth, httpReq,
+                targetType = "subscription_request", targetId = id, targetLabel = id,
+                message = "Demande d’abonnement $id → $action${if (!notes.isNullOrBlank()) " («$notes»)" else ""}",
+                metadata = mapOf("action" to action)
+            )
+            ResponseEntity.ok(mapOf("success" to true, "action" to action))
+        } else {
+            ResponseEntity.badRequest().body(mapOf("success" to false, "error" to "Demande introuvable ou déjà traitée"))
+        }
+    }
+
     // ── Super Admin : Abonnements ────────────────────────────────
 
     @PostMapping("/api/super-admin/subscriptions")
@@ -144,8 +186,11 @@ class AdminMonetisationController(
 
     @GetMapping("/api/super-admin/subscriptions")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
-    fun listSubscriptions(): ResponseEntity<List<SubscriptionResponse>> =
-        runBlocking { ResponseEntity.ok(subscriptionRepo.listSubscriptions()) }
+    fun listSubscriptions(
+        @RequestParam(required = false) limit: Int?,
+        @RequestParam(required = false) offset: Int?
+    ): ResponseEntity<List<SubscriptionResponse>> =
+        runBlocking { ResponseEntity.ok(subscriptionRepo.listSubscriptions(safeLimit(limit), safeOffset(offset))) }
 
     @PutMapping("/api/super-admin/subscriptions/{subId}/status")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
@@ -286,13 +331,20 @@ class AdminMonetisationController(
 
     @GetMapping("/api/super-admin/payment-receipts")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
-    fun listPaymentReceipts(): ResponseEntity<List<PaymentReceiptResponse>> =
-        runBlocking { ResponseEntity.ok(paymentReceiptRepo.listAll()) }
+    fun listPaymentReceipts(
+        @RequestParam(required = false) limit: Int?,
+        @RequestParam(required = false) offset: Int?
+    ): ResponseEntity<List<PaymentReceiptResponse>> =
+        runBlocking { ResponseEntity.ok(paymentReceiptRepo.listAll(safeLimit(limit), safeOffset(offset))) }
 
     @GetMapping("/api/super-admin/groupes/{groupeId}/payment-receipts")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
-    fun listGroupePaymentReceipts(@PathVariable groupeId: String): ResponseEntity<List<PaymentReceiptResponse>> =
-        runBlocking { ResponseEntity.ok(paymentReceiptRepo.listByGroupe(groupeId)) }
+    fun listGroupePaymentReceipts(
+        @PathVariable groupeId: String,
+        @RequestParam(required = false) limit: Int?,
+        @RequestParam(required = false) offset: Int?
+    ): ResponseEntity<List<PaymentReceiptResponse>> =
+        runBlocking { ResponseEntity.ok(paymentReceiptRepo.listByGroupe(groupeId, safeLimit(limit), safeOffset(offset))) }
 
     @DeleteMapping("/api/super-admin/payment-receipts/{receiptId}")
     @PreAuthorize("hasRole('SUPER_ADMIN')")

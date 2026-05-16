@@ -26,9 +26,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cg.epilote.desktop.data.CreateSubscriptionDto
-import cg.epilote.desktop.data.DesktopAdminClient
-import cg.epilote.desktop.data.SubscriptionApiDto
 import cg.epilote.desktop.data.*
 import cg.epilote.desktop.ui.theme.EpiloteGreen
 import cg.epilote.desktop.ui.theme.EpiloteTextMuted
@@ -81,6 +78,7 @@ fun AdminSubscriptionsScreen(
     var isSubmitting by remember { mutableStateOf(false) }
     var submitError by remember { mutableStateOf<String?>(null) }
     var reloadTick by remember { mutableIntStateOf(0) }
+    var pendingRequests by remember { mutableStateOf<List<SubscriptionRequestApiDto>>(emptyList()) }
 
     val planOptions = remember(plans) {
         listOf("all" to "Tous les plans") + plans.sortedBy { it.prixXAF }.map { it.id to it.nom }
@@ -108,18 +106,21 @@ fun AdminSubscriptionsScreen(
         )
     }
 
-    fun refreshSubscriptions() {
+    fun refreshAll() {
         scope.launch {
-            pageLoading = true
+            if (subscriptions.isEmpty()) pageLoading = true
             pageError = null
             val apiResult = runCatching { client.listSubscriptions() }.getOrNull().orEmpty()
             subscriptions = toUiDtos(apiResult)
             pageLoading = false
         }
+        scope.launch {
+            pendingRequests = runCatching { client.listSubscriptionRequests("sent") }.getOrNull().orEmpty()
+        }
     }
 
-    LaunchedEffect(groupes, plans, reloadTick) {
-        refreshSubscriptions()
+    LaunchedEffect(reloadTick) {
+        refreshAll()
     }
 
     val filtered = remember(subscriptions, searchQuery, filterStatus, filterPlanId, sortBy) {
@@ -158,6 +159,63 @@ fun AdminSubscriptionsScreen(
         actionFeedback?.let { feedback ->
             AdminFeedbackBanner(feedback = feedback, onDismiss = { actionFeedback = null })
         }
+
+        PendingSubscriptionRequestsSection(
+            requests    = pendingRequests,
+            scope       = scope,
+            client      = client,
+            onApproved  = { request ->
+                val target = subscriptions.firstOrNull { it.groupeId == request.groupeId }
+                when {
+                    target == null -> {
+                        val group = groupes.firstOrNull { it.id == request.groupeId }
+                        val plan = plans.firstOrNull { it.id == group?.planId } ?: plans.firstOrNull()
+                        if (group != null && plan != null) {
+                            formTarget = SubscriptionDto(
+                                id = "sub::${group.id}",
+                                groupeId = group.id,
+                                groupeNom = group.nom,
+                                groupeSlug = group.slug,
+                                planId = plan.id,
+                                planNom = plan.nom,
+                                prixXAF = plan.prixXAF,
+                                statut = "pending",
+                                dateDebut = 0L,
+                                dateFin = 0L,
+                                renouvellementAuto = false,
+                                createdAt = System.currentTimeMillis(),
+                                maxStudents = plan.maxStudents,
+                                maxPersonnel = plan.maxPersonnel,
+                                moduleCount = plan.modulesIncluded.size
+                            )
+                            submitError = null
+                            showFormDialog = true
+                            actionFeedback = AdminFeedbackMessage("Demande approuvée : finalisez l'abonnement du groupe ${group.nom}.")
+                        } else {
+                            actionFeedback = AdminFeedbackMessage("Demande approuvée, mais le groupe ou le plan est introuvable.", isError = true)
+                        }
+                    }
+                    request.requestType == "RENEWAL_REQUEST" -> {
+                        recordPaymentTarget = target
+                        actionFeedback = AdminFeedbackMessage("Demande approuvée : enregistrez le paiement pour renouveler ${target.groupeNom}.")
+                    }
+                    request.requestType == "PLAN_CHANGE_REQUEST" -> {
+                        formTarget = target
+                        submitError = null
+                        showFormDialog = true
+                        actionFeedback = AdminFeedbackMessage("Demande approuvée : choisissez le nouveau plan du groupe ${target.groupeNom}.")
+                    }
+                    else -> {
+                        selectedSubscription = target
+                        actionFeedback = AdminFeedbackMessage("Demande approuvée : vérifiez l'abonnement du groupe ${target.groupeNom}.")
+                    }
+                }
+            },
+            onResolved  = {
+                actionFeedback = AdminFeedbackMessage("Demande traitée avec succès.")
+                reloadTick++
+            }
+        )
 
         SubscriptionKpiRow(
             totalSubscriptions = subscriptions.size,

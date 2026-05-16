@@ -38,6 +38,18 @@ class GroupeAdminDataRepository(
     private val _invoiceTimeline = MutableStateFlow<List<MonthlyInvoiceStatsDto>>(emptyList())
     val invoiceTimeline: StateFlow<List<MonthlyInvoiceStatsDto>> = _invoiceTimeline.asStateFlow()
 
+    private val _moduleKpis = MutableStateFlow<Map<String, ModuleKpiDto>>(emptyMap())
+    val moduleKpis: StateFlow<Map<String, ModuleKpiDto>> = _moduleKpis.asStateFlow()
+
+    private val _activityTimeline = MutableStateFlow<List<MonthlyActivityDto>>(emptyList())
+    val activityTimeline: StateFlow<List<MonthlyActivityDto>> = _activityTimeline.asStateFlow()
+
+    private val _notifications = MutableStateFlow<List<GroupeNotificationDto>>(emptyList())
+    val notifications: StateFlow<List<GroupeNotificationDto>> = _notifications.asStateFlow()
+
+    private val _selectedEcoleId = MutableStateFlow<String?>(null)
+    val selectedEcoleId: StateFlow<String?> = _selectedEcoleId.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -45,6 +57,29 @@ class GroupeAdminDataRepository(
     val isOffline: StateFlow<Boolean> = _isOffline.asStateFlow()
 
     private var anySucceeded = false
+
+    private fun normalizeDashboardCategoryCode(code: String): String = when (code.trim().lowercase()) {
+        "scolarite", "scolarisation" -> "scolarisation"
+        "finance", "finances" -> "finance"
+        "rh", "personnel", "ressources-humaines", "ressources_humaines" -> "rh"
+        else -> code.trim().lowercase()
+    }
+
+    private fun normalizeCategories(categories: List<CategorieWithModulesDto>): List<CategorieWithModulesDto> =
+        categories
+            .map { category -> category.copy(code = normalizeDashboardCategoryCode(category.code)) }
+            .groupBy { category -> category.code }
+            .values
+            .map { grouped ->
+                val first = grouped.minByOrNull { category -> category.ordre } ?: grouped.first()
+                first.copy(
+                    modules = grouped
+                        .flatMap { category -> category.modules }
+                        .distinctBy { module -> module.code }
+                        .sortedBy { module -> module.ordre }
+                )
+            }
+            .sortedBy { category -> category.ordre }
 
     suspend fun refreshAll(showLoading: Boolean = true) {
         if (showLoading && _dashboardStats.value == null) {
@@ -56,7 +91,9 @@ class GroupeAdminDataRepository(
             val dModules    = repoScope.async { client.listModulesDisponibles(groupeId) }
             val dCategories = repoScope.async { client.listCategoriesDisponibles(groupeId) }
             val dTimeline   = repoScope.async { client.getInvoiceTimeline(groupeId) }
-            awaitAll(dStats, dProfils, dModules, dCategories, dTimeline)
+            val dActivity   = repoScope.async { client.getActivityTimeline(groupeId) }
+            val dNotifs     = repoScope.async { client.getNotifications(groupeId) }
+            awaitAll(dStats, dProfils, dModules, dCategories, dTimeline, dActivity, dNotifs)
 
             val stats = dStats.await()
             if (stats != null) {
@@ -70,8 +107,15 @@ class GroupeAdminDataRepository(
 
             dProfils.await()?.let { _profils.value = it }
             dModules.await()?.let { _modules.value = it }
-            dCategories.await()?.let { _categoriesWithModules.value = it }
+            val cats = dCategories.await()
+            if (cats != null) {
+                val normalizedCategories = normalizeCategories(cats)
+                _categoriesWithModules.value = normalizedCategories
+                fetchModuleKpis(normalizedCategories.map { it.code })
+            }
             dTimeline.await()?.let { _invoiceTimeline.value = it }
+            dActivity.await()?.let { _activityTimeline.value = it }
+            dNotifs.await()?.let { _notifications.value = it }
 
             if (stats != null || dProfils.await() != null) {
                 _isOffline.value = false
@@ -112,4 +156,23 @@ class GroupeAdminDataRepository(
 
     suspend fun createSubscriptionRequest(dto: SubscriptionRequestDto): Boolean =
         runCatching { client.createSubscriptionRequest(groupeId, dto) }.getOrDefault(false)
+
+    fun selectEcole(ecoleId: String?) {
+        _selectedEcoleId.value = ecoleId
+    }
+
+    private suspend fun fetchModuleKpis(categoryCodes: List<String>) {
+        val known = setOf("scolarisation", "finance", "rh")
+        val targets = categoryCodes
+            .map { code -> normalizeDashboardCategoryCode(code) }
+            .filter { code -> code in known }
+            .distinct()
+        if (targets.isEmpty()) return
+        val results = targets.map { code ->
+            repoScope.async { code to runCatching { client.getModuleKpi(groupeId, code) }.getOrNull() }
+        }.awaitAll()
+        val updated = _moduleKpis.value.toMutableMap()
+        results.forEach { (code, dto) -> if (dto != null) updated[code] = dto }
+        _moduleKpis.value = updated
+    }
 }

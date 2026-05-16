@@ -76,6 +76,14 @@ class AdminPaymentReceiptRepository(private val bucket: Bucket) {
         result.rows.firstNotNullOfOrNull(::rowToResponse)
     }.getOrNull()
 
+    suspend fun findByInvoiceId(invoiceId: String): PaymentReceiptResponse? = runCatching {
+        val result = scope.query(
+            "SELECT META().id AS id, * FROM `$COLLECTION` WHERE `type` = '$DOC_TYPE' AND `invoiceId` = \$invoiceId LIMIT 1",
+            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("invoiceId" to invoiceId)
+        ).execute()
+        result.rows.firstNotNullOfOrNull(::rowToResponse)
+    }.getOrNull()
+
     suspend fun record(
         groupeId: String,
         subscriptionId: String,
@@ -137,19 +145,29 @@ class AdminPaymentReceiptRepository(private val bucket: Bucket) {
         true
     }.getOrDefault(false)
 
-    suspend fun listByGroupe(groupeId: String): List<PaymentReceiptResponse> = runCatching {
+    suspend fun listByGroupe(groupeId: String, limit: Int = 200, offset: Int = 0): List<PaymentReceiptResponse> = runCatching {
         val result = scope.query(
-            "SELECT META().id AS id, * FROM `$COLLECTION` WHERE `type` = '$DOC_TYPE' AND `groupeId` = \$groupeId",
-            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("groupeId" to groupeId)
+            "SELECT META().id AS id, * FROM `$COLLECTION` WHERE `type` = '$DOC_TYPE' AND `groupeId` = \$groupeId " +
+                "ORDER BY receivedAt DESC LIMIT \$lim OFFSET \$off",
+            parameters = com.couchbase.client.kotlin.query.QueryParameters.named(
+                "groupeId" to groupeId,
+                "lim" to limit.coerceIn(1, 500),
+                "off" to offset.coerceAtLeast(0)
+            )
         ).execute()
-        result.rows.mapNotNull(::rowToResponse).sortedByDescending { it.receivedAt }
+        result.rows.mapNotNull(::rowToResponse)
     }.getOrElse { emptyList() }
 
-    suspend fun listAll(): List<PaymentReceiptResponse> = runCatching {
+    suspend fun listAll(limit: Int = 200, offset: Int = 0): List<PaymentReceiptResponse> = runCatching {
         val result = scope.query(
-            "SELECT META().id AS id, * FROM `$COLLECTION` WHERE `type` = '$DOC_TYPE'"
+            "SELECT META().id AS id, * FROM `$COLLECTION` WHERE `type` = '$DOC_TYPE' " +
+                "ORDER BY receivedAt DESC LIMIT \$lim OFFSET \$off",
+            parameters = com.couchbase.client.kotlin.query.QueryParameters.named(
+                "lim" to limit.coerceIn(1, 500),
+                "off" to offset.coerceAtLeast(0)
+            )
         ).execute()
-        result.rows.mapNotNull(::rowToResponse).sortedByDescending { it.receivedAt }
+        result.rows.mapNotNull(::rowToResponse)
     }.getOrElse { emptyList() }
 
     private fun rowToResponse(row: com.couchbase.client.kotlin.query.QueryRow): PaymentReceiptResponse? {

@@ -4,6 +4,7 @@ import com.couchbase.client.core.error.CasMismatchException
 import com.couchbase.client.core.error.DocumentNotFoundException
 import com.couchbase.client.kotlin.Bucket
 import com.couchbase.client.kotlin.Collection
+import com.couchbase.client.kotlin.query.QueryParameters
 import com.couchbase.client.kotlin.query.execute
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
@@ -88,9 +89,12 @@ class AdminSubscriptionRepository(
         )
     }
 
-    private suspend fun listGroupDocs(): List<Pair<String, MutableMap<String, Any?>>> {
+    private suspend fun listGroupDocs(limit: Int? = null, offset: Int = 0): List<Pair<String, MutableMap<String, Any?>>> {
+        val paging = if (limit != null) " ORDER BY IFMISSINGORNULL(`createdAt`, 0) DESC LIMIT \$lim OFFSET \$off" else ""
+        val params = limit?.let { QueryParameters.named("lim" to it.coerceIn(1, 500), "off" to offset.coerceAtLeast(0)) }
         val result = scope.query(
-            "SELECT META().id AS id, * FROM `school_groups` WHERE `type` IN ['school_group', 'groupe']"
+            "SELECT META().id AS id, * FROM `school_groups` WHERE `type` IN ['school_group', 'groupe']$paging",
+            parameters = params ?: QueryParameters.named()
         ).execute()
         return result.rows.mapNotNull { row ->
             val doc = row.contentAs<Map<String, Any?>>()
@@ -100,21 +104,39 @@ class AdminSubscriptionRepository(
         }
     }
 
-    suspend fun listSubscriptions(): List<SubscriptionResponse> {
-        return listGroupDocs()
+    suspend fun listSubscriptions(limit: Int = 200, offset: Int = 0): List<SubscriptionResponse> {
+        return listGroupDocs(limit = limit, offset = offset)
             .mapNotNull { (groupId, doc) -> buildSubscriptionResponse(groupId, doc) }
             .sortedByDescending { it.createdAt }
     }
 
-    suspend fun countSubscriptions(): Long = listSubscriptions().size.toLong()
-
-    suspend fun countActiveSubscriptions(): Long {
-        val currentTime = now()
-        return listSubscriptions().count { it.statut == "active" && it.dateFin >= currentTime }.toLong()
+    suspend fun countSubscriptions(): Long {
+        val result = scope.query(
+            "SELECT COUNT(1) AS cnt FROM `school_groups` WHERE `type` IN ['school_group', 'groupe'] AND subscription IS NOT MISSING"
+        ).execute()
+        return result.rows.firstOrNull()?.contentAs<Map<String, Any?>>()?.let { (it["cnt"] as? Number)?.toLong() } ?: 0L
     }
 
-    suspend fun subscriptionsByStatus(): Map<String, Long> =
-        listSubscriptions().groupingBy { it.statut }.eachCount().mapValues { it.value.toLong() }
+    suspend fun countActiveSubscriptions(): Long {
+        val result = scope.query(
+            "SELECT COUNT(1) AS cnt FROM `school_groups` WHERE `type` IN ['school_group', 'groupe'] " +
+                "AND subscription.statut = 'active' AND subscription.dateFin >= \$now",
+            parameters = QueryParameters.named("now" to now())
+        ).execute()
+        return result.rows.firstOrNull()?.contentAs<Map<String, Any?>>()?.let { (it["cnt"] as? Number)?.toLong() } ?: 0L
+    }
+
+    suspend fun subscriptionsByStatus(): Map<String, Long> {
+        val result = scope.query(
+            "SELECT LOWER(IFMISSINGORNULL(subscription.statut, subscription.status, 'pending')) AS statut, COUNT(1) AS cnt " +
+                "FROM `school_groups` WHERE `type` IN ['school_group', 'groupe'] AND subscription IS NOT MISSING " +
+                "GROUP BY LOWER(IFMISSINGORNULL(subscription.statut, subscription.status, 'pending'))"
+        ).execute()
+        return result.rows.associate { row ->
+            val data = row.contentAs<Map<String, Any?>>()
+            (data["statut"] as? String ?: "pending") to ((data["cnt"] as? Number)?.toLong() ?: 0L)
+        }
+    }
 
     private suspend fun resolveGroupIdForSubscription(subscriptionId: String): String? {
         val directGroupId = subscriptionId.substringAfter("sub::", "")

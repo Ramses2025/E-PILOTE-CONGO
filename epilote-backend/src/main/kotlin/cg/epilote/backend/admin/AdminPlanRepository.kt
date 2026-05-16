@@ -150,6 +150,7 @@ class AdminPlanRepository(private val bucket: Bucket) {
             type = raw["type"] as? String ?: planId.substringAfterLast("::", "gratuit"),
             prixXAF = (raw["price"] as? Number)?.toLong() ?: (raw["prixXAF"] as? Number)?.toLong() ?: 0L,
             currency = currency,
+            maxEcoles = (raw["maxEcoles"] as? Number)?.toInt() ?: 3,
             maxStudents = (raw["maxStudents"] as? Number)?.toInt() ?: 0,
             maxPersonnel = (raw["maxPersonnel"] as? Number)?.toInt() ?: 0,
             modulesIncluded = (raw["modulesIncluded"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
@@ -199,6 +200,7 @@ class AdminPlanRepository(private val bucket: Bucket) {
             "name" to req.nom,
             "type" to normalizedType,
             "price" to req.prixXAF,
+            "maxEcoles" to req.maxEcoles,
             "maxStudents" to req.maxStudents,
             "maxPersonnel" to req.maxPersonnel,
             "modulesIncluded" to req.modulesIncluded,
@@ -225,6 +227,7 @@ class AdminPlanRepository(private val bucket: Bucket) {
         current["name"] = req.nom ?: current["name"] as? String ?: current["nom"] as? String ?: ""
         current["type"] = req.type ?: current["type"] as? String ?: planId.substringAfterLast("::", "gratuit")
         current["price"] = req.prixXAF ?: (current["price"] as? Number)?.toLong() ?: (current["prixXAF"] as? Number)?.toLong() ?: 0L
+        current["maxEcoles"] = req.maxEcoles ?: (current["maxEcoles"] as? Number)?.toInt() ?: 3
         current["maxStudents"] = req.maxStudents ?: (current["maxStudents"] as? Number)?.toInt() ?: 0
         current["maxPersonnel"] = req.maxPersonnel ?: (current["maxPersonnel"] as? Number)?.toInt() ?: 0
         current["modulesIncluded"] = req.modulesIncluded ?: (current["modulesIncluded"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList<String>()

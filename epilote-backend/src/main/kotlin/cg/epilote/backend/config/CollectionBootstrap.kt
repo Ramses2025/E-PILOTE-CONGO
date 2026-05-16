@@ -63,8 +63,16 @@ class CollectionBootstrap(
         "CREATE INDEX IF NOT EXISTS idx_school_groups_created ON school_groups(createdAt) WHERE type IN ['school_group', 'groupe']",
         "CREATE INDEX IF NOT EXISTS idx_school_groups_plan ON school_groups(IFMISSINGORNULL(planId, '')) WHERE type IN ['school_group', 'groupe']",
         "CREATE INDEX IF NOT EXISTS idx_school_groups_active ON school_groups(IFMISSINGORNULL(isActive, is_active, true)) WHERE type IN ['school_group', 'groupe']",
+        "CREATE INDEX IF NOT EXISTS idx_school_groups_subscription_status_end ON school_groups(subscription.statut, subscription.dateFin, createdAt) WHERE type IN ['school_group', 'groupe']",
         "CREATE INDEX IF NOT EXISTS idx_schools_group_any ON schools(IFMISSINGORNULL(groupId, groupeId)) WHERE type = 'school'",
-        "CREATE INDEX IF NOT EXISTS idx_users_group_any ON users(IFMISSINGORNULL(groupId, groupeId)) WHERE type = 'user'"
+        "CREATE INDEX IF NOT EXISTS idx_schools_group_created ON schools(IFMISSINGORNULL(groupId, groupeId), createdAt) WHERE type = 'school'",
+        "CREATE INDEX IF NOT EXISTS idx_users_group_any ON users(IFMISSINGORNULL(groupId, groupeId)) WHERE type = 'user'",
+        "CREATE INDEX IF NOT EXISTS idx_users_group_school_role ON users(IFMISSINGORNULL(groupId, groupeId), schoolId, `role`) WHERE type = 'user'",
+        "CREATE INDEX IF NOT EXISTS idx_invoices_group_status_due ON invoices(groupeId, statut, dateEcheance, dateEmission) WHERE type IN ['invoice_platform', 'invoice']",
+        "CREATE INDEX IF NOT EXISTS idx_invoices_subscription ON invoices(subscriptionId, groupeId) WHERE type IN ['invoice_platform', 'invoice']",
+        "CREATE INDEX IF NOT EXISTS idx_payment_receipts_group_received ON payment_receipts(groupeId, receivedAt) WHERE type = 'payment_receipt'",
+        "CREATE INDEX IF NOT EXISTS idx_payment_receipts_subscription_received ON payment_receipts(subscriptionId, receivedAt) WHERE type = 'payment_receipt'",
+        "CREATE INDEX IF NOT EXISTS idx_messages_subscription_requests ON messages(requestType, status, createdAt) WHERE type = 'message' AND requestType IN ['RENEWAL_REQUEST', 'PLAN_CHANGE_REQUEST']"
     )
 
     @EventListener(ApplicationReadyEvent::class)

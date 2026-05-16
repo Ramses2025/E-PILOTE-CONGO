@@ -24,7 +24,6 @@ class AdminRepository(
         const val LEGACY_GROUPS_COLLECTION = "groupes"
         const val INVOICES_COLLECTION = "invoices"
         const val LEGACY_INVOICES_COLLECTION = "invoices_platform"
-        const val SUBSCRIPTIONS_COLLECTION = "subscriptions"
     }
 
     private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
@@ -775,88 +774,6 @@ class AdminRepository(
         }.getOrDefault(0L)
     }
 
-    // ── Abonnements ─────────────────────────────────────────
-
-    suspend fun createSubscription(req: CreateSubscriptionRequest, plan: PlanResponse): SubscriptionResponse {
-        val id = newId("sub")
-        val debut = now()
-        val fin = debut + (365L * 86_400_000L)
-        val doc = mapOf(
-            "type"                to "subscription",
-            "groupeId"            to req.groupeId,
-            "planId"              to req.planId,
-            "statut"              to "active",
-            "dateDebut"           to debut,
-            "dateFin"             to fin,
-            "renouvellementAuto"  to req.renouvellementAuto,
-            "createdAt"           to debut,
-            "updatedAt"           to debut
-        )
-        col("subscriptions").upsert(id, doc)
-        return SubscriptionResponse(id, req.groupeId, req.planId, "active", debut, fin, req.renouvellementAuto, debut)
-    }
-
-    suspend fun listSubscriptions(): List<SubscriptionResponse> {
-        val result = scope.query("SELECT META().id, * FROM `subscriptions` WHERE `type` = 'subscription'").execute()
-        return result.rows.map { row ->
-            val d = row.contentAs<Map<String, Any>>()
-            val inner = d["subscriptions"] as? Map<*, *> ?: d
-            SubscriptionResponse(
-                id                  = d["id"] as? String ?: "",
-                groupeId            = inner["groupeId"] as? String ?: "",
-                planId              = inner["planId"] as? String ?: "",
-                statut              = inner["statut"] as? String ?: "active",
-                dateDebut           = (inner["dateDebut"] as? Number)?.toLong() ?: 0L,
-                dateFin             = (inner["dateFin"] as? Number)?.toLong() ?: 0L,
-                renouvellementAuto  = inner["renouvellementAuto"] as? Boolean ?: false,
-                createdAt           = (inner["createdAt"] as? Number)?.toLong() ?: 0L
-            )
-        }
-    }
-
-    suspend fun getSubscriptionById(id: String): SubscriptionResponse? = runCatching {
-        val doc = col("subscriptions").get(id).contentAs<Map<String, Any>>()
-        SubscriptionResponse(
-            id                  = id,
-            groupeId            = doc["groupeId"] as? String ?: "",
-            planId              = doc["planId"] as? String ?: "",
-            statut              = doc["statut"] as? String ?: "active",
-            dateDebut           = (doc["dateDebut"] as? Number)?.toLong() ?: 0L,
-            dateFin             = (doc["dateFin"] as? Number)?.toLong() ?: 0L,
-            renouvellementAuto  = doc["renouvellementAuto"] as? Boolean ?: false,
-            createdAt           = (doc["createdAt"] as? Number)?.toLong() ?: 0L
-        )
-    }.getOrNull()
-
-    suspend fun getActiveSubscriptionByGroupe(groupeId: String): SubscriptionResponse? {
-        val result = scope.query(
-            "SELECT META().id, * FROM `subscriptions` WHERE `type` = 'subscription' AND `groupeId` = \$gid AND `statut` = 'active' LIMIT 1",
-            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("gid" to groupeId)
-        ).execute()
-        return result.rows.firstOrNull()?.let { row ->
-            val d = row.contentAs<Map<String, Any>>()
-            val inner = d["subscriptions"] as? Map<*, *> ?: d
-            SubscriptionResponse(
-                id                  = d["id"] as? String ?: "",
-                groupeId            = inner["groupeId"] as? String ?: "",
-                planId              = inner["planId"] as? String ?: "",
-                statut              = inner["statut"] as? String ?: "active",
-                dateDebut           = (inner["dateDebut"] as? Number)?.toLong() ?: 0L,
-                dateFin             = (inner["dateFin"] as? Number)?.toLong() ?: 0L,
-                renouvellementAuto  = inner["renouvellementAuto"] as? Boolean ?: false,
-                createdAt           = (inner["createdAt"] as? Number)?.toLong() ?: 0L
-            )
-        }
-    }
-
-    suspend fun updateSubscriptionStatus(id: String, statut: String): SubscriptionResponse? {
-        val existing = runCatching { col("subscriptions").get(id).contentAs<MutableMap<String, Any?>>() }.getOrNull() ?: return null
-        existing["statut"] = statut
-        existing["updatedAt"] = now()
-        col("subscriptions").upsert(id, existing)
-        return getSubscriptionById(id)
-    }
-
     // ── Factures Plateforme ───────────────────────────────────
 
     private fun mapToInvoiceResponse(id: String, inner: Map<*, *>): InvoiceResponse {
@@ -1051,24 +968,6 @@ class AdminRepository(
         }
     }
 
-    suspend fun countSubscriptions(): Long {
-        return runCatching {
-            val result = scope.query("SELECT COUNT(*) AS cnt FROM `${SUBSCRIPTIONS_COLLECTION}` WHERE `type` = 'subscription'").execute()
-            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
-                (it["cnt"] as? Number)?.toLong() ?: 0L
-            } ?: 0L
-        }.getOrDefault(0L)
-    }
-
-    suspend fun countActiveSubscriptions(): Long {
-        return runCatching {
-            val result = scope.query("SELECT COUNT(*) AS cnt FROM `${SUBSCRIPTIONS_COLLECTION}` WHERE `type` = 'subscription' AND `statut` = 'active'").execute()
-            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
-                (it["cnt"] as? Number)?.toLong() ?: 0L
-            } ?: 0L
-        }.getOrDefault(0L)
-    }
-
     // ── Dashboard Analytics ────────────────────────────────────
 
     suspend fun groupesByProvince(): List<ProvinceStats> {
@@ -1112,18 +1011,6 @@ class AdminRepository(
                 groupesCount = groupesCount
             )
         }.sortedByDescending { it.groupesCount }
-    }
-
-    suspend fun subscriptionsByStatus(): Map<String, Long> {
-        return runCatching {
-            val result = scope.query(
-                "SELECT `statut`, COUNT(*) AS cnt FROM `${SUBSCRIPTIONS_COLLECTION}` WHERE `type` = 'subscription' GROUP BY `statut`"
-            ).execute()
-            result.rows.associate { row ->
-                val d = row.contentAs<Map<String, Any>>()
-                (d["statut"] as? String ?: "unknown") to ((d["cnt"] as? Number)?.toLong() ?: 0L)
-            }
-        }.getOrDefault(emptyMap())
     }
 
     suspend fun countInvoices(): Long {

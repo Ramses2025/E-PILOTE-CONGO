@@ -304,7 +304,8 @@ fun EpiloteDesktopApp() {
                     onScreenSelected   = { currentScreen = it },
                     isExpanded         = sidebarExpanded,
                     onToggleExpanded   = { sidebarExpanded = !sidebarExpanded },
-                    dynamicCategories  = groupeDynamicCategories
+                    dynamicCategories  = groupeDynamicCategories,
+                    onLogout           = logoutAction
                 )
 
                 Column(modifier = Modifier.weight(1f).fillMaxHeight()) {

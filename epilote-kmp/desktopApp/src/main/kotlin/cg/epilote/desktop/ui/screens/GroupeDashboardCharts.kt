@@ -22,7 +22,7 @@ import cg.epilote.desktop.data.*
 import cg.epilote.desktop.ui.components.*
 import cg.epilote.desktop.ui.screens.superadmin.formatXAF
 
-// ── Row 1: Écoles par province + Indicateurs ─────────────────────────────────
+// ── Row 1: Écoles par département + Indicateurs ──────────────────────────────────
 
 @Composable
 fun GroupeChartsRow1(
@@ -33,7 +33,7 @@ fun GroupeChartsRow1(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Gauche: Écoles par province (HorizontalBarChart)
+        // Gauche: Écoles par département (HorizontalBarChart)
         Card(
             modifier = Modifier.weight(1f),
             shape = RoundedCornerShape(16.dp),
@@ -49,12 +49,12 @@ fun GroupeChartsRow1(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(Icons.Default.LocationOn, null, tint = Color(0xFF3B82F6), modifier = Modifier.size(18.dp))
-                    Text("Écoles par province", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF1E293B))
+                    Text("Écoles par département", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF1E293B))
                 }
-                val byProvince = stats.ecoles.groupBy { it.province.ifBlank { "Non définie" } }
-                val entries = byProvince.entries
+                val byDept = stats.ecoles.groupBy { it.province.ifBlank { "Non renseigné" } }
+                val entries = byDept.entries
                     .sortedByDescending { it.value.size }
-                    .map { (prov, list) -> ChartEntry(prov, list.size.toFloat(), Color(0xFF3B82F6)) }
+                    .map { (dept, list) -> ChartEntry(dept, list.size.toFloat(), Color(0xFF3B82F6)) }
                 if (entries.isEmpty()) {
                     Box(Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
                         Text("Aucune école", fontSize = 12.sp, color = Color(0xFF94A3B8))
@@ -105,20 +105,25 @@ fun GroupeChartsRow1(
                     val moduleProgress = (modulesUsed.toFloat() / totalModulesInPlan).coerceIn(0f, 1f)
                     ProgressRing(
                         progress = moduleProgress,
-                        label = "Modules",
+                        label = "Modules plan",
                         value = "$modulesUsed/$totalModulesInPlan",
                         color = Color(0xFF7C3AED)
                     )
 
-                    // Paiement
-                    val payProgress = if (stats.facturationTotaleXAF > 0)
-                        (stats.montantPayeXAF.toFloat() / stats.facturationTotaleXAF.toFloat()).coerceIn(0f, 1f)
+                    // Taux d'occupation (écoles / quota)
+                    val occProgress = if (stats.quotaEcoles > 0)
+                        (stats.nbEcoles.toFloat() / stats.quotaEcoles.toFloat()).coerceIn(0f, 1f)
                     else 0f
+                    val occColor = when {
+                        occProgress >= 0.9f -> Color(0xFFEF4444)
+                        occProgress >= 0.7f -> Color(0xFFF59E0B)
+                        else -> Color(0xFF0EA5E9)
+                    }
                     ProgressRing(
-                        progress = payProgress,
-                        label = "Paiement",
-                        value = "${(payProgress * 100).toInt()}%",
-                        color = Color(0xFF0EA5E9)
+                        progress = occProgress,
+                        label = "Occupation",
+                        value = "${stats.nbEcoles}/${stats.quotaEcoles}",
+                        color = occColor
                     )
                 }
             }
@@ -137,7 +142,7 @@ fun GroupeChartsRow2(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Gauche: Facturation (BarChart Facturé vs Payé)
+        // Gauche: Revenus scolaires — bientôt disponible
         Card(
             modifier = Modifier.weight(1f),
             shape = RoundedCornerShape(16.dp),
@@ -152,15 +157,55 @@ fun GroupeChartsRow2(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.Receipt, null, tint = Color(0xFF0EA5E9), modifier = Modifier.size(18.dp))
-                    Text("Facturation abonnement", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF1E293B))
+                    Icon(
+                        Icons.AutoMirrored.Filled.TrendingUp,
+                        null,
+                        tint = Color(0xFF059669),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        "Revenus scolaires",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF1E293B)
+                    )
                 }
-                val barEntries = listOf(
-                    ChartEntry("Facturé", stats.facturationTotaleXAF.toFloat(), Color(0xFF0EA5E9)),
-                    ChartEntry("Payé", stats.montantPayeXAF.toFloat(), Color(0xFF059669)),
-                    ChartEntry("Dû", stats.montantDuXAF.toFloat(), Color(0xFFEF4444))
-                )
-                BarChart(entries = barEntries, modifier = Modifier.fillMaxWidth().height(140.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .background(Color(0xFFF8FAFC), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF059669).copy(alpha = 0.1f)
+                        ) {
+                            Text(
+                                "BIENTÔT DISPONIBLE",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF059669)
+                            )
+                        }
+                        Text(
+                            "Frais scolaires perçus",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF1E293B)
+                        )
+                        Text(
+                            "Disponible avec le module Inscription",
+                            fontSize = 11.sp,
+                            color = Color(0xFF94A3B8)
+                        )
+                    }
+                }
             }
         }
 
@@ -201,10 +246,10 @@ fun GroupeChartsRow2(
     }
 }
 
-// ── Row 3: Évolution facturation (LineChart) ─────────────────────────────────
+// ── Row 3: Évolution Revenus & Dépenses ─────────────────────────────────────────
 
 @Composable
-fun GroupeInvoiceTimelineChart(invoiceTimeline: List<MonthlyInvoiceStatsDto>) {
+fun GroupeInvoiceTimelineChart(@Suppress("UNUSED_PARAMETER") invoiceTimeline: List<MonthlyInvoiceStatsDto>) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -217,39 +262,79 @@ fun GroupeInvoiceTimelineChart(invoiceTimeline: List<MonthlyInvoiceStatsDto>) {
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.AutoMirrored.Filled.TrendingUp, null, tint = Color(0xFF059669), modifier = Modifier.size(18.dp))
-                Text("Évolution facturation", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF1E293B))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.TrendingUp,
+                        null,
+                        tint = Color(0xFF059669),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        "Évolution Revenus & Dépenses",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF1E293B)
+                    )
+                }
+                Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFF7C3AED).copy(alpha = 0.1f)) {
+                    Text(
+                        "BIENTÔT DISPONIBLE",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF7C3AED)
+                    )
+                }
             }
 
-            if (invoiceTimeline.size < 2) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(120.dp),
-                    contentAlignment = Alignment.Center
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .background(Color(0xFFF8FAFC), RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(24.dp)
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.AutoMirrored.Filled.ShowChart, null, tint = Color(0xFFCBD5E1), modifier = Modifier.size(32.dp))
-                        Spacer(Modifier.height(8.dp))
-                        Text("Pas assez de données pour afficher le graphe", fontSize = 12.sp, color = Color(0xFF94A3B8))
-                        Text("(minimum 2 mois)", fontSize = 11.sp, color = Color(0xFFCBD5E1))
+                    Icon(
+                        Icons.AutoMirrored.Filled.ShowChart,
+                        null,
+                        tint = Color(0xFFCBD5E1),
+                        modifier = Modifier.size(40.dp)
+                    )
+                    Text(
+                        "Revenus et dépenses de votre groupe scolaire",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF475569)
+                    )
+                    Text(
+                        "Ce graphique affichera l'évolution mensuelle des frais scolaires perçus et des dépenses enregistrées.\n"
+                        + "Activé automatiquement dès l'activation des modules Inscription et Finance.",
+                        fontSize = 11.sp,
+                        color = Color(0xFF94A3B8),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(modifier = Modifier.size(10.dp).background(Color(0xFF059669), RoundedCornerShape(2.dp)))
+                            Text("Revenus", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(modifier = Modifier.size(10.dp).background(Color(0xFFEF4444), RoundedCornerShape(2.dp)))
+                            Text("Dépenses", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                        }
                     }
                 }
-            } else {
-                val totalSeries = LineChartSeries(
-                    entries = invoiceTimeline.map { ChartEntry(it.month.takeLast(5), it.totalXAF.toFloat(), Color(0xFF0EA5E9)) },
-                    lineColor = Color(0xFF0EA5E9),
-                    label = "Facturé"
-                )
-                val paidSeries = LineChartSeries(
-                    entries = invoiceTimeline.map { ChartEntry(it.month.takeLast(5), it.paidXAF.toFloat(), Color(0xFF059669)) },
-                    lineColor = Color(0xFF059669),
-                    label = "Payé"
-                )
-                LineChart(
-                    series = listOf(totalSeries, paidSeries),
-                    modifier = Modifier.fillMaxWidth().height(180.dp)
-                )
             }
         }
     }

@@ -28,11 +28,24 @@ fun GroupeUtilisateursScreen(
     val profils by groupeRepo.profils.collectAsState()
     val usersByEcole by groupeRepo.usersByEcole.collectAsState()
     val isOffline by groupeRepo.isOffline.collectAsState()
+    val selectedEcoleId by groupeRepo.selectedEcoleId.collectAsState()
     val scope = rememberCoroutineScope()
 
-    var selectedEcoleId by remember { mutableStateOf<String?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf<AdminFeedbackMessage?>(null) }
+
+    fun refreshSelectedEcoleUsers() {
+        val schoolId = selectedEcoleId ?: return
+        scope.launch {
+            isRefreshing = true
+            try {
+                groupeRepo.refreshUsersForEcole(schoolId)
+            } finally {
+                isRefreshing = false
+            }
+        }
+    }
 
     LaunchedEffect(selectedEcoleId) {
         selectedEcoleId?.let { id ->
@@ -40,7 +53,11 @@ fun GroupeUtilisateursScreen(
         }
     }
     LaunchedEffect(ecoles) {
-        if (selectedEcoleId == null && ecoles.isNotEmpty()) selectedEcoleId = ecoles.first().id
+        when {
+            ecoles.isEmpty() && selectedEcoleId != null -> groupeRepo.selectEcole(null)
+            selectedEcoleId == null && ecoles.isNotEmpty() -> groupeRepo.selectEcole(ecoles.first().id)
+            selectedEcoleId != null && ecoles.none { it.id == selectedEcoleId } -> groupeRepo.selectEcole(ecoles.firstOrNull()?.id)
+        }
     }
 
     val currentUsers = usersByEcole[selectedEcoleId] ?: emptyList()
@@ -61,6 +78,17 @@ fun GroupeUtilisateursScreen(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (isOffline) OfflineBadge()
+                IconButton(
+                    onClick = { refreshSelectedEcoleUsers() },
+                    enabled = !isOffline && selectedEcoleId != null && !isRefreshing,
+                    modifier = Modifier.cursorHand()
+                ) {
+                    if (isRefreshing) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.Refresh, "Actualiser", tint = Color(0xFF64748B))
+                    }
+                }
                 Button(
                     onClick = { showCreateDialog = true },
                     enabled = !isOffline && selectedEcoleId != null,
@@ -89,7 +117,10 @@ fun GroupeUtilisateursScreen(
                             val isSelected = ecole.id == selectedEcoleId
                             FilterChip(
                                 selected = isSelected,
-                                onClick = { selectedEcoleId = ecole.id; scope.launch { groupeRepo.refreshUsersForEcole(ecole.id) } },
+                                onClick = {
+                                    groupeRepo.selectEcole(ecole.id)
+                                    refreshSelectedEcoleUsers()
+                                },
                                 label = { Text(ecole.nom, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 leadingIcon = if (isSelected) ({ Icon(Icons.Default.School, null, modifier = Modifier.size(14.dp)) }) else null,
                                 modifier = Modifier.cursorHand()
@@ -124,7 +155,7 @@ fun GroupeUtilisateursScreen(
                     ) {
                         Text("${selectedEcole.nom} — ${currentUsers.size} utilisateur${if (currentUsers.size > 1) "s" else ""}",
                             fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF1E293B))
-                        if (usersByEcole[selectedEcoleId] == null)
+                        if (usersByEcole[selectedEcoleId] == null || isRefreshing)
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     }
                     HorizontalDivider(color = Color(0xFFE2E8F0))

@@ -64,4 +64,49 @@ class AdminGroupeAnalyticsRepository(
 
         return primary.mergeWith(legacy).values.sortedBy { it.month }
     }
+
+    suspend fun activityTimelineByGroupe(groupeId: String): List<MonthlyActivityStats> {
+        val params = com.couchbase.client.kotlin.query.QueryParameters.named("gid" to groupeId)
+
+        val usersTimeline = runCatching {
+            val stmt = "SELECT SUBSTR(MILLIS_TO_STR(IFMISSINGORNULL(`createdAt`, 0)), 0, 7) AS month, " +
+                "COUNT(*) AS cnt " +
+                "FROM `users` " +
+                "WHERE `type` = 'user' AND `groupeId` = \$gid " +
+                "GROUP BY SUBSTR(MILLIS_TO_STR(IFMISSINGORNULL(`createdAt`, 0)), 0, 7) " +
+                "ORDER BY month"
+            val result = scope.query(stmt, parameters = params).execute()
+            result.rows.mapNotNull { row ->
+                val data = row.contentAs<Map<String, Any?>>()
+                val month = data["month"] as? String ?: return@mapNotNull null
+                if (month.isBlank()) return@mapNotNull null
+                month to ((data["cnt"] as? Number)?.toLong() ?: 0L)
+            }.toMap()
+        }.getOrDefault(emptyMap())
+
+        val ecolesTimeline = runCatching {
+            val stmt = "SELECT SUBSTR(MILLIS_TO_STR(IFMISSINGORNULL(`createdAt`, 0)), 0, 7) AS month, " +
+                "COUNT(*) AS cnt " +
+                "FROM `ecoles` " +
+                "WHERE `type` = 'ecole' AND `groupeId` = \$gid " +
+                "GROUP BY SUBSTR(MILLIS_TO_STR(IFMISSINGORNULL(`createdAt`, 0)), 0, 7) " +
+                "ORDER BY month"
+            val result = scope.query(stmt, parameters = params).execute()
+            result.rows.mapNotNull { row ->
+                val data = row.contentAs<Map<String, Any?>>()
+                val month = data["month"] as? String ?: return@mapNotNull null
+                if (month.isBlank()) return@mapNotNull null
+                month to ((data["cnt"] as? Number)?.toLong() ?: 0L)
+            }.toMap()
+        }.getOrDefault(emptyMap())
+
+        val allMonths = (usersTimeline.keys + ecolesTimeline.keys).sorted()
+        return allMonths.map { month ->
+            MonthlyActivityStats(
+                month = month,
+                nbUsersCreated = usersTimeline[month] ?: 0L,
+                nbEcolesCreated = ecolesTimeline[month] ?: 0L
+            )
+        }
+    }
 }

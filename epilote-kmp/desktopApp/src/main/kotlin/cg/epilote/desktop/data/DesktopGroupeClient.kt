@@ -168,4 +168,19 @@ class DesktopGroupeClient(
 
     suspend fun getInvoiceTimeline(groupeId: String): List<MonthlyInvoiceStatsDto>? =
         get("/api/groupes/$groupeId/invoice-timeline")
+
+    // ── KPI par catégorie de module ───────────────────────────────
+
+    suspend fun getModuleKpi(groupeId: String, category: String): ModuleKpiDto? =
+        get("/api/groupes/$groupeId/kpi/$category")
+
+    // ── Timeline activité (graphe utilisateurs/mois) ─────────────
+
+    suspend fun getActivityTimeline(groupeId: String): List<MonthlyActivityDto>? =
+        get("/api/groupes/$groupeId/activity-timeline")
+
+    // ── Notifications groupe ─────────────────────────────────────
+
+    suspend fun getNotifications(groupeId: String): List<GroupeNotificationDto>? =
+        get("/api/groupes/$groupeId/notifications")
 }

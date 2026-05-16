@@ -18,8 +18,8 @@ suspend fun DesktopAdminClient.createPlan(dto: CreatePlanDto): PlanApiDto? =
 suspend fun DesktopAdminClient.updatePlan(planId: String, dto: UpdatePlanDto): PlanApiDto? =
     put("/api/super-admin/plans/$planId", dto)
 
-suspend fun DesktopAdminClient.listSubscriptions(): List<SubscriptionApiDto>? =
-    get("/api/super-admin/subscriptions")
+suspend fun DesktopAdminClient.listSubscriptions(limit: Int = 500, offset: Int = 0): List<SubscriptionApiDto>? =
+    get("/api/super-admin/subscriptions?limit=$limit&offset=$offset")
 
 suspend fun DesktopAdminClient.createSubscription(dto: CreateSubscriptionDto): SubscriptionApiDto? =
     post("/api/super-admin/subscriptions", dto)
@@ -155,11 +155,11 @@ suspend fun DesktopAdminClient.recordPayment(dto: RecordPaymentDto): PaymentRece
 suspend fun DesktopAdminClient.recordPaymentResult(dto: RecordPaymentDto): DesktopAdminClient.ApiCallResult<PaymentReceiptDto> =
     postResult("/api/super-admin/payment-receipts", dto)
 
-suspend fun DesktopAdminClient.listPaymentReceipts(): List<PaymentReceiptDto>? =
-    get("/api/super-admin/payment-receipts")
+suspend fun DesktopAdminClient.listPaymentReceipts(limit: Int = 500, offset: Int = 0): List<PaymentReceiptDto>? =
+    get("/api/super-admin/payment-receipts?limit=$limit&offset=$offset")
 
-suspend fun DesktopAdminClient.listPaymentReceiptsByGroupe(groupeId: String): List<PaymentReceiptDto>? =
-    get("/api/super-admin/groupes/$groupeId/payment-receipts")
+suspend fun DesktopAdminClient.listPaymentReceiptsByGroupe(groupeId: String, limit: Int = 200, offset: Int = 0): List<PaymentReceiptDto>? =
+    get("/api/super-admin/groupes/$groupeId/payment-receipts?limit=$limit&offset=$offset")
 
 suspend fun DesktopAdminClient.deletePaymentReceipt(receiptId: String): DesktopAdminClient.ApiCallResult<Unit> =
     deleteResult("/api/super-admin/payment-receipts/$receiptId")
@@ -200,3 +200,17 @@ suspend fun DesktopAdminClient.listAuditActions(): List<AuditActionDto>? =
 
 suspend fun DesktopAdminClient.changePassword(dto: ChangePasswordRequestDto): ChangePasswordResponseDto? =
     post("/api/auth/change-password", dto)
+
+suspend fun DesktopAdminClient.listSubscriptionRequests(status: String? = null, limit: Int = 200, offset: Int = 0): List<SubscriptionRequestApiDto>? {
+    val prefix = if (status != null) "?status=$status&" else "?"
+    return get("/api/super-admin/subscription-requests${prefix}limit=$limit&offset=$offset")
+}
+
+suspend fun DesktopAdminClient.resolveSubscriptionRequest(id: String, action: String, notes: String? = null): Boolean =
+    executeStatus("POST", "/api/super-admin/subscription-requests/$id/resolve") {
+        httpClient.post("$baseUrl/api/super-admin/subscription-requests/$id/resolve") {
+            parameter("action", action)
+            if (!notes.isNullOrBlank()) parameter("notes", notes)
+            tokenProvider()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+        }
+    }

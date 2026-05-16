@@ -285,6 +285,7 @@ data class CreatePlanRequest(
     @field:NotBlank val nom: String,
     @field:NotBlank val type: String,
     val prixXAF: Long = 0,
+    val maxEcoles: Int = 3,
     val maxStudents: Int = 100,
     val maxPersonnel: Int = 10,
     val modulesIncluded: List<String> = emptyList(),
@@ -295,6 +296,7 @@ data class UpdatePlanRequest(
     val nom: String? = null,
     val type: String? = null,
     val prixXAF: Long? = null,
+    val maxEcoles: Int? = null,
     val maxStudents: Int? = null,
     val maxPersonnel: Int? = null,
     val modulesIncluded: List<String>? = null,
@@ -307,6 +309,7 @@ data class PlanResponse(
     val type: String,
     val prixXAF: Long,
     val currency: String = "XAF",
+    val maxEcoles: Int = 3,
     val maxStudents: Int,
     val maxPersonnel: Int,
     val modulesIncluded: List<String>,
@@ -338,6 +341,22 @@ data class UpdateGroupeRequest(
     val website: String? = null,
     val planId: String? = null,
     val isActive: Boolean? = null
+)
+
+// ── Demandes d'abonnement (ADMIN_GROUPE → SUPER_ADMIN) ───────────
+data class SubscriptionRequestInfo(
+    val id: String,
+    val groupeId: String,
+    val groupeNom: String,
+    val requestType: String,
+    val typeLabel: String,
+    val message: String?,
+    val status: String,
+    val createdBy: String,
+    val createdAt: Long,
+    val resolvedBy: String? = null,
+    val resolvedAt: Long? = null,
+    val resolutionNotes: String? = null
 )
 
 // ── Abonnement ───────────────────────────────────────────────────

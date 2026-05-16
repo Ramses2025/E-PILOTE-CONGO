@@ -19,7 +19,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cg.epilote.desktop.data.*
 import cg.epilote.desktop.ui.theme.cursorHand
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -35,10 +34,6 @@ fun GroupeEcolesScreen(
 
     LaunchedEffect(reloadTick) {
         if (reloadTick > 0) groupeRepo.refreshAll(showLoading = false)
-        while (true) {
-            delay(120_000)
-            groupeRepo.refreshAll(showLoading = false)
-        }
     }
 
     Column(
@@ -121,8 +116,8 @@ fun GroupeEcolesScreen(
                     ) {
                         Text("#", modifier = Modifier.width(30.dp), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF94A3B8))
                         Text("Nom", modifier = Modifier.weight(2f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
-                        Text("Province", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
-                        Text("Territoire", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
+                        Text("Département", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
+                        Text("District", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
                         Text("Niveaux", modifier = Modifier.weight(1.5f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
                         Text("Créée le", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
                     }
@@ -181,15 +176,21 @@ fun GroupeEcolesScreen(
 
 // ── Dialogue création école ───────────────────────────────────────────────────
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun CreateEcoleDialog(
     onDismiss: () -> Unit,
     onConfirm: (CreateEcoleDto) -> Unit
 ) {
+    val departements = listOf(
+        "Brazzaville", "Pointe-Noire", "Bouenza", "Cuvette",
+        "Cuvette-Ouest", "Kouilou", "Lékoumou", "Likouala",
+        "Niari", "Plateaux", "Pool", "Sangha"
+    )
     var nom by remember { mutableStateOf("") }
-    var province by remember { mutableStateOf("") }
-    var territoire by remember { mutableStateOf("") }
+    var departement by remember { mutableStateOf("") }
+    var deptExpanded by remember { mutableStateOf(false) }
+    var district by remember { mutableStateOf("") }
     val niveauxOptions = listOf("maternelle", "primaire", "secondaire", "lycée", "technique")
     val selectedNiveaux = remember { mutableStateListOf<String>("primaire") }
     var nomError by remember { mutableStateOf(false) }
@@ -198,7 +199,7 @@ private fun CreateEcoleDialog(
         title = "Nouvelle école",
         subtitle = "Enregistrer une nouvelle école dans votre groupe",
         onDismiss = onDismiss,
-        size = DpSize(540.dp, 420.dp),
+        size = DpSize(560.dp, 440.dp),
         content = {
             OutlinedTextField(
                 value = nom,
@@ -210,18 +211,37 @@ private fun CreateEcoleDialog(
                 singleLine = true
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ExposedDropdownMenuBox(
+                    expanded = deptExpanded,
+                    onExpandedChange = { deptExpanded = it },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    OutlinedTextField(
+                        value = departement,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Département") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = deptExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        singleLine = true
+                    )
+                    ExposedDropdownMenu(
+                        expanded = deptExpanded,
+                        onDismissRequest = { deptExpanded = false }
+                    ) {
+                        departements.forEach { dept ->
+                            DropdownMenuItem(
+                                text = { Text(dept, fontSize = 13.sp) },
+                                onClick = { departement = dept; deptExpanded = false }
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(
-                    value = province,
-                    onValueChange = { province = it },
+                    value = district,
+                    onValueChange = { district = it },
                     modifier = Modifier.weight(1f),
-                    label = { Text("Province") },
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = territoire,
-                    onValueChange = { territoire = it },
-                    modifier = Modifier.weight(1f),
-                    label = { Text("Territoire / Commune") },
+                    label = { Text("District / Commune") },
                     singleLine = true
                 )
             }
@@ -250,8 +270,8 @@ private fun CreateEcoleDialog(
                     onConfirm(
                         CreateEcoleDto(
                             nom = nom.trim(),
-                            province = province.trim(),
-                            territoire = territoire.trim(),
+                            province = departement,
+                            territoire = district.trim(),
                             niveaux = selectedNiveaux.toList().ifEmpty { listOf("primaire") }
                         )
                     )

@@ -161,179 +161,36 @@ fun AdminPlatformSettingsScreen(
                     Text("Chargement des paramètres…", fontSize = 13.sp, color = Color(0xFF667085))
                 }
             } else {
-                SectionCard("Identité juridique") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = raisonSociale,
-                            onValueChange = { raisonSociale = it },
-                            label = { Text("Raison sociale") },
-                            placeholder = { Text("Ex. E-PILOTE CONGO SARL") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = rccm,
-                            onValueChange = { rccm = it },
-                            label = { Text("RCCM") },
-                            placeholder = { Text("Ex. CG-BZV-01-2024-B12-00123") },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = niu,
-                            onValueChange = { niu = it },
-                            label = { Text("NIU / Identifiant fiscal") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = competentCourt,
-                            onValueChange = { competentCourt = it },
-                            label = { Text("Tribunal compétent") },
-                            placeholder = { Text("Ex. Tribunal de Commerce de Brazzaville") },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                SectionCard("Siège & contacts") {
-                    OutlinedTextField(
-                        value = siege,
-                        onValueChange = { siege = it },
-                        label = { Text("Adresse du siège (rue, quartier, BP)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = city,
-                            onValueChange = { city = it },
-                            label = { Text("Ville") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = country,
-                            onValueChange = { country = it },
-                            label = { Text("Pays") },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = phone,
-                            onValueChange = { phone = it },
-                            label = { Text("Téléphone") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = email,
-                            onValueChange = { email = it },
-                            label = { Text("Email") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = website,
-                            onValueChange = { website = it },
-                            label = { Text("Site web") },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                SectionCard("Logo (données base64, PNG/JPG)") {
-                    OutlinedTextField(
-                        value = logoBase64,
-                        onValueChange = { logoBase64 = it.take(3_000_000) },
-                        label = { Text("Contenu base64 — data:image/png;base64,…") },
-                        modifier = Modifier.fillMaxWidth().height(110.dp),
-                        maxLines = 4
-                    )
-                    Text(
-                        "Astuce : convertis ton logo en base64 (copier-coller). Taille max ~3 Mo.",
-                        fontSize = 11.sp,
-                        color = Color(0xFF667085)
-                    )
-                }
-
-                SectionCard("TVA & conditions de paiement") {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Plateforme exonérée de TVA :", fontSize = 13.sp)
-                        Switch(checked = tvaExempted, onCheckedChange = { tvaExempted = it })
-                        if (!tvaExempted) {
-                            OutlinedTextField(
-                                value = tvaRateText,
-                                onValueChange = { tvaRateText = it.filter { c -> c.isDigit() || c == '.' || c == ',' } },
-                                label = { Text("Taux TVA (%)") },
-                                modifier = Modifier.width(180.dp)
-                            )
-                        }
-                    }
-                    OutlinedTextField(
-                        value = paymentTerms,
-                        onValueChange = { paymentTerms = it },
-                        label = { Text("Conditions de paiement") },
-                        placeholder = { Text("Ex. Paiement à réception — espèces, chèque ou virement") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                SectionCard("Coordonnées bancaires") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = bankName,
-                            onValueChange = { bankName = it },
-                            label = { Text("Nom banque") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = iban,
-                            onValueChange = { iban = it },
-                            label = { Text("IBAN / N° compte") },
-                            modifier = Modifier.weight(2f)
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = mtnMomoNumber,
-                            onValueChange = { mtnMomoNumber = it },
-                            label = { Text("N° MTN Mobile Money (futur)") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = airtelMoneyNumber,
-                            onValueChange = { airtelMoneyNumber = it },
-                            label = { Text("N° Airtel Money (futur)") },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    Text(
-                        "Les numéros Mobile Money sont enregistrés pour affichage sur facture. Les paiements " +
-                            "électroniques seront câblés dans une phase ultérieure.",
-                        fontSize = 11.sp,
-                        color = Color(0xFF667085)
-                    )
-                }
-
-                SectionCard("Numérotation & mentions légales") {
-                    OutlinedTextField(
-                        value = invoiceNumberFormat,
-                        onValueChange = { invoiceNumberFormat = it },
-                        label = { Text("Format numéro de facture") },
-                        placeholder = { Text("FAC-{YYYY}-{NNNNNN}") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        "Variables disponibles : {YYYY} = année, {NNNNNN} = séquence annuelle zéro-paddée.",
-                        fontSize = 11.sp,
-                        color = Color(0xFF667085)
-                    )
-                    OutlinedTextField(
-                        value = legalMentions,
-                        onValueChange = { legalMentions = it },
-                        label = { Text("Mentions légales (pied de page)") },
-                        placeholder = { Text("Ex. En cas de retard de paiement, des pénalités seront appliquées conformément à la loi.") },
-                        modifier = Modifier.fillMaxWidth().height(110.dp),
-                        maxLines = 6
-                    )
-                }
+                PlatformIdentitySection(
+                    raisonSociale = raisonSociale, onRaisonSocialeChange = { raisonSociale = it },
+                    rccm = rccm, onRccmChange = { rccm = it },
+                    niu = niu, onNiuChange = { niu = it },
+                    competentCourt = competentCourt, onCompetentCourtChange = { competentCourt = it }
+                )
+                PlatformSiegeSection(
+                    siege = siege, onSiegeChange = { siege = it },
+                    city = city, onCityChange = { city = it },
+                    country = country, onCountryChange = { country = it },
+                    phone = phone, onPhoneChange = { phone = it },
+                    email = email, onEmailChange = { email = it },
+                    website = website, onWebsiteChange = { website = it }
+                )
+                PlatformLogoSection(logoBase64 = logoBase64, onLogoChange = { logoBase64 = it })
+                PlatformTvaSection(
+                    tvaExempted = tvaExempted, onTvaExemptedChange = { tvaExempted = it },
+                    tvaRateText = tvaRateText, onTvaRateChange = { tvaRateText = it },
+                    paymentTerms = paymentTerms, onPaymentTermsChange = { paymentTerms = it }
+                )
+                PlatformBankSection(
+                    bankName = bankName, onBankNameChange = { bankName = it },
+                    iban = iban, onIbanChange = { iban = it },
+                    mtnMomoNumber = mtnMomoNumber, onMtnChange = { mtnMomoNumber = it },
+                    airtelMoneyNumber = airtelMoneyNumber, onAirtelChange = { airtelMoneyNumber = it }
+                )
+                PlatformLegalSection(
+                    invoiceNumberFormat = invoiceNumberFormat, onFormatChange = { invoiceNumberFormat = it },
+                    legalMentions = legalMentions, onLegalChange = { legalMentions = it }
+                )
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -398,23 +255,3 @@ fun AdminPlatformSettingsScreen(
     }
 }
 
-@Composable
-private fun SectionCard(
-    title: String,
-    content: @Composable (androidx.compose.foundation.layout.ColumnScope.() -> Unit)
-) {
-    Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF101828))
-            HorizontalDivider(color = Color(0xFFEAECF0))
-            content()
-        }
-    }
-}

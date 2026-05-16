@@ -2,7 +2,6 @@ package cg.epilote.desktop.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -95,96 +94,62 @@ fun GroupeOfflineBanner() {
     }
 }
 
-// ── Plan Banner Card ─────────────────────────────────────────────────────────
-
-@Composable
-fun GroupePlanBannerCard(stats: GroupeDashboardStatsDto, onClick: () -> Unit) {
-    val now = System.currentTimeMillis()
-    val daysUntilExpiry = if (stats.abonnementDateFin > 0) {
-        ((stats.abonnementDateFin - now) / (1000L * 60 * 60 * 24)).toInt()
-    } else -1
-
-    val isExpired  = stats.abonnementStatut.lowercase() == "expired" || (stats.abonnementDateFin in 1 until now)
-    val isExpiring = !isExpired && daysUntilExpiry in 0..30
-
-    val bgColor   = when { isExpired -> Color(0xFFEF4444); isExpiring -> Color(0xFFF59E0B); else -> Color(0xFF059669) }
-    val bgLight   = when { isExpired -> Color(0xFFFFEDED); isExpiring -> Color(0xFFFFF3CD); else -> Color(0xFFECFDF5) }
-    val textColor = when { isExpired -> Color(0xFF7F1D1D); isExpiring -> Color(0xFF78350F); else -> Color(0xFF014737) }
-    val badgeLabel = when { isExpired -> "EXPIRÉ"; isExpiring -> "EXPIRE BIENTÔT"; else -> "ACTIF" }
-
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).cursorHand(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = bgLight),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Box(
-                    modifier = Modifier.size(52.dp).background(bgColor.copy(alpha = 0.15f), RoundedCornerShape(14.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.CreditCard, null, tint = bgColor, modifier = Modifier.size(28.dp))
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(stats.planNom.uppercase(), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = textColor)
-                        Surface(shape = RoundedCornerShape(20.dp), color = bgColor) {
-                            Text(badgeLabel, modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(stats.planType.replaceFirstChar { it.uppercase() }, fontSize = 12.sp, color = textColor.copy(alpha = 0.7f))
-                        if (stats.prixXAF > 0) {
-                            Text("•", fontSize = 12.sp, color = textColor.copy(alpha = 0.4f))
-                            Text(formatXAF(stats.prixXAF) + "/an", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = textColor)
-                        }
-                    }
-                }
-            }
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (stats.abonnementDateFin > 0) {
-                    Text(
-                        if (isExpired) "Expiré le ${formatDate(stats.abonnementDateFin)}" else "Expire le ${formatDate(stats.abonnementDateFin)}",
-                        fontSize = 12.sp, color = textColor.copy(alpha = 0.8f)
-                    )
-                }
-                if (isExpiring && daysUntilExpiry >= 0) {
-                    Text("Dans $daysUntilExpiry jour${if (daysUntilExpiry > 1) "s" else ""}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = bgColor)
-                }
-                if (stats.renouvellementAuto) {
-                    Text("↻ Renouvellement auto", fontSize = 11.sp, color = textColor.copy(alpha = 0.6f))
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Voir les détails", fontSize = 12.sp, color = bgColor, fontWeight = FontWeight.Medium)
-                    Icon(Icons.Default.ChevronRight, null, tint = bgColor, modifier = Modifier.size(16.dp))
-                }
-            }
-        }
-    }
-}
-
-// ── KPI Row Organisation ─────────────────────────────────────────────────────
+// ── KPI Row Organisation (vision opérationnelle) ─────────────────────────────
 
 @Composable
 fun GroupeOrgKpiRow(
     stats: GroupeDashboardStatsDto,
     onNavigateEcoles: () -> Unit,
-    onNavigateUsers: () -> Unit,
-    onNavigateProfils: () -> Unit
+    onNavigateUsers: () -> Unit
 ) {
+    val ecoleDispo   = (stats.quotaEcoles - stats.nbEcoles).coerceAtLeast(0)
+    val elevesDispo  = (stats.quotaEleves - stats.nbEleves).coerceAtLeast(0)
+    val ecolesColor  = if (stats.nbEcoles >= stats.quotaEcoles) Color(0xFFEF4444) else Color(0xFF10B981)
+    val elevesColor  = if (stats.nbEleves  >= stats.quotaEleves)  Color(0xFFEF4444) else Color(0xFF10B981)
+    val personnelColor = if (stats.nbUtilisateurs >= stats.quotaUtilisateurs) Color(0xFFEF4444) else Color(0xFF10B981)
+    val ecolesActives = stats.ecoles.size
+
     Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
-        KpiCard(modifier = Modifier.weight(1f), icon = Icons.Default.School, iconBg = Color(0xFFDBEAFE), iconTint = Color(0xFF3B82F6), label = "Écoles", value = formatNumber(stats.nbEcoles), trendLabel = "dans votre groupe", onClick = onNavigateEcoles)
-        KpiCard(modifier = Modifier.weight(1f), icon = Icons.Default.People, iconBg = Color(0xFFEDE9FE), iconTint = Color(0xFF7C3AED), label = "Utilisateurs", value = formatNumber(stats.nbUtilisateurs), trendLabel = "tous rôles confondus", onClick = onNavigateUsers)
-        KpiCard(modifier = Modifier.weight(1f), icon = Icons.Default.Tune, iconBg = Color(0xFFFCE7F3), iconTint = Color(0xFFEC4899), label = "Profils d'accès", value = formatNumber(stats.nbProfils), trendLabel = "profils configurés", onClick = onNavigateProfils)
-        KpiCard(modifier = Modifier.weight(1f), icon = Icons.Default.Extension, iconBg = Color(0xFFFEF3C7), iconTint = Color(0xFFF59E0B), label = "Modules actifs", value = formatNumber(stats.nbModulesActifs), trendLabel = "inclus dans le plan")
+        KpiCard(
+            modifier  = Modifier.weight(1f),
+            icon      = Icons.Default.School,
+            iconBg    = Color(0xFFDBEAFE), iconTint = Color(0xFF3B82F6),
+            label     = "Mes Écoles",
+            value     = formatNumber(stats.nbEcoles),
+            trend     = "→$ecoleDispo dispo",
+            trendLabel = "${stats.nbEcoles}/${stats.quotaEcoles} du quota",
+            trendColor = ecolesColor,
+            onClick   = onNavigateEcoles
+        )
+        KpiCard(
+            modifier  = Modifier.weight(1f),
+            icon      = Icons.Default.People,
+            iconBg    = Color(0xFFECFDF5), iconTint = Color(0xFF059669),
+            label     = "Élèves",
+            value     = formatNumber(stats.nbEleves),
+            trend     = "→$elevesDispo dispo",
+            trendLabel = "${stats.nbEleves}/${stats.quotaEleves} max",
+            trendColor = elevesColor
+        )
+        KpiCard(
+            modifier  = Modifier.weight(1f),
+            icon      = Icons.Default.Class,
+            iconBg    = Color(0xFFEDE9FE), iconTint = Color(0xFF7C3AED),
+            label     = "Classes",
+            value     = formatNumber(stats.nbClasses),
+            trendLabel = "$ecolesActives école${if (ecolesActives != 1) "s" else ""} actives"
+        )
+        KpiCard(
+            modifier  = Modifier.weight(1f),
+            icon      = Icons.Default.Badge,
+            iconBg    = Color(0xFFFEF3C7), iconTint = Color(0xFFF59E0B),
+            label     = "Personnel",
+            value     = formatNumber(stats.nbUtilisateurs),
+            trend     = "→${stats.nbUtilisateurs} actifs",
+            trendLabel = "${stats.nbUtilisateurs}/${stats.quotaUtilisateurs} du quota",
+            trendColor = personnelColor,
+            onClick   = onNavigateUsers
+        )
     }
 }
 
@@ -302,8 +267,8 @@ fun GroupeEcolesSection(ecoles: List<EcoleApiDto>, onNavigateEcoles: () -> Unit)
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text("Nom", modifier = Modifier.weight(2f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
-                        Text("Province", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
-                        Text("Territoire", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
+                        Text("Département", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
+                        Text("District", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
                         Text("Niveaux", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
                     }
                     ecoles.take(8).forEachIndexed { idx, ecole ->

@@ -28,12 +28,13 @@ import kotlinx.coroutines.launch
 fun GroupePlanDetailDialog(
     stats: GroupeDashboardStatsDto,
     groupeRepo: GroupeAdminDataRepository,
+    isOffline: Boolean,
     onDismiss: () -> Unit
 ) {
     var requestType by remember { mutableStateOf<String?>(null) }
 
     AdminDialogWindow(
-        title     = "Abonnement & Facturation",
+        title     = "Abonnement du groupe scolaire",
         subtitle  = "${stats.groupeNom} — ${stats.planNom}",
         onDismiss = onDismiss,
         size      = DpSize(680.dp, 560.dp),
@@ -55,13 +56,11 @@ fun GroupePlanDetailDialog(
                 Text("Fermer")
             }
             Spacer(Modifier.width(4.dp))
-            val now = System.currentTimeMillis()
-            val isExpiredOrExpiring = stats.abonnementStatut.lowercase() == "expired"
-                || stats.abonnementStatut.lowercase() == "pending"
-                || (stats.abonnementDateFin > 0 && (stats.abonnementDateFin - now) < 60L * 24 * 3600 * 1000)
-            if (isExpiredOrExpiring) {
+            val subscriptionState = resolveGroupeSubscriptionUiState(stats)
+            if (subscriptionState.shouldSuggestRenewal) {
                 OutlinedButton(
                     onClick = { requestType = "RENEWAL_REQUEST" },
+                    enabled = !isOffline,
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.cursorHand()
                 ) {
@@ -72,13 +71,14 @@ fun GroupePlanDetailDialog(
             }
             Button(
                 onClick = { requestType = "PLAN_CHANGE_REQUEST" },
+                enabled = !isOffline,
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.cursorHand(),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
             ) {
                 Icon(Icons.Default.SwapHoriz, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Changer de plan", fontSize = 13.sp)
+                Text("Demander un changement de plan", fontSize = 13.sp)
             }
         }
     )
@@ -87,6 +87,7 @@ fun GroupePlanDetailDialog(
         GroupeSubscriptionRequestDialog(
             requestType = requestType!!,
             groupeRepo  = groupeRepo,
+            isOffline   = isOffline,
             onDismiss   = { requestType = null }
         )
     }
@@ -96,15 +97,9 @@ fun GroupePlanDetailDialog(
 
 @Composable
 fun GroupePlanDetailSection(stats: GroupeDashboardStatsDto) {
-    val now = System.currentTimeMillis()
-    val isExpired = stats.abonnementStatut.lowercase() == "expired" || (stats.abonnementDateFin in 1 until now)
-    val badgeColor = when {
-        isExpired -> Color(0xFFEF4444)
-        stats.abonnementStatut.lowercase() == "active" -> Color(0xFF059669)
-        else -> Color(0xFFF59E0B)
-    }
+    val subscriptionState = resolveGroupeSubscriptionUiState(stats)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Abonnement actuel", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
+        Text("Abonnement du groupe", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
             shape = RoundedCornerShape(12.dp)
@@ -116,9 +111,9 @@ fun GroupePlanDetailSection(stats: GroupeDashboardStatsDto) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(stats.planNom, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B))
-                    Surface(shape = RoundedCornerShape(20.dp), color = badgeColor) {
+                    Surface(shape = RoundedCornerShape(20.dp), color = subscriptionState.accentColor) {
                         Text(
-                            stats.abonnementStatut.uppercase(),
+                            subscriptionState.badgeLabel,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
@@ -126,12 +121,20 @@ fun GroupePlanDetailSection(stats: GroupeDashboardStatsDto) {
                         )
                     }
                 }
+                Text(subscriptionState.subtitle, fontSize = 12.sp, color = Color(0xFF64748B))
                 Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
                     GroupeDetailItem("Type", stats.planType.replaceFirstChar { it.uppercase() })
                     if (stats.prixXAF > 0) GroupeDetailItem("Prix", formatXAF(stats.prixXAF) + "/an")
                     if (stats.abonnementDateDebut > 0) GroupeDetailItem("Début", formatDate(stats.abonnementDateDebut))
                     if (stats.abonnementDateFin > 0) GroupeDetailItem("Fin", formatDate(stats.abonnementDateFin))
                     GroupeDetailItem("Renouvellement auto", if (stats.renouvellementAuto) "Oui" else "Non")
+                }
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+                Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+                    GroupeDetailItem("Quota écoles", "${stats.nbEcoles}/${stats.quotaEcoles}")
+                    GroupeDetailItem("Quota élèves", "${stats.nbEleves}/${stats.quotaEleves}")
+                    GroupeDetailItem("Quota utilisateurs", "${stats.nbUtilisateurs}/${stats.quotaUtilisateurs}")
+                    GroupeDetailItem("Modules actifs", "${stats.nbModulesActifs}")
                 }
             }
         }
@@ -224,6 +227,7 @@ fun GroupeDetailItem(label: String, value: String) {
 fun GroupeSubscriptionRequestDialog(
     requestType: String,
     groupeRepo: GroupeAdminDataRepository,
+    isOffline: Boolean,
     onDismiss: () -> Unit
 ) {
     val isRenewal = requestType == "RENEWAL_REQUEST"
@@ -252,6 +256,13 @@ fun GroupeSubscriptionRequestDialog(
                 fontSize = 13.sp,
                 color = Color(0xFF475569)
             )
+            if (isOffline) {
+                Text(
+                    "Connexion indisponible : l'envoi de demande est temporairement désactivé.",
+                    fontSize = 12.sp,
+                    color = Color(0xFFB45309)
+                )
+            }
             OutlinedTextField(
                 value = message,
                 onValueChange = { if (it.length <= 500) message = it },
@@ -281,7 +292,7 @@ fun GroupeSubscriptionRequestDialog(
                         }
                     }
                 },
-                enabled  = !isSubmitting,
+                enabled  = !isSubmitting && !isOffline,
                 shape    = RoundedCornerShape(10.dp),
                 modifier = Modifier.cursorHand(),
                 colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
