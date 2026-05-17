@@ -127,6 +127,66 @@ Read flow: `CBLite → Flow/LiveQuery → ViewModel → UI`
 
 `AdminRealtimeBroker` holds `SseEmitter` connections for the desktop admin UI. Any controller can inject it and call `broker.publish(event)` to push updates. The broker buffers up to 512 events for reconnect replay.
 
+## Règles de gestion du contexte
+
+**Seuils d'alerte (Claude doit surveiller proactivement) :**
+- À **50%** de contexte → mettre à jour CLAUDE.md avec l'état actuel
+- À **70%** de contexte → prévenir l'utilisateur et proposer de compacter
+- À **80%** de contexte → compacter automatiquement via `/compact`
+
+**Avant chaque /compact :**
+1. Écrire un résumé dans CLAUDE.md (état, décisions, tâches en cours, bugs connus)
+2. Commit Git : `git commit -m "chore: save context before compact"`
+3. Lancer : `/compact "Garde : architecture, décisions techniques, tâches en cours, bugs connus. Résume le reste."`
+
+**Après chaque /compact :**
+- Confirmer à l'utilisateur que c'est fait + indiquer le nouveau % de contexte
+- Reprendre exactement où on en était
+
+**Commande rapide :** `/compact-save` — sauvegarde + commit + compact en une seule action.
+
+---
+
 ## Key rules (from `.windsurf/rules/regle.md`)
 
 Always consult official documentation for **Kotlin Multiplatform**, **Spring Boot (Kotlin)**, and **Couchbase (Capella / App Services)** before implementing. Follow documented APIs, patterns, and best practices only — do not invent implementations when a documented approach exists.
+
+---
+
+## Rôles utilisateurs
+
+| Rôle | Accès | Endpoints |
+|---|---|---|
+| **SUPER_ADMIN** | Tout — plateforme globale | `/api/super-admin/**` |
+| **ADMIN_GROUPE** | Son groupe uniquement (TenantGuard) | `/api/groupes/{groupeId}/**` |
+| **USER** | Données métier via CBLite (pas de REST direct) | Sync Gateway seulement |
+
+**SUPER_ADMIN** : crée groupes, plans, abonnements, factures, enregistre paiements, gère audit, annonces, messages.
+**ADMIN_GROUPE** : crée écoles (quota), utilisateurs (quota), profils, demande renouvellement abonnement, consulte dashboard groupe.
+**USER** : saisit notes/absences/bulletins via Android en offline-first.
+
+Comptes actifs : `super@admin.cg` (SUPER_ADMIN), `eveque@epilote.cg` (SUPER_ADMIN), 3 ADMIN_GROUPE (rose@, marien@, edja@epilote.cg).
+
+## État actuel
+
+**✅ Fonctionne :**
+- Backend Spring Boot opérationnel sur :8080
+- Connexion Couchbase Capella active (bucket `epilote_prod`, 38 collections)
+- Desktop Compose lancé, login SUPER_ADMIN fonctionnel
+- Auth JWT + TenantGuard + QuotaGuard
+- 6 groupes scolaires réels, 6 utilisateurs
+- Facturation : 2 factures, 1 vrai paiement (MARIEN NGOUABI, 900 000 XAF)
+- Audit logs actif (248 entrées)
+- MCP Couchbase installé (`claude mcp add couchbase`)
+
+**🟡 En cours / Partiel :**
+- Collection legacy `groupes` contient 1 doc de test ("teste") à supprimer via N1QL direct (pas d'endpoint API)
+- Android non testé
+
+## Prochaines étapes
+
+1. **Supprimer le doc "teste" legacy** : La collection `groupes` (legacy) contient 1 doc de test. Nécessite N1QL direct ou MCP Couchbase (`DELETE FROM groupes WHERE nom = "teste"`).
+
+2. **Tester le login ADMIN_GROUPE** : Vérifier que les 3 groupes nouvellement abonnés (ECOLE DE SCIENCE, LAMARELLE, EDJA-SEMBE) peuvent se connecter avec leurs comptes ADMIN_GROUPE.
+
+3. **Tester l'application Android** : Valider le flux CBLite → App Services → Capella sur Android.
