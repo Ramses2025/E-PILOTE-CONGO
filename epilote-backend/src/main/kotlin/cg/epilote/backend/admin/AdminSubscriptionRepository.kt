@@ -4,9 +4,12 @@ import com.couchbase.client.core.error.CasMismatchException
 import com.couchbase.client.core.error.DocumentNotFoundException
 import com.couchbase.client.kotlin.Bucket
 import com.couchbase.client.kotlin.Collection
+import com.couchbase.client.kotlin.query.QueryParameters
 import com.couchbase.client.kotlin.query.execute
 import kotlinx.coroutines.runBlocking
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Repository
+import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -62,12 +65,13 @@ class AdminSubscriptionRepository(
         if (planId.isBlank()) return null
 
         val subscription = mutableMap(groupDoc["subscription"])
+        if (subscription.isEmpty()) return null
         val createdAt = parseTimestamp(subscription["createdAt"] ?: groupDoc["createdAt"] ?: groupDoc["updatedAt"]).takeIf { it > 0 }
             ?: now()
         val dateDebut = parseTimestamp(subscription["dateDebut"] ?: subscription["startDate"]).takeIf { it > 0 } ?: createdAt
-        val dateFin = parseTimestamp(subscription["dateFin"] ?: subscription["endDate"]).takeIf { it > 0 } ?: (dateDebut + ONE_YEAR_MS)
+        val dateFin = parseTimestamp(subscription["dateFin"] ?: subscription["endDate"]).takeIf { it > 0 } ?: 0L
         val statut = ((subscription["statut"] ?: subscription["status"]) as? String)?.lowercase()?.ifBlank { null }
-            ?: if ((groupDoc["isActive"] as? Boolean) != false) "active" else "suspended"
+            ?: "pending"
         val renouvellementAuto = subscription["renouvellementAuto"] as? Boolean
             ?: subscription["autoRenew"] as? Boolean
             ?: false
@@ -85,9 +89,12 @@ class AdminSubscriptionRepository(
         )
     }
 
-    private suspend fun listGroupDocs(): List<Pair<String, MutableMap<String, Any?>>> {
+    private suspend fun listGroupDocs(limit: Int? = null, offset: Int = 0): List<Pair<String, MutableMap<String, Any?>>> {
+        val paging = if (limit != null) " ORDER BY IFMISSINGORNULL(`createdAt`, 0) DESC LIMIT \$lim OFFSET \$off" else ""
+        val params = limit?.let { QueryParameters.named("lim" to it.coerceIn(1, 500), "off" to offset.coerceAtLeast(0)) }
         val result = scope.query(
-            "SELECT META().id AS id, * FROM `school_groups` WHERE `type` IN ['school_group', 'groupe']"
+            "SELECT META().id AS id, * FROM `school_groups` WHERE `type` IN ['school_group', 'groupe']$paging",
+            parameters = params ?: QueryParameters.named()
         ).execute()
         return result.rows.mapNotNull { row ->
             val doc = row.contentAs<Map<String, Any?>>()
@@ -97,21 +104,39 @@ class AdminSubscriptionRepository(
         }
     }
 
-    suspend fun listSubscriptions(): List<SubscriptionResponse> {
-        return listGroupDocs()
+    suspend fun listSubscriptions(limit: Int = 200, offset: Int = 0): List<SubscriptionResponse> {
+        return listGroupDocs(limit = limit, offset = offset)
             .mapNotNull { (groupId, doc) -> buildSubscriptionResponse(groupId, doc) }
             .sortedByDescending { it.createdAt }
     }
 
-    suspend fun countSubscriptions(): Long = listSubscriptions().size.toLong()
-
-    suspend fun countActiveSubscriptions(): Long {
-        val currentTime = now()
-        return listSubscriptions().count { it.statut == "active" && it.dateFin >= currentTime }.toLong()
+    suspend fun countSubscriptions(): Long {
+        val result = scope.query(
+            "SELECT COUNT(1) AS cnt FROM `school_groups` WHERE `type` IN ['school_group', 'groupe'] AND subscription IS NOT MISSING"
+        ).execute()
+        return result.rows.firstOrNull()?.contentAs<Map<String, Any?>>()?.let { (it["cnt"] as? Number)?.toLong() } ?: 0L
     }
 
-    suspend fun subscriptionsByStatus(): Map<String, Long> =
-        listSubscriptions().groupingBy { it.statut }.eachCount().mapValues { it.value.toLong() }
+    suspend fun countActiveSubscriptions(): Long {
+        val result = scope.query(
+            "SELECT COUNT(1) AS cnt FROM `school_groups` WHERE `type` IN ['school_group', 'groupe'] " +
+                "AND subscription.statut = 'active' AND subscription.dateFin >= \$now",
+            parameters = QueryParameters.named("now" to now())
+        ).execute()
+        return result.rows.firstOrNull()?.contentAs<Map<String, Any?>>()?.let { (it["cnt"] as? Number)?.toLong() } ?: 0L
+    }
+
+    suspend fun subscriptionsByStatus(): Map<String, Long> {
+        val result = scope.query(
+            "SELECT LOWER(IFMISSINGORNULL(subscription.statut, subscription.status, 'pending')) AS statut, COUNT(1) AS cnt " +
+                "FROM `school_groups` WHERE `type` IN ['school_group', 'groupe'] AND subscription IS NOT MISSING " +
+                "GROUP BY LOWER(IFMISSINGORNULL(subscription.statut, subscription.status, 'pending'))"
+        ).execute()
+        return result.rows.associate { row ->
+            val data = row.contentAs<Map<String, Any?>>()
+            (data["statut"] as? String ?: "pending") to ((data["cnt"] as? Number)?.toLong() ?: 0L)
+        }
+    }
 
     private suspend fun resolveGroupIdForSubscription(subscriptionId: String): String? {
         val directGroupId = subscriptionId.substringAfter("sub::", "")
@@ -148,19 +173,40 @@ class AdminSubscriptionRepository(
     suspend fun createSubscription(req: CreateSubscriptionRequest): SubscriptionResponse? {
         val groupDoc = runCatching { col(GROUPS_COLLECTION).get(req.groupeId).contentAs<MutableMap<String, Any?>>() }.getOrNull() ?: return null
         val plan = planRepo.getPlanById(req.planId) ?: return null
+        if (!plan.isActive) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Le plan ${plan.nom} est suspendu et ne peut pas être attribué.")
+        }
         val currentTime = now()
         val subscription = mutableMap(groupDoc["subscription"])
-        val createdAt = parseTimestamp(subscription["createdAt"]).takeIf { it > 0 } ?: currentTime
+        val existing = buildSubscriptionResponse(req.groupeId, groupDoc)
+        val hasPersistedSubscription = subscription.isNotEmpty()
+        val currentAutoRenew = subscription["renouvellementAuto"] as? Boolean
+            ?: subscription["autoRenew"] as? Boolean
+            ?: existing?.renouvellementAuto
+            ?: false
+        val createdAt = parseTimestamp(subscription["createdAt"] ?: groupDoc["createdAt"]).takeIf { it > 0 } ?: currentTime
+
+        if (hasPersistedSubscription && existing != null && existing.planId == plan.id && currentAutoRenew == req.renouvellementAuto) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Le renouvellement de l'abonnement doit être enregistré via un paiement pour prolonger l'accès."
+            )
+        }
+
+        val dateDebut = existing?.dateDebut ?: currentTime
+        val dateFin = existing?.dateFin?.takeIf { it > 0L } ?: 0L
+        val statut = existing?.statut?.ifBlank { "pending" } ?: "pending"
+        val subscriptionId = subscription["id"] as? String ?: existing?.id ?: "sub::${req.groupeId}"
 
         groupDoc["planId"] = plan.id
         groupDoc["subscription"] = mutableMapOf(
-            "id" to (subscription["id"] as? String ?: "sub::${req.groupeId}"),
-            "statut" to "active",
-            "status" to "active",
-            "dateDebut" to currentTime,
-            "startDate" to formatDateIso(currentTime),
-            "dateFin" to (currentTime + ONE_YEAR_MS),
-            "endDate" to formatDateIso(currentTime + ONE_YEAR_MS),
+            "id" to subscriptionId,
+            "statut" to statut,
+            "status" to statut,
+            "dateDebut" to dateDebut,
+            "startDate" to formatDateIso(dateDebut),
+            "dateFin" to dateFin,
+            "endDate" to if (dateFin > 0L) formatDateIso(dateFin) else null,
             "renouvellementAuto" to req.renouvellementAuto,
             "autoRenew" to req.renouvellementAuto,
             "createdAt" to createdAt,

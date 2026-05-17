@@ -18,6 +18,39 @@ class AuthService(
     private val planRepository: AdminPlanRepository
 ) {
 
+    private suspend fun enforceSubscriptionAccess(user: EpiloteUserDetails): EpiloteUserDetails {
+        if (user.role == UserRole.SUPER_ADMIN) return user
+
+        val groupId = user.groupId
+        if (groupId.isNullOrBlank()) return user
+
+        val subscription = subscriptionRepository.getActiveSubscriptionByGroupe(groupId)
+        if (subscription == null || subscription.dateFin < System.currentTimeMillis()) {
+            val message = if (user.role == UserRole.ADMIN_GROUPE) {
+                "Abonnement expiré ou inexistant — contactez le support E-PILOTE"
+            } else {
+                "Abonnement du groupe expiré — contactez votre administrateur"
+            }
+            throw SubscriptionExpiredException(message)
+        }
+
+        val plan = planRepository.getPlanById(subscription.planId)
+            ?: throw SubscriptionExpiredException("Plan d'abonnement introuvable — contactez le support E-PILOTE")
+        if (!plan.isActive) {
+            throw SubscriptionExpiredException("Le plan ${plan.nom} est suspendu — contactez le support E-PILOTE")
+        }
+
+        return when (user.role) {
+            UserRole.ADMIN_GROUPE -> user.copy(
+                permissions = plan.modulesIncluded.map { slug ->
+                    PermissionDto(slug, canRead = true, canWrite = true, canDelete = true, canExport = true)
+                }
+            )
+            UserRole.USER -> user
+            UserRole.SUPER_ADMIN -> user
+        }
+    }
+
     suspend fun login(request: LoginRequest): LoginResponse {
         val user = userRepository.findByEmail(request.email)
             ?: throw AuthException("Identifiants incorrects")
@@ -30,39 +63,7 @@ class AuthService(
             throw AuthException("Identifiants incorrects")
         }
 
-        // Derive effective permissions based on role
-        val effectiveUser = when (user.role) {
-            UserRole.ADMIN_GROUPE -> {
-                // ADMIN_GROUPE gets all modules from the group's subscription plan
-                val groupId = user.groupId
-                if (!groupId.isNullOrBlank()) {
-                    val sub = subscriptionRepository.getActiveSubscriptionByGroupe(groupId)
-                    if (sub == null || sub.dateFin < System.currentTimeMillis()) {
-                        throw SubscriptionExpiredException("Abonnement expiré ou inexistant — contactez le support E-PILOTE")
-                    }
-                    val plan = planRepository.getPlanById(sub.planId)
-                    if (plan != null) {
-                        val planPermissions = plan.modulesIncluded.map { slug ->
-                            PermissionDto(slug, canRead = true, canWrite = true, canDelete = true, canExport = true)
-                        }
-                        user.copy(permissions = planPermissions)
-                    } else user
-                } else user
-            }
-            UserRole.USER -> {
-                // USER keeps profile-based permissions (already loaded from doc)
-                // But verify the group subscription is active
-                val groupId = user.groupId
-                if (!groupId.isNullOrBlank()) {
-                    val sub = subscriptionRepository.getActiveSubscriptionByGroupe(groupId)
-                    if (sub == null || sub.dateFin < System.currentTimeMillis()) {
-                        throw SubscriptionExpiredException("Abonnement du groupe expir\u00e9 \u2014 contactez votre administrateur")
-                    }
-                }
-                user
-            }
-            UserRole.SUPER_ADMIN -> user
-        }
+        val effectiveUser = enforceSubscriptionAccess(user)
 
         val offlineToken = jwtService.generateOfflineToken(effectiveUser)
         return LoginResponse(
@@ -79,11 +80,6 @@ class AuthService(
             role                 = effectiveUser.role.name,
             permissions          = effectiveUser.permissions,
             expiresIn            = 3600,
-            // Propage le flag pour que le client desktop force le changement
-            // de mot de passe avant tout accès aux écrans applicatifs (politique
-            // de mot de passe initial à usage unique). Le hash courant reste
-            // valable pour la requête de changement (route /auth/change-password
-            // accepte `currentPassword`).
             mustChangePassword   = effectiveUser.mustChangePassword
         )
     }
@@ -168,9 +164,17 @@ class AuthService(
         val userId = jwtService.getUserIdFromToken(token)
         val user = userRepository.findById(userId)
             ?: throw AuthException("Utilisateur introuvable")
+        if (!user.isActive) {
+            throw AuthException("Compte désactivé — contactez votre administrateur")
+        }
+        val effectiveUser = when (user.role) {
+            UserRole.ADMIN_GROUPE -> enforceSubscriptionAccess(user)
+            UserRole.USER -> enforceSubscriptionAccess(user)
+            UserRole.SUPER_ADMIN -> user
+        }
 
         return TokenResponse(
-            accessToken = jwtService.generateAccessToken(user),
+            accessToken = jwtService.generateAccessToken(effectiveUser),
             expiresIn   = 3600
         )
     }

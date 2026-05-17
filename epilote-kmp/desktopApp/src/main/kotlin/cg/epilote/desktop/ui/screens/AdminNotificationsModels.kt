@@ -115,6 +115,17 @@ internal fun buildOperationalNotifications(
         val group = groupsById[subscription.groupeId]
         val target = group?.nom ?: subscription.groupeId
         when {
+            subscription.statut == "pending" -> items += AdminNotificationItem(
+                id = "subscription-pending::${subscription.id}",
+                title = "Paiement initial en attente",
+                message = "Le groupe $target n'a pas encore réglé son abonnement. L'accès est bloqué jusqu'au premier paiement.",
+                severity = "critical",
+                sourceType = "subscription",
+                targetLabel = target,
+                createdAt = subscription.createdAt,
+                relatedReference = subscription.id,
+                relatedStatus = subscription.statut
+            )
             subscription.dateFin in 1 until currentTime && subscription.statut != "cancelled" -> items += AdminNotificationItem(
                 id = "subscription-expired::${subscription.id}",
                 title = "Abonnement expiré",

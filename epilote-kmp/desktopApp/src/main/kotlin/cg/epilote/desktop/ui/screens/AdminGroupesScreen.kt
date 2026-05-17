@@ -24,30 +24,9 @@ import cg.epilote.desktop.ui.theme.*
 import cg.epilote.desktop.ui.theme.AnimatedCardEntrance
 import cg.epilote.desktop.ui.theme.PulsingLoadingBar
 import cg.epilote.desktop.ui.theme.cursorHand
-import kotlinx.serialization.Serializable
-
-@Serializable
-data class GroupeDto(
-    val id: String = "",
-    val nom: String = "",
-    val slug: String = "",
-    val email: String? = null,
-    val phone: String? = null,
-    val department: String? = null,
-    val city: String? = null,
-    val address: String? = null,
-    val country: String = "Congo",
-    val logo: String? = null,
-    val description: String? = null,
-    val foundedYear: Int? = null,
-    val website: String? = null,
-    val planId: String = "",
-    val ecolesCount: Int = 0,
-    val usersCount: Int = 0,
-    val isActive: Boolean = true,
-    val createdAt: Long = 0
-)
-
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 @Composable
 fun AdminGroupesScreen(
     groupes: List<GroupeDto>,
@@ -61,7 +40,9 @@ fun AdminGroupesScreen(
     onDeleteGroupe: (groupId: String, (Boolean, String?) -> Unit) -> Unit,
     onToggleGroupeStatus: (groupId: String, isActive: Boolean, (Boolean, String?) -> Unit) -> Unit,
     onCreateAdminGroupe: (groupId: String, password: String, nom: String, prenom: String, email: String, (Boolean, String?) -> Unit) -> Unit,
-    onRefresh: () -> Unit
+    onNavigateDetail: ((GroupeDto) -> Unit)? = null,
+    onRefresh: () -> Unit,
+    scope: kotlinx.coroutines.CoroutineScope = kotlinx.coroutines.GlobalScope
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var selectedGroupeForEdit by remember { mutableStateOf<GroupeDto?>(null) }
@@ -133,6 +114,41 @@ fun AdminGroupesScreen(
             }
 
             GroupesKpiRow(groupes.size, groupesActifs, totalEcoles, totalUtilisateurs)
+
+            if (actionFeedback == null) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    val path = exportCsvToDesktop(
+                                        baseName = "groupes",
+                                        headers = listOf("Nom", "Slug", "Département", "Ville", "Email", "Écoles", "Utilisateurs", "Statut", "Plan", "Créé le"),
+                                        rows = filtered.map { g ->
+                                            listOf(
+                                                g.nom, g.slug,
+                                                g.department.orEmpty(), g.city.orEmpty(),
+                                                g.email.orEmpty(),
+                                                g.ecolesCount.toString(), g.usersCount.toString(),
+                                                if (g.isActive) "Actif" else "Inactif",
+                                                g.planId,
+                                                java.time.Instant.ofEpochMilli(g.createdAt)
+                                                    .atZone(java.time.ZoneId.systemDefault())
+                                                    .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                                            )
+                                        }
+                                    )
+                                    if (path != null) actionFeedback = AdminFeedbackMessage("✓ Export CSV enregistré : $path")
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
+                        Text("  Exporter CSV", fontSize = 13.sp)
+                    }
+                }
+            }
 
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 if (maxWidth < 980.dp) {
@@ -260,7 +276,8 @@ fun AdminGroupesScreen(
             onEdit = { submitError = null; selectedGroupeForEdit = groupe },
             onDelete = { deleteError = null; selectedGroupeForDelete = groupe },
             onToggleStatus = { statusError = null; selectedGroupeForStatusAction = groupe },
-            onAddAdmin = { adminSubmitError = null; selectedGroupeForAdmin = groupe }
+            onAddAdmin = { adminSubmitError = null; selectedGroupeForAdmin = groupe },
+            onViewFullDetail = onNavigateDetail?.let { nav -> { selectedGroupeForDetail = null; nav(groupe) } }
         )
     }
 
@@ -324,7 +341,6 @@ fun AdminGroupesScreen(
             errorMessage = statusError
         )
     }
-
     // ── Delete confirmation ──
     selectedGroupeForDelete?.let { groupe ->
         AdminConfirmationDialog(

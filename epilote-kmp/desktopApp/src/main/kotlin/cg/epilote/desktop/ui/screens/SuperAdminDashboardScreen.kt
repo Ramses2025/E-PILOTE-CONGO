@@ -38,11 +38,7 @@ fun SuperAdminDashboardScreen(
     val scrollState = rememberScrollState()
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        // Force un rafraîchissement dès l'affichage du tableau de bord pour éviter
-        // l'affichage transitoire des KPIs par défaut (0 partout) tant que le refresh
-        // global n'a pas encore répondu. Cf. AdminDataRepository.refreshAll().
         visible = true
-        onRefresh()
     }
 
     Column(
@@ -115,9 +111,6 @@ fun SuperAdminDashboardScreen(
                 onNavigateModules = onNavigateModules,
                 onNavigateAnnouncements = onNavigateAnnouncements
             )
-
-            // ── 12. FOOTER
-            SystemFooter()
         }
     }
 }

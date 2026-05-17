@@ -48,3 +48,4 @@ epilote-backend/build/
 
 # Gradle wrapper jar (binary, downloadable)
 gradle/wrapper/gradle-wrapper.jar
+*.log

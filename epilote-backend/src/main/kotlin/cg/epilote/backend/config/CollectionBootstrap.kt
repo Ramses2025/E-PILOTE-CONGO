@@ -2,6 +2,7 @@ package cg.epilote.backend.config
 
 import com.couchbase.client.core.error.CollectionExistsException
 import com.couchbase.client.kotlin.Bucket
+import com.couchbase.client.kotlin.query.execute
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -58,9 +59,26 @@ class CollectionBootstrap(
         "audit_logs",
     )
 
+    private val requiredIndexes = listOf(
+        "CREATE INDEX IF NOT EXISTS idx_school_groups_created ON school_groups(createdAt) WHERE type IN ['school_group', 'groupe']",
+        "CREATE INDEX IF NOT EXISTS idx_school_groups_plan ON school_groups(IFMISSINGORNULL(planId, '')) WHERE type IN ['school_group', 'groupe']",
+        "CREATE INDEX IF NOT EXISTS idx_school_groups_active ON school_groups(IFMISSINGORNULL(isActive, is_active, true)) WHERE type IN ['school_group', 'groupe']",
+        "CREATE INDEX IF NOT EXISTS idx_school_groups_subscription_status_end ON school_groups(subscription.statut, subscription.dateFin, createdAt) WHERE type IN ['school_group', 'groupe']",
+        "CREATE INDEX IF NOT EXISTS idx_schools_group_any ON schools(IFMISSINGORNULL(groupId, groupeId)) WHERE type = 'school'",
+        "CREATE INDEX IF NOT EXISTS idx_schools_group_created ON schools(IFMISSINGORNULL(groupId, groupeId), createdAt) WHERE type = 'school'",
+        "CREATE INDEX IF NOT EXISTS idx_users_group_any ON users(IFMISSINGORNULL(groupId, groupeId)) WHERE type = 'user'",
+        "CREATE INDEX IF NOT EXISTS idx_users_group_school_role ON users(IFMISSINGORNULL(groupId, groupeId), schoolId, `role`) WHERE type = 'user'",
+        "CREATE INDEX IF NOT EXISTS idx_invoices_group_status_due ON invoices(groupeId, statut, dateEcheance, dateEmission) WHERE type IN ['invoice_platform', 'invoice']",
+        "CREATE INDEX IF NOT EXISTS idx_invoices_subscription ON invoices(subscriptionId, groupeId) WHERE type IN ['invoice_platform', 'invoice']",
+        "CREATE INDEX IF NOT EXISTS idx_payment_receipts_group_received ON payment_receipts(groupeId, receivedAt) WHERE type = 'payment_receipt'",
+        "CREATE INDEX IF NOT EXISTS idx_payment_receipts_subscription_received ON payment_receipts(subscriptionId, receivedAt) WHERE type = 'payment_receipt'",
+        "CREATE INDEX IF NOT EXISTS idx_messages_subscription_requests ON messages(requestType, status, createdAt) WHERE type = 'message' AND requestType IN ['RENEWAL_REQUEST', 'PLAN_CHANGE_REQUEST']"
+    )
+
     @EventListener(ApplicationReadyEvent::class)
     fun ensureCollections() = runBlocking {
         val mgr = bucket.collections
+        val scope = bucket.defaultScope()
         for (name in requiredCollections) {
             try {
                 mgr.createCollection(scopeName = "_default", collectionName = name)
@@ -72,6 +90,14 @@ class CollectionBootstrap(
                 // (quota, permission), les endpoints qui en dépendent lèveront
                 // une erreur claire au moment de l'usage.
                 log.warn("Impossible de créer la collection `${name}` : ${e.javaClass.simpleName} — ${e.message}")
+            }
+        }
+        for (statement in requiredIndexes) {
+            try {
+                scope.query(statement).execute()
+                log.info("Index assuré via SQL++ : {}", statement.substringBefore(" ON "))
+            } catch (e: Exception) {
+                log.warn("Impossible d'assurer l'index SQL++ `${statement}` : ${e.javaClass.simpleName} — ${e.message}")
             }
         }
     }

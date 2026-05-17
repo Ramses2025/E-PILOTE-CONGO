@@ -14,7 +14,7 @@ actual fun initCouchbaseLite(context: Any?) {
     CouchbaseLite.init()
 }
 
-actual fun getPlatformName(): String = "Desktop (Windows)"
+actual fun getPlatformName(): String = "Desktop"
 
 actual fun deriveEncryptionKey(pin: String, userId: String): ByteArray {
     val salt = loadSalt(userId) ?: generateAndStoreSalt(userId)

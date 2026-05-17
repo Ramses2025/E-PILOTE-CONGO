@@ -24,13 +24,27 @@ class AdminRepository(
         const val LEGACY_GROUPS_COLLECTION = "groupes"
         const val INVOICES_COLLECTION = "invoices"
         const val LEGACY_INVOICES_COLLECTION = "invoices_platform"
-        const val SUBSCRIPTIONS_COLLECTION = "subscriptions"
     }
 
     private val collections = java.util.concurrent.ConcurrentHashMap<String, Collection>()
 
     private fun col(name: String): Collection =
         collections.getOrPut(name) { runBlocking { scope.collection(name) } }
+
+    private suspend fun listDocumentIdsByQuery(statement: String, parameters: com.couchbase.client.kotlin.query.QueryParameters? = null): List<String> {
+        val result = if (parameters != null) {
+            scope.query(statement, parameters = parameters).execute()
+        } else {
+            scope.query(statement).execute()
+        }
+        return result.rows.mapNotNull { row -> runCatching { row.contentAs<String>() }.getOrNull() }
+    }
+
+    private suspend fun removeDocumentIds(collectionName: String, ids: List<String>) {
+        ids.distinct().forEach { id ->
+            runCatching { col(collectionName).remove(id) }
+        }
+    }
 
     // ── Helpers ──────────────────────────────────────────────────
 
@@ -716,6 +730,37 @@ class AdminRepository(
     }
 
     suspend fun deleteGroupe(groupeId: String): Boolean = runCatching {
+        val params = com.couchbase.client.kotlin.query.QueryParameters.named("gid" to groupeId)
+        val schoolIds = listDocumentIdsByQuery(
+            "SELECT RAW META().id FROM `schools` WHERE `type` = 'school' AND (`groupId` = \$gid OR `groupeId` = \$gid)",
+            params
+        )
+        val userIds = listDocumentIdsByQuery(
+            "SELECT RAW META().id FROM `users` WHERE `type` = 'user' AND (`groupId` = \$gid OR `groupeId` = \$gid)",
+            params
+        )
+        val profilIds = listDocumentIdsByQuery(
+            "SELECT RAW META().id FROM `profils` WHERE `type` = 'profil' AND (`groupId` = \$gid OR `groupeId` = \$gid)",
+            params
+        )
+        val invoiceIds = listDocumentIdsByQuery(
+            "SELECT RAW META().id FROM `${INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND `groupeId` = \$gid",
+            params
+        )
+        val legacyInvoiceIds = listDocumentIdsByQuery(
+            "SELECT RAW META().id FROM `${LEGACY_INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND `groupeId` = \$gid",
+            params
+        )
+        val receiptIds = listDocumentIdsByQuery(
+            "SELECT RAW META().id FROM `payment_receipts` WHERE `type` = 'payment_receipt' AND `groupeId` = \$gid",
+            params
+        )
+        removeDocumentIds("payment_receipts", receiptIds)
+        removeDocumentIds(INVOICES_COLLECTION, invoiceIds)
+        removeDocumentIds(LEGACY_INVOICES_COLLECTION, legacyInvoiceIds)
+        removeDocumentIds("profils", profilIds)
+        removeDocumentIds("users", userIds)
+        removeDocumentIds("schools", schoolIds)
         col(GROUPS_COLLECTION).remove(groupeId)
         true
     }.getOrDefault(false)
@@ -727,88 +772,6 @@ class AdminRepository(
                 (it["cnt"] as? Number)?.toLong() ?: 0L
             } ?: 0L
         }.getOrDefault(0L)
-    }
-
-    // ── Abonnements ─────────────────────────────────────────
-
-    suspend fun createSubscription(req: CreateSubscriptionRequest, plan: PlanResponse): SubscriptionResponse {
-        val id = newId("sub")
-        val debut = now()
-        val fin = debut + (365L * 86_400_000L)
-        val doc = mapOf(
-            "type"                to "subscription",
-            "groupeId"            to req.groupeId,
-            "planId"              to req.planId,
-            "statut"              to "active",
-            "dateDebut"           to debut,
-            "dateFin"             to fin,
-            "renouvellementAuto"  to req.renouvellementAuto,
-            "createdAt"           to debut,
-            "updatedAt"           to debut
-        )
-        col("subscriptions").upsert(id, doc)
-        return SubscriptionResponse(id, req.groupeId, req.planId, "active", debut, fin, req.renouvellementAuto, debut)
-    }
-
-    suspend fun listSubscriptions(): List<SubscriptionResponse> {
-        val result = scope.query("SELECT META().id, * FROM `subscriptions` WHERE `type` = 'subscription'").execute()
-        return result.rows.map { row ->
-            val d = row.contentAs<Map<String, Any>>()
-            val inner = d["subscriptions"] as? Map<*, *> ?: d
-            SubscriptionResponse(
-                id                  = d["id"] as? String ?: "",
-                groupeId            = inner["groupeId"] as? String ?: "",
-                planId              = inner["planId"] as? String ?: "",
-                statut              = inner["statut"] as? String ?: "active",
-                dateDebut           = (inner["dateDebut"] as? Number)?.toLong() ?: 0L,
-                dateFin             = (inner["dateFin"] as? Number)?.toLong() ?: 0L,
-                renouvellementAuto  = inner["renouvellementAuto"] as? Boolean ?: false,
-                createdAt           = (inner["createdAt"] as? Number)?.toLong() ?: 0L
-            )
-        }
-    }
-
-    suspend fun getSubscriptionById(id: String): SubscriptionResponse? = runCatching {
-        val doc = col("subscriptions").get(id).contentAs<Map<String, Any>>()
-        SubscriptionResponse(
-            id                  = id,
-            groupeId            = doc["groupeId"] as? String ?: "",
-            planId              = doc["planId"] as? String ?: "",
-            statut              = doc["statut"] as? String ?: "active",
-            dateDebut           = (doc["dateDebut"] as? Number)?.toLong() ?: 0L,
-            dateFin             = (doc["dateFin"] as? Number)?.toLong() ?: 0L,
-            renouvellementAuto  = doc["renouvellementAuto"] as? Boolean ?: false,
-            createdAt           = (doc["createdAt"] as? Number)?.toLong() ?: 0L
-        )
-    }.getOrNull()
-
-    suspend fun getActiveSubscriptionByGroupe(groupeId: String): SubscriptionResponse? {
-        val result = scope.query(
-            "SELECT META().id, * FROM `subscriptions` WHERE `type` = 'subscription' AND `groupeId` = \$gid AND `statut` = 'active' LIMIT 1",
-            parameters = com.couchbase.client.kotlin.query.QueryParameters.named("gid" to groupeId)
-        ).execute()
-        return result.rows.firstOrNull()?.let { row ->
-            val d = row.contentAs<Map<String, Any>>()
-            val inner = d["subscriptions"] as? Map<*, *> ?: d
-            SubscriptionResponse(
-                id                  = d["id"] as? String ?: "",
-                groupeId            = inner["groupeId"] as? String ?: "",
-                planId              = inner["planId"] as? String ?: "",
-                statut              = inner["statut"] as? String ?: "active",
-                dateDebut           = (inner["dateDebut"] as? Number)?.toLong() ?: 0L,
-                dateFin             = (inner["dateFin"] as? Number)?.toLong() ?: 0L,
-                renouvellementAuto  = inner["renouvellementAuto"] as? Boolean ?: false,
-                createdAt           = (inner["createdAt"] as? Number)?.toLong() ?: 0L
-            )
-        }
-    }
-
-    suspend fun updateSubscriptionStatus(id: String, statut: String): SubscriptionResponse? {
-        val existing = runCatching { col("subscriptions").get(id).contentAs<MutableMap<String, Any?>>() }.getOrNull() ?: return null
-        existing["statut"] = statut
-        existing["updatedAt"] = now()
-        col("subscriptions").upsert(id, existing)
-        return getSubscriptionById(id)
     }
 
     // ── Factures Plateforme ───────────────────────────────────
@@ -936,7 +899,15 @@ class AdminRepository(
         return mapToInvoiceResponse(id, existing)
     }
 
-    suspend fun updateInvoiceStatus(id: String, statut: String, datePaiement: Long? = null): InvoiceResponse? {
+    suspend fun deleteInvoice(id: String): Boolean {
+        val (collectionName, _) = findInvoiceDocument(id) ?: return false
+        return runCatching {
+            col(collectionName).remove(id)
+            true
+        }.getOrDefault(false)
+    }
+
+    suspend fun updateInvoiceStatus(id: String, statut: String, datePaiement: Long? = null, montantXAF: Long? = null): InvoiceResponse? {
         val (collectionName, existing) = findInvoiceDocument(id) ?: return null
         val normalizedStatus = statut.trim().lowercase()
         val currentStatus = (existing["statut"] as? String ?: "draft").trim().lowercase()
@@ -954,6 +925,11 @@ class AdminRepository(
         } else if (datePaiement != null) {
             existing["datePaiement"] = datePaiement
         }
+        // Quand un paiement est enregistré, le montant de la facture doit refléter
+        // le montant réellement payé (le reçu fait foi). Si la facture avait un
+        // montant à 0 (plan gratuit / draft) et qu'un paiement de X est effectué,
+        // on corrige le montant pour cohérence comptable.
+        montantXAF?.let { existing["montantXAF"] = it }
         existing["updatedAt"] = now()
         col(collectionName).upsert(id, existing)
         return mapToInvoiceResponse(id, existing)
@@ -990,24 +966,6 @@ class AdminRepository(
                 createdAt = (inner["createdAt"] as? Number)?.toLong() ?: 0L
             )
         }
-    }
-
-    suspend fun countSubscriptions(): Long {
-        return runCatching {
-            val result = scope.query("SELECT COUNT(*) AS cnt FROM `${SUBSCRIPTIONS_COLLECTION}` WHERE `type` = 'subscription'").execute()
-            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
-                (it["cnt"] as? Number)?.toLong() ?: 0L
-            } ?: 0L
-        }.getOrDefault(0L)
-    }
-
-    suspend fun countActiveSubscriptions(): Long {
-        return runCatching {
-            val result = scope.query("SELECT COUNT(*) AS cnt FROM `${SUBSCRIPTIONS_COLLECTION}` WHERE `type` = 'subscription' AND `statut` = 'active'").execute()
-            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let {
-                (it["cnt"] as? Number)?.toLong() ?: 0L
-            } ?: 0L
-        }.getOrDefault(0L)
     }
 
     // ── Dashboard Analytics ────────────────────────────────────
@@ -1055,34 +1013,80 @@ class AdminRepository(
         }.sortedByDescending { it.groupesCount }
     }
 
-    suspend fun subscriptionsByStatus(): Map<String, Long> {
-        return runCatching {
-            val result = scope.query(
-                "SELECT `statut`, COUNT(*) AS cnt FROM `${SUBSCRIPTIONS_COLLECTION}` WHERE `type` = 'subscription' GROUP BY `statut`"
-            ).execute()
-            result.rows.associate { row ->
-                val d = row.contentAs<Map<String, Any>>()
-                (d["statut"] as? String ?: "unknown") to ((d["cnt"] as? Number)?.toLong() ?: 0L)
-            }
-        }.getOrDefault(emptyMap())
-    }
-
     suspend fun countInvoices(): Long {
-        return listInvoices().size.toLong()
+        val primary = runCatching {
+            val result = scope.query(
+                "SELECT COUNT(*) AS cnt FROM `${INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice']"
+            ).execute()
+            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["cnt"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        val legacy = runCatching {
+            val result = scope.query(
+                "SELECT COUNT(*) AS cnt FROM `${LEGACY_INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice']"
+            ).execute()
+            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["cnt"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        return primary + legacy
     }
 
     suspend fun revenueTotal(): Long {
-        return listInvoices().sumOf { it.montantXAF }
+        val primary = runCatching {
+            val result = scope.query(
+                "SELECT SUM(IFMISSINGORNULL(`montantXAF`, 0)) AS total FROM `${INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice']"
+            ).execute()
+            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["total"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        val legacy = runCatching {
+            val result = scope.query(
+                "SELECT SUM(IFMISSINGORNULL(`montantXAF`, 0)) AS total FROM `${LEGACY_INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice']"
+            ).execute()
+            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["total"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        return primary + legacy
     }
 
     suspend fun revenuePaid(): Long {
-        return listInvoices()
-            .filter { it.statut == "paid" }
-            .sumOf { it.montantXAF }
+        // Les reçus de paiement sont la source de vérité comptable.
+        // On interroge payment_receipts pour obtenir le montant réellement encaissé,
+        // car une facture peut avoir été créée avec montantXAF=0 puis payée via
+        // recordPayment avec un montant différent.
+        val fromReceipts = runCatching {
+            val result = scope.query(
+                "SELECT SUM(IFMISSINGORNULL(`montantXAF`, 0)) AS total FROM `payment_receipts` WHERE META().id LIKE 'payment_receipt::%'"
+            ).execute()
+            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["total"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        if (fromReceipts > 0L) return fromReceipts
+        // Fallback : si aucun reçu n'existe encore, on interroge les factures payées.
+        val primary = runCatching {
+            val result = scope.query(
+                "SELECT SUM(IFMISSINGORNULL(`montantXAF`, 0)) AS total FROM `${INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND LOWER(`statut`) = 'paid'"
+            ).execute()
+            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["total"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        val legacy = runCatching {
+            val result = scope.query(
+                "SELECT SUM(IFMISSINGORNULL(`montantXAF`, 0)) AS total FROM `${LEGACY_INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND LOWER(`statut`) = 'paid'"
+            ).execute()
+            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["total"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        return primary + legacy
     }
 
     suspend fun countInvoicesOverdue(): Long {
-        return listInvoices().count { it.statut == "overdue" }.toLong()
+        val primary = runCatching {
+            val result = scope.query(
+                "SELECT COUNT(*) AS cnt FROM `${INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND LOWER(`statut`) = 'overdue'"
+            ).execute()
+            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["cnt"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        val legacy = runCatching {
+            val result = scope.query(
+                "SELECT COUNT(*) AS cnt FROM `${LEGACY_INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND LOWER(`statut`) = 'overdue'"
+            ).execute()
+            result.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["cnt"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        return primary + legacy
     }
 
     suspend fun recentGroupes(limit: Int = 5): List<GroupeResponse> {
@@ -1125,8 +1129,158 @@ class AdminRepository(
         }
     }
 
+    private suspend fun readRecentInvoicesFromCollection(collectionName: String, limit: Int): List<InvoiceResponse> {
+        val result = scope.query(
+            "SELECT META().id AS id, * FROM `${collectionName}` WHERE `type` IN ['invoice_platform', 'invoice'] " +
+                "ORDER BY IFMISSINGORNULL(`createdAt`, `dateEmission`, 0) DESC LIMIT $limit"
+        ).execute()
+        return result.rows.map { row ->
+            val data = row.contentAs<Map<String, Any>>()
+            val inner = data[collectionName] as? Map<*, *> ?: data
+            mapToInvoiceResponse(data["id"] as? String ?: "", inner)
+        }
+    }
+
     suspend fun recentInvoices(limit: Int = 5): List<InvoiceResponse> {
-        return listInvoices().take(limit)
+        val primary = runCatching { readRecentInvoicesFromCollection(INVOICES_COLLECTION, limit) }.getOrDefault(emptyList())
+        val legacy = runCatching { readRecentInvoicesFromCollection(LEGACY_INVOICES_COLLECTION, limit) }.getOrDefault(emptyList())
+        return (primary + legacy)
+            .distinctBy { it.id }
+            .sortedByDescending { maxOf(it.dateEmission, it.datePaiement ?: 0L) }
+            .take(limit)
+    }
+
+    // ── Groupe Dashboard Analytics (ADMIN_GROUPE scope) ──────────
+
+    suspend fun countInvoicesByGroupe(groupeId: String): Long {
+        val params = com.couchbase.client.kotlin.query.QueryParameters.named("gid" to groupeId)
+        val primary = runCatching {
+            val r = scope.query(
+                "SELECT COUNT(*) AS cnt FROM `${INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND `groupeId` = \$gid",
+                parameters = params
+            ).execute()
+            r.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["cnt"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        val legacy = runCatching {
+            val r = scope.query(
+                "SELECT COUNT(*) AS cnt FROM `${LEGACY_INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND `groupeId` = \$gid",
+                parameters = params
+            ).execute()
+            r.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["cnt"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        return primary + legacy
+    }
+
+    suspend fun revenueTotalByGroupe(groupeId: String): Long {
+        val params = com.couchbase.client.kotlin.query.QueryParameters.named("gid" to groupeId)
+        val primary = runCatching {
+            val r = scope.query(
+                "SELECT SUM(IFMISSINGORNULL(`montantXAF`, 0)) AS total FROM `${INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND `groupeId` = \$gid",
+                parameters = params
+            ).execute()
+            r.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["total"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        val legacy = runCatching {
+            val r = scope.query(
+                "SELECT SUM(IFMISSINGORNULL(`montantXAF`, 0)) AS total FROM `${LEGACY_INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND `groupeId` = \$gid",
+                parameters = params
+            ).execute()
+            r.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["total"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        return primary + legacy
+    }
+
+    suspend fun revenuePaidByGroupe(groupeId: String): Long {
+        val params = com.couchbase.client.kotlin.query.QueryParameters.named("gid" to groupeId)
+        val fromReceipts = runCatching {
+            val r = scope.query(
+                "SELECT SUM(IFMISSINGORNULL(`montantXAF`, 0)) AS total FROM `payment_receipts` WHERE META().id LIKE 'payment_receipt::%' AND `groupeId` = \$gid",
+                parameters = params
+            ).execute()
+            r.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["total"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        if (fromReceipts > 0L) return fromReceipts
+        val primary = runCatching {
+            val r = scope.query(
+                "SELECT SUM(IFMISSINGORNULL(`montantXAF`, 0)) AS total FROM `${INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND LOWER(`statut`) = 'paid' AND `groupeId` = \$gid",
+                parameters = params
+            ).execute()
+            r.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["total"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        val legacy = runCatching {
+            val r = scope.query(
+                "SELECT SUM(IFMISSINGORNULL(`montantXAF`, 0)) AS total FROM `${LEGACY_INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND LOWER(`statut`) = 'paid' AND `groupeId` = \$gid",
+                parameters = params
+            ).execute()
+            r.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["total"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        return primary + legacy
+    }
+
+    suspend fun countInvoicesOverdueByGroupe(groupeId: String): Long {
+        val params = com.couchbase.client.kotlin.query.QueryParameters.named("gid" to groupeId, "now" to now())
+        val primary = runCatching {
+            val r = scope.query(
+                "SELECT COUNT(*) AS cnt FROM `${INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND `groupeId` = \$gid AND (LOWER(`statut`) = 'overdue' OR (LOWER(`statut`) NOT IN ['paid','cancelled'] AND `dateEcheance` > 0 AND `dateEcheance` < \$now))",
+                parameters = params
+            ).execute()
+            r.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["cnt"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        val legacy = runCatching {
+            val r = scope.query(
+                "SELECT COUNT(*) AS cnt FROM `${LEGACY_INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND `groupeId` = \$gid AND (LOWER(`statut`) = 'overdue' OR (LOWER(`statut`) NOT IN ['paid','cancelled'] AND `dateEcheance` > 0 AND `dateEcheance` < \$now))",
+                parameters = params
+            ).execute()
+            r.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["cnt"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+        return primary + legacy
+    }
+
+    suspend fun getLatestInvoiceByGroupe(groupeId: String): InvoiceResponse? {
+        val params = com.couchbase.client.kotlin.query.QueryParameters.named("gid" to groupeId)
+        val primary = runCatching {
+            val r = scope.query(
+                "SELECT META().id AS id, * FROM `${INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND `groupeId` = \$gid ORDER BY IFMISSINGORNULL(`dateEmission`, `createdAt`, 0) DESC LIMIT 1",
+                parameters = params
+            ).execute()
+            r.rows.firstOrNull()?.let { row ->
+                val data = row.contentAs<Map<String, Any>>()
+                val inner = data[INVOICES_COLLECTION] as? Map<*, *> ?: data
+                mapToInvoiceResponse(data["id"] as? String ?: "", inner)
+            }
+        }.getOrNull()
+        if (primary != null) return primary
+        return runCatching {
+            val r = scope.query(
+                "SELECT META().id AS id, * FROM `${LEGACY_INVOICES_COLLECTION}` WHERE `type` IN ['invoice_platform', 'invoice'] AND `groupeId` = \$gid ORDER BY IFMISSINGORNULL(`dateEmission`, `createdAt`, 0) DESC LIMIT 1",
+                parameters = params
+            ).execute()
+            r.rows.firstOrNull()?.let { row ->
+                val data = row.contentAs<Map<String, Any>>()
+                val inner = data[LEGACY_INVOICES_COLLECTION] as? Map<*, *> ?: data
+                mapToInvoiceResponse(data["id"] as? String ?: "", inner)
+            }
+        }.getOrNull()
+    }
+
+    suspend fun countProfilsByGroupe(groupeId: String): Long {
+        return runCatching {
+            val r = scope.query(
+                "SELECT COUNT(*) AS cnt FROM `profils` WHERE `type` = 'profil' AND (`groupId` = \$gid OR `groupeId` = \$gid)",
+                parameters = com.couchbase.client.kotlin.query.QueryParameters.named("gid" to groupeId)
+            ).execute()
+            r.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["cnt"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
+    }
+
+    suspend fun countUsersByGroupeId(groupeId: String): Long {
+        return runCatching {
+            val r = scope.query(
+                "SELECT COUNT(*) AS cnt FROM `users` WHERE `type` = 'user' AND (`groupId` = \$gid OR `groupeId` = \$gid)",
+                parameters = com.couchbase.client.kotlin.query.QueryParameters.named("gid" to groupeId)
+            ).execute()
+            r.rows.firstOrNull()?.contentAs<Map<String, Any>>()?.let { (it["cnt"] as? Number)?.toLong() ?: 0L } ?: 0L
+        }.getOrDefault(0L)
     }
 
     // ── Admin Users (Super Admin scope) ──────────────────────────

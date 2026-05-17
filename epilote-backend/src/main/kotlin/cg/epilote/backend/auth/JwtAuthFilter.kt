@@ -45,10 +45,12 @@ class JwtAuthFilter(private val jwtService: JwtService) : OncePerRequestFilter()
 
                 val auth = UsernamePasswordAuthenticationToken(userId, null, authorities)
                 auth.details = mapOf(
-                    "schoolId" to (claims["schoolId"] as? String ?: ""),
-                    "groupId"  to (claims["groupId"] as? String ?: ""),
-                    "role"     to role,
-                    "email"    to (claims["email"] as? String ?: "")
+                    "schoolId"  to (claims["schoolId"] as? String ?: ""),
+                    "groupId"   to (claims["groupId"] as? String ?: ""),
+                    "role"      to role,
+                    "email"     to (claims["email"] as? String ?: ""),
+                    "firstName" to (claims["firstName"] as? String ?: ""),
+                    "lastName"  to (claims["lastName"] as? String ?: "")
                 )
                 SecurityContextHolder.getContext().authentication = auth
             }

@@ -56,13 +56,38 @@ class AdminDataRepository(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _rawSubscriptions = MutableStateFlow<List<SubscriptionApiDto>>(emptyList())
+    val rawSubscriptions: StateFlow<List<SubscriptionApiDto>> = _rawSubscriptions.asStateFlow()
+
+    private val _rawInvoices = MutableStateFlow<List<InvoiceApiDto>>(emptyList())
+    val rawInvoices: StateFlow<List<InvoiceApiDto>> = _rawInvoices.asStateFlow()
+
+    private val _messages = MutableStateFlow<List<AdminMessageApiDto>>(emptyList())
+    val messages: StateFlow<List<AdminMessageApiDto>> = _messages.asStateFlow()
+
+    private val _announcements = MutableStateFlow<List<AnnouncementApiDto>>(emptyList())
+    val announcements: StateFlow<List<AnnouncementApiDto>> = _announcements.asStateFlow()
+
+    private val _auditLogs = MutableStateFlow<List<AuditEventApiDto>>(emptyList())
+    val auditLogs: StateFlow<List<AuditEventApiDto>> = _auditLogs.asStateFlow()
+
+    private val _auditTotal = MutableStateFlow(0L)
+    val auditTotal: StateFlow<Long> = _auditTotal.asStateFlow()
+
+    private val _paymentReceipts = MutableStateFlow<List<PaymentReceiptDto>>(emptyList())
+    val paymentReceipts: StateFlow<List<PaymentReceiptDto>> = _paymentReceipts.asStateFlow()
+
     private val _messagingReloadTick = MutableStateFlow(0)
     val messagingReloadTick: StateFlow<Int> = _messagingReloadTick.asStateFlow()
 
     var lastEventId: String? = null
 
-    fun refreshAllAsync() {
-        launchRefreshOnce("all") { refreshAll() }
+    fun refreshAllAsync(showLoading: Boolean = true) {
+        launchRefreshOnce("all") { refreshAll(showLoading = showLoading) }
+    }
+
+    fun refreshAllInBackgroundAsync() {
+        refreshAllAsync(showLoading = false)
     }
 
     fun refreshGroupesAsync() {
@@ -87,6 +112,27 @@ class AdminDataRepository(
 
     fun notifyMessagingReload() {
         _messagingReloadTick.value++
+        refreshMessagingAsync()
+    }
+
+    fun refreshSubscriptionsAsync() {
+        launchRefreshOnce("subscriptions") { refreshSubscriptions() }
+    }
+
+    fun refreshInvoicesAsync() {
+        launchRefreshOnce("invoices") { refreshInvoices() }
+    }
+
+    fun refreshMessagingAsync() {
+        launchRefreshOnce("messaging") { refreshMessaging() }
+    }
+
+    fun refreshAuditAsync() {
+        launchRefreshOnce("audit") { refreshAudit() }
+    }
+
+    fun refreshPaymentsAsync() {
+        launchRefreshOnce("payments") { refreshPayments() }
     }
 
     fun refreshDashboardStatsAsync() {
@@ -141,70 +187,70 @@ class AdminDataRepository(
         }
     }
 
-    suspend fun refreshAll() {
+    suspend fun refreshAll(showLoading: Boolean = true) {
         log.info("[AdminRepo] refreshAll START")
-        _isLoading.value = true
+        if (showLoading) {
+            _isLoading.value = true
+        }
         try {
             coroutineScope {
-                val dStats = async { runCatching { client.getDashboardStats() }.getOrNull() ?: DashboardStatsDto() }
-                val dGroupes = async { runCatching { client.listGroupes() }.getOrNull().orEmpty() }
+                val dStats = async { runCatching { client.getDashboardStats() }.getOrNull() }
+                val dGroupes = async { runCatching { client.listGroupes() }.getOrNull()?.map { it.toGroupeDto() } }
                 val dPlans = async { runCatching { client.listPlans() }.getOrNull()?.map {
                     PlanDto(id = it.id, nom = it.nom, type = it.type, prixXAF = it.prixXAF,
                         currency = it.currency, maxStudents = it.maxStudents, maxPersonnel = it.maxPersonnel,
                         modulesIncluded = it.modulesIncluded, isActive = it.isActive)
-                }.orEmpty() }
+                } }
                 val dModules = async { runCatching { client.listModules() }.getOrNull()?.map {
                     ModuleDto(it.id, it.code, it.nom, it.categorieCode, it.description, it.isCore, it.requiredPlan, it.isActive, it.ordre)
-                }.orEmpty() }
+                } }
                 val dCategories = async { runCatching { client.listCategories() }.getOrNull()?.map {
                     CategorieDto(code = it.code, nom = it.nom, isCore = it.isCore, ordre = it.ordre, isActive = it.isActive)
-                }.orEmpty() }
-                val dAdmins = async { runCatching { client.listAllAdmins() }.getOrNull().orEmpty() }
+                } }
+                val dAdmins = async { runCatching { client.listAllAdmins() }.getOrNull()?.map { it.toAdminUserDto() } }
+                val dSubs = async { runCatching { client.listSubscriptions() }.getOrNull() }
+                val dInvoices = async { runCatching { client.listInvoices() }.getOrNull() }
+                val dMessages = async { runCatching { client.listMessages() }.getOrNull() }
+                val dAnnouncements = async { runCatching { client.listAnnouncements() }.getOrNull() }
+                val dAudit = async { runCatching { client.listAuditLogs(page = 1, pageSize = 50) }.getOrNull() }
+                val dPayments = async { runCatching { client.listPaymentReceipts() }.getOrNull() }
 
-                awaitAll(dStats, dGroupes, dPlans, dModules, dCategories, dAdmins)
+                awaitAll(dStats, dGroupes, dPlans, dModules, dCategories, dAdmins, dSubs, dInvoices, dMessages, dAnnouncements, dAudit, dPayments)
 
-                val stats = dStats.await()
-                val groupesApi = dGroupes.await()
-                val groupes = groupesApi.map { it.toGroupeDto() }
-                val adminsApi = dAdmins.await()
-                val adminsByGroup = groupesApi.associate { groupe ->
-                    groupe.id to adminsApi
-                        .asSequence()
-                        .filter { it.role.equals("ADMIN_GROUPE", ignoreCase = true) && it.groupId == groupe.id }
-                        .map { it.toUserDto() }
-                        .toList()
-                }
+                val stats = dStats.await() ?: _dashboardStats.value
+                val groupes = dGroupes.await() ?: _groupes.value
+                val admins = dAdmins.await() ?: _adminUsers.value
 
                 _dashboardStats.value = stats
                 _adminStats.value = stats.toAdminStats()
                 _groupes.value = groupes
-                _adminGroupAdmins.value = adminsByGroup
-                _plans.value = dPlans.await()
-                _modules.value = dModules.await()
-                _categories.value = dCategories.await()
-                _adminUsers.value = adminsApi.map { it.toAdminUserDto() }
+                _adminGroupAdmins.value = buildAdminsByGroup(groupes, admins)
+                _plans.value = dPlans.await() ?: _plans.value
+                _modules.value = dModules.await() ?: _modules.value
+                _categories.value = dCategories.await() ?: _categories.value
+                _adminUsers.value = admins
+                dSubs.await()?.let { _rawSubscriptions.value = it }
+                dInvoices.await()?.let { _rawInvoices.value = it }
+                dMessages.await()?.let { _messages.value = it }
+                dAnnouncements.await()?.let { _announcements.value = it }
+                dAudit.await()?.let { _auditLogs.value = it.items; _auditTotal.value = it.total }
+                dPayments.await()?.let { _paymentReceipts.value = it }
             }
         } catch (e: Exception) {
             log.warning("[AdminRepo] refreshAll FAILED: ${e.message}")
         }
-        _isLoading.value = false
+        if (showLoading) {
+            _isLoading.value = false
+        }
         log.info("[AdminRepo] refreshAll DONE — groupes=${_groupes.value.size} plans=${_plans.value.size} admins=${_adminUsers.value.size}")
     }
 
     suspend fun refreshGroupes() {
-        val groupesApi = runCatching { client.listGroupes() }.getOrNull().orEmpty()
-        val adminsApi = runCatching { client.listAllAdmins() }.getOrNull().orEmpty()
-        val groupes = groupesApi.map { it.toGroupeDto() }
-        val adminsByGroup = groupesApi.associate { groupe ->
-            groupe.id to adminsApi
-                .asSequence()
-                .filter { it.role.equals("ADMIN_GROUPE", ignoreCase = true) && it.groupId == groupe.id }
-                .map { it.toUserDto() }
-                .toList()
-        }
+        val groupes = runCatching { client.listGroupes() }.getOrNull()?.map { it.toGroupeDto() } ?: _groupes.value
+        val admins = runCatching { client.listAllAdmins() }.getOrNull()?.map { it.toAdminUserDto() } ?: _adminUsers.value
         _groupes.value = groupes
-        _adminGroupAdmins.value = adminsByGroup
-        _adminUsers.value = adminsApi.map { it.toAdminUserDto() }
+        _adminGroupAdmins.value = buildAdminsByGroup(groupes, admins)
+        _adminUsers.value = admins
         refreshDashboardStats()
     }
 
@@ -213,7 +259,7 @@ class AdminDataRepository(
             PlanDto(id = it.id, nom = it.nom, type = it.type, prixXAF = it.prixXAF,
                 currency = it.currency, maxStudents = it.maxStudents, maxPersonnel = it.maxPersonnel,
                 modulesIncluded = it.modulesIncluded, isActive = it.isActive)
-        }.orEmpty()
+        } ?: _plans.value
         _plans.value = plans
         refreshDashboardStats()
     }
@@ -221,7 +267,7 @@ class AdminDataRepository(
     suspend fun refreshModules() {
         val modules = runCatching { client.listModules() }.getOrNull()?.map {
             ModuleDto(it.id, it.code, it.nom, it.categorieCode, it.description, it.isCore, it.requiredPlan, it.isActive, it.ordre)
-        }.orEmpty()
+        } ?: _modules.value
         _modules.value = modules
         refreshDashboardStats()
     }
@@ -229,18 +275,49 @@ class AdminDataRepository(
     suspend fun refreshCategories() {
         val categories = runCatching { client.listCategories() }.getOrNull()?.map {
             CategorieDto(code = it.code, nom = it.nom, isCore = it.isCore, ordre = it.ordre, isActive = it.isActive)
-        }.orEmpty()
+        } ?: _categories.value
         _categories.value = categories
     }
 
     suspend fun refreshAdmins() {
-        val adminsApi = runCatching { client.listAllAdmins() }.getOrNull().orEmpty()
-        _adminUsers.value = adminsApi.map { it.toAdminUserDto() }
+        val admins = runCatching { client.listAllAdmins() }.getOrNull()?.map { it.toAdminUserDto() } ?: _adminUsers.value
+        _adminUsers.value = admins
+        _adminGroupAdmins.value = buildAdminsByGroup(_groupes.value, admins)
         refreshDashboardStats()
     }
 
+    suspend fun refreshSubscriptions() {
+        val subs = runCatching { client.listSubscriptions() }.getOrNull()
+        if (subs != null) _rawSubscriptions.value = subs
+    }
+
+    suspend fun refreshInvoices() {
+        val invoices = runCatching { client.listInvoices() }.getOrNull()
+        if (invoices != null) _rawInvoices.value = invoices
+    }
+
+    suspend fun refreshMessaging() {
+        val msgs = runCatching { client.listMessages() }.getOrNull()
+        val anns = runCatching { client.listAnnouncements() }.getOrNull()
+        if (msgs != null) _messages.value = msgs
+        if (anns != null) _announcements.value = anns
+    }
+
+    suspend fun refreshAudit() {
+        val page = runCatching { client.listAuditLogs(page = 1, pageSize = 50) }.getOrNull()
+        if (page != null) {
+            _auditLogs.value = page.items
+            _auditTotal.value = page.total
+        }
+    }
+
+    suspend fun refreshPayments() {
+        val list = runCatching { client.listPaymentReceipts() }.getOrNull()
+        if (list != null) _paymentReceipts.value = list
+    }
+
     suspend fun refreshDashboardStats() {
-        val stats = runCatching { client.getDashboardStats() }.getOrNull() ?: DashboardStatsDto()
+        val stats = runCatching { client.getDashboardStats() }.getOrNull() ?: _dashboardStats.value
         _dashboardStats.value = stats
         _adminStats.value = stats.toAdminStats()
     }
@@ -256,8 +333,12 @@ class AdminDataRepository(
             "module" -> refreshModulesAsync()
             "category" -> refreshCategoriesAsync()
             "admin" -> refreshAdminsAsync()
-            "invoice", "subscription", "announcement", "message" -> refreshDashboardStatsAsync()
-            else -> refreshAllAsync()
+            "subscription" -> { refreshSubscriptionsAsync(); refreshDashboardStatsAsync() }
+            "invoice" -> { refreshInvoicesAsync(); refreshDashboardStatsAsync() }
+            "announcement", "message" -> refreshMessagingAsync()
+            "audit" -> refreshAuditAsync()
+            "payment", "payment_receipt" -> refreshPaymentsAsync()
+            else -> refreshAllAsync(showLoading = false)
         }
     }
 
@@ -272,6 +353,17 @@ class AdminDataRepository(
                 guard.set(false)
             }
         }
+    }
+
+    private fun buildAdminsByGroup(
+        groupes: List<GroupeDto>,
+        admins: List<AdminUserDto>
+    ): Map<String, List<UserDto>> = groupes.associate { groupe ->
+        groupe.id to admins
+            .asSequence()
+            .filter { it.role.equals("ADMIN_GROUPE", ignoreCase = true) && it.groupId == groupe.id }
+            .map { it.toUserDto() }
+            .toList()
     }
 
     private fun syncAdminGroupMapping(admin: AdminUserDto) {
@@ -297,77 +389,4 @@ class AdminDataRepository(
         return toMutableList().also { it[existingIndex] = item }
     }
 
-    private fun GroupeApiDto.toGroupeDto() = GroupeDto(
-        id = id, nom = nom, slug = slug, email = email, phone = phone,
-        department = department, city = city, address = address, country = country,
-        logo = logo, description = description, foundedYear = foundedYear,
-        website = website, planId = planId, ecolesCount = ecolesCount,
-        usersCount = usersCount, isActive = isActive, createdAt = createdAt
-    )
-
-    private fun PlanApiDto.toPlanDto() = PlanDto(
-        id = id, nom = nom, type = type, prixXAF = prixXAF,
-        currency = currency, maxStudents = maxStudents, maxPersonnel = maxPersonnel,
-        modulesIncluded = modulesIncluded, isActive = isActive
-    )
-
-    private fun ModuleApiDto.toModuleDto() = ModuleDto(
-        id, code, nom, categorieCode, description, isCore, requiredPlan, isActive, ordre
-    )
-
-    private fun CategorieApiDto.toCategorieDto() = CategorieDto(
-        code = code, nom = nom, isCore = isCore, ordre = ordre, isActive = isActive
-    )
-
-    private fun AdminUserApiDto.toAdminUserDto() = AdminUserDto(
-        id = id, username = username, firstName = firstName, lastName = lastName,
-        email = email, phone = phone, role = role, status = status,
-        gender = gender, dateOfBirth = dateOfBirth, groupId = groupId,
-        schoolId = schoolId, avatar = avatar, address = address,
-        birthPlace = birthPlace, mustChangePassword = mustChangePassword,
-        lastLoginAt = lastLoginAt, loginAttempts = loginAttempts,
-        isActive = isActive, createdAt = createdAt, updatedAt = updatedAt
-    )
-
-    private fun UserApiDto.toAdminUserDto() = AdminUserDto(
-        id = id,
-        username = username,
-        firstName = firstName,
-        lastName = lastName,
-        email = email,
-        phone = null,
-        role = role,
-        status = if (isActive) "active" else "inactive",
-        gender = null,
-        dateOfBirth = null,
-        groupId = groupId,
-        schoolId = schoolId,
-        avatar = null,
-        address = null,
-        birthPlace = null,
-        mustChangePassword = false,
-        lastLoginAt = null,
-        loginAttempts = 0,
-        isActive = isActive,
-        createdAt = createdAt,
-        updatedAt = createdAt
-    )
-
-    private fun AdminUserApiDto.toUserDto() = UserDto(
-        id = id, username = username, firstName = firstName, lastName = lastName,
-        email = email, schoolId = schoolId ?: "", groupId = groupId ?: "",
-        profilId = "", role = role, isActive = isActive, createdAt = createdAt
-    )
-
-    private fun UserApiDto.toUserDto() = UserDto(
-        id = id, username = username, firstName = firstName, lastName = lastName,
-        email = email, schoolId = schoolId ?: "", groupId = groupId,
-        profilId = profilId ?: "", role = role, isActive = isActive, createdAt = createdAt
-    )
-
-    private fun AdminUserDto.toUserDto() = UserDto(
-        id = id, username = username, firstName = firstName, lastName = lastName,
-        email = email, schoolId = schoolId ?: "", groupId = groupId ?: "",
-        profilId = "", role = role, isActive = isActive, createdAt = createdAt
-    )
 }
