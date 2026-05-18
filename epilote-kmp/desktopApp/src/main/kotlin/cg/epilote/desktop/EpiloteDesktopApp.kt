@@ -32,13 +32,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 @Composable
 fun EpiloteDesktopApp() {
     var session by remember { mutableStateOf<UserSession?>(null) }
     var currentScreen by remember { mutableStateOf(DesktopScreen.DASHBOARD) }
-    val isSuperAdmin = session?.role == "SUPER_ADMIN"
+    val isSuperAdmin   = session?.role == "SUPER_ADMIN"
+    val isAdminGroupe  = session?.role == "ADMIN_GROUPE"
 
     EpiloteTheme {
         // ── Session DB (always needed) ──
@@ -183,6 +185,19 @@ fun EpiloteDesktopApp() {
 
             val adminRepo = remember { AdminDataRepository(adminClient) }
 
+            val groupId = s.groupId
+            val groupeClient = remember(groupId) {
+                if (groupId != null) DesktopGroupeClient(
+                    baseUrl        = desktopBackendBaseUrl,
+                    tokenProvider  = buildDesktopAdminTokenProvider(sessionRepo) { session },
+                    onUnauthorized = adminUnauthorizedHandler
+                ) else null
+            }
+            val groupeRepo = remember(groupId) {
+                if (groupId != null) GroupeAdminDataRepository(groupeClient!!, groupId)
+                else null
+            }
+
             val adminRealtimeClient = remember {
                 AdminRealtimeClient(
                     baseUrl = desktopBackendBaseUrl,
@@ -203,7 +218,16 @@ fun EpiloteDesktopApp() {
             val adminCategories by adminRepo.categories.collectAsState()
             val adminUsers by adminRepo.adminUsers.collectAsState()
             val adminLoading by adminRepo.isLoading.collectAsState()
+            val adminRawSubscriptions by adminRepo.rawSubscriptions.collectAsState()
+            val adminRawInvoices by adminRepo.rawInvoices.collectAsState()
+            val adminMessages by adminRepo.messages.collectAsState()
+            val adminAnnouncements by adminRepo.announcements.collectAsState()
+            val adminAuditLogs by adminRepo.auditLogs.collectAsState()
+            val adminAuditTotal by adminRepo.auditTotal.collectAsState()
+            val adminPaymentReceipts by adminRepo.paymentReceipts.collectAsState()
             var sidebarExpanded by remember { mutableStateOf(true) }
+            val groupeDynamicCategories by (groupeRepo?.categoriesWithModules
+                ?: MutableStateFlow(emptyList<CategorieWithModulesDto>())).collectAsState()
 
             // ── Initial data load + periodic refresh ──
             LaunchedEffect(isSuperAdmin) {
@@ -218,7 +242,19 @@ fun EpiloteDesktopApp() {
                     adminRepo.refreshAll()
                     while (true) {
                         delay(60_000)
-                        adminRepo.refreshAll()
+                        adminRepo.refreshAll(showLoading = false)
+                    }
+                }
+            }
+
+            LaunchedEffect(isAdminGroupe) {
+                if (isAdminGroupe && groupeRepo != null) {
+                    val refreshed = refreshDesktopAdminSession(desktopBackendBaseUrl, sessionRepo) { session = it }
+                    if (!refreshed) { session = null; return@LaunchedEffect }
+                    groupeRepo.refreshAll()
+                    while (true) {
+                        delay(120_000)
+                        groupeRepo.refreshAll(showLoading = false)
                     }
                 }
             }
@@ -263,11 +299,13 @@ fun EpiloteDesktopApp() {
 
             Row(modifier = Modifier.fillMaxSize()) {
                 Sidebar(
-                    session          = s,
-                    currentScreen    = currentScreen,
-                    onScreenSelected = { currentScreen = it },
-                    isExpanded       = sidebarExpanded,
-                    onToggleExpanded = { sidebarExpanded = !sidebarExpanded }
+                    session            = s,
+                    currentScreen      = currentScreen,
+                    onScreenSelected   = { currentScreen = it },
+                    isExpanded         = sidebarExpanded,
+                    onToggleExpanded   = { sidebarExpanded = !sidebarExpanded },
+                    dynamicCategories  = groupeDynamicCategories,
+                    onLogout           = logoutAction
                 )
 
                 Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
@@ -295,121 +333,36 @@ fun EpiloteDesktopApp() {
                                 adminCategories = adminCategories,
                                 adminUsers = adminUsers,
                                 adminLoading = adminLoading,
+                                adminRawSubscriptions = adminRawSubscriptions,
+                                adminRawInvoices = adminRawInvoices,
+                                adminMessages = adminMessages,
+                                adminAnnouncements = adminAnnouncements,
+                                adminAuditLogs = adminAuditLogs,
+                                adminAuditTotal = adminAuditTotal,
+                                adminPaymentReceipts = adminPaymentReceipts,
                                 appScope = appScope,
                                 adminClient = adminClient,
                                 adminRepo = adminRepo,
                                 onScreenChange = { currentScreen = it }
                             )
-                        } else when (currentScreen) {
-                            DesktopScreen.GROUPE_DASHBOARD ->
-                                PlaceholderScreen("Dashboard Groupe", "Vue d'ensemble du groupe scolaire")
-
-                            DesktopScreen.GROUPE_ECOLES ->
-                                PlaceholderScreen("Écoles", "Gestion des écoles du groupe")
-
-                            DesktopScreen.GROUPE_UTILISATEURS ->
-                                PlaceholderScreen("Utilisateurs", "Gestion de tous les utilisateurs du groupe")
-
-                            DesktopScreen.GROUPE_PROFILS ->
-                                PlaceholderScreen("Profils d'accès", "Gestion des profils et permissions du groupe")
-
-                            // ── Regular Screens ──────────────────────
-                            DesktopScreen.DASHBOARD ->
-                                DashboardScreen(s)
-
-                            DesktopScreen.CLASSES ->
-                                ClassesScreen(s, classesVm)
-
-                            DesktopScreen.NOTES ->
-                                NotesScreen(s, classesVm, notesVm)
-
-                            DesktopScreen.ABSENCES ->
-                                AbsencesScreen(s, absencesVm)
-
-                            DesktopScreen.BULLETINS ->
-                                BulletinScreen(
-                                    session               = s,
-                                    classesViewModel      = classesVm,
-                                    bulletinViewModel     = bulletinVm,
-                                    appreciationResult    = appreciationResult,
-                                    onDismissAppreciation = { appreciationResult = null },
-                                    onRequestAppreciation = { bulletin ->
-                                        isAILoading = true
-                                        appScope.launch {
-                                            val resp = aiClient.generateAppreciation(
-                                                AIAppreciationRequestDto(
-                                                    eleveNom        = "${bulletin.eleveNom} ${bulletin.elevePrenom}",
-                                                    moyenneGenerale = bulletin.moyenneGenerale,
-                                                    rang            = bulletin.rang,
-                                                    effectif        = bulletin.totalEleves,
-                                                    absences        = bulletin.absencesCount
-                                                )
-                                            )
-                                            appreciationResult = if (resp != null) {
-                                                AppreciationResult(
-                                                    eleveNom     = "${bulletin.eleveNom} ${bulletin.elevePrenom}",
-                                                    appreciation = resp.appreciation,
-                                                    mention      = resp.mention,
-                                                    conseil      = resp.conseil,
-                                                    fallback     = resp.fallback
-                                                )
-                                            } else {
-                                                AppreciationResult(
-                                                    eleveNom     = "${bulletin.eleveNom} ${bulletin.elevePrenom}",
-                                                    appreciation = "Service IA indisponible. Veuillez réessayer.",
-                                                    mention      = "—",
-                                                    conseil      = "",
-                                                    fallback     = true
-                                                )
-                                            }
-                                            isAILoading = false
-                                        }
-                                    }
-                                )
-
-                            DesktopScreen.CAHIER ->
-                                CahierTextesScreen(
-                                    session                = s,
-                                    onRequestGenerateContent = { titre, niveau, matiere, type ->
-                                        appScope.launch {
-                                            aiClient.generateContent(
-                                                AIContentRequestDto(
-                                                    titre  = titre,
-                                                    niveau = niveau,
-                                                    matiere = matiere,
-                                                    type   = type
-                                                )
-                                            )
-                                        }
-                                    }
-                                )
-
-                            DesktopScreen.CONFLICTS ->
-                                ConflictsScreen(
-                                    session                = s,
-                                    noteRepo               = noteRepo,
-                                    resolveConflictUseCase = resolveConflictUseCase
-                                )
-
-                            DesktopScreen.ELEVES ->
-                                PlaceholderScreen("Élèves", "Dossiers et inscriptions des élèves")
-
-                            DesktopScreen.INSCRIPTIONS ->
-                                PlaceholderScreen("Inscriptions", "Gestion des inscriptions scolaires")
-
-                            DesktopScreen.FINANCES ->
-                                PlaceholderScreen("Finances", "Gestion financière et facturation")
-
-                            DesktopScreen.PERSONNEL ->
-                                PlaceholderScreen("Personnel", "Gestion des employés")
-
-                            DesktopScreen.DISCIPLINE ->
-                                PlaceholderScreen("Discipline", "Suivi disciplinaire des élèves")
-
-                            DesktopScreen.ANNONCES ->
-                                PlaceholderScreen("Annonces", "Annonces et communications")
-
-                            else -> Unit
+                        } else {
+                            NonAdminScreenContent(
+                                currentScreen          = currentScreen,
+                                session                = s,
+                                groupeRepo             = groupeRepo,
+                                classesVm              = classesVm,
+                                notesVm                = notesVm,
+                                absencesVm             = absencesVm,
+                                bulletinVm             = bulletinVm,
+                                appScope               = appScope,
+                                aiClient               = aiClient,
+                                noteRepo               = noteRepo,
+                                resolveConflictUseCase = resolveConflictUseCase,
+                                onScreenChange         = { currentScreen = it },
+                                appreciationResult     = appreciationResult,
+                                onAppreciationResult   = { appreciationResult = it },
+                                onAILoadingChange      = { isAILoading = it }
+                            )
                         }
                     }
                 }

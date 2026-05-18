@@ -31,8 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cg.epilote.desktop.data.CreateAdminUserDto
 import cg.epilote.desktop.data.UpdateAdminUserDto
-import cg.epilote.desktop.ui.theme.EpiloteGreen
 import cg.epilote.desktop.ui.theme.EpiloteTextMuted
+import cg.epilote.desktop.ui.theme.PulsingLoadingBar
+import cg.epilote.desktop.ui.theme.ShimmerBox
 
 @Composable
 fun AdminAdminsScreen(
@@ -159,8 +160,9 @@ fun AdminAdminsScreen(
 
         // ── Loading ────────────────────────────────────────────
         if (isLoading) {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = EpiloteGreen)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                PulsingLoadingBar(Modifier.fillMaxWidth())
+                repeat(5) { ShimmerBox(Modifier.fillMaxWidth().height(72.dp)) }
             }
         }
 

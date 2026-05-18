@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cg.epilote.desktop.ui.screens.superadmin.*
+import cg.epilote.desktop.ui.theme.PulsingLoadingBar
+import cg.epilote.desktop.ui.theme.ShimmerBox
 import cg.epilote.shared.domain.model.UserSession
 
 @Composable
@@ -37,18 +39,17 @@ fun SuperAdminDashboardScreen(
 ) {
     val scrollState = rememberScrollState()
     var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        // Force un rafraîchissement dès l'affichage du tableau de bord pour éviter
-        // l'affichage transitoire des KPIs par défaut (0 partout) tant que le refresh
-        // global n'a pas encore répondu. Cf. AdminDataRepository.refreshAll().
-        visible = true
-        onRefresh()
+    LaunchedEffect(isLoading) {
+        if (!isLoading) visible = true
     }
 
     Column(
         modifier = Modifier.fillMaxSize().background(Color(0xFFF0F4F8))
     ) {
-        // ═══════════ CONTENU SCROLLABLE ═══════════
+        if (isLoading) {
+            PulsingLoadingBar()
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -59,65 +60,176 @@ fun SuperAdminDashboardScreen(
             // ── 1. BIENVENUE ─────────────────────────────────────
             WelcomeSection(session = session, isLoading = isLoading, onRefresh = onRefresh)
 
-            // ── 2. KPIs PRINCIPAUX (Groupes, Abonnements, Revenus, Croissance)
-            AnimatedSection(visible, 0) {
-                DashboardMainKpiRow(stats = stats, onNavigateGroupes = onNavigateGroupes)
-            }
+            if (isLoading) {
+                DashboardSkeleton()
+            } else {
+                // ── 2. KPIs PRINCIPAUX
+                AnimatedSection(visible, 0) {
+                    DashboardMainKpiRow(stats = stats, onNavigateGroupes = onNavigateGroupes)
+                }
 
-            // ── 3. VUE D'ENSEMBLE NATIONALE (mini-cartes Élèves, Enseignants, Écoles, Inscriptions)
-            AnimatedSection(visible, 100) {
-                NationalOverviewSection(stats = stats)
-            }
+                // ── 3. VUE D'ENSEMBLE NATIONALE
+                AnimatedSection(visible, 100) {
+                    NationalOverviewSection(stats = stats)
+                }
 
-            // ── 4. GRAPHIQUES : Couverture par Département | Couverture nationale (anneaux)
-            AnimatedSection(visible, 200) {
-                DashboardChartsRow1(stats = stats)
-            }
+                // ── 4. GRAPHIQUES : Couverture département | anneaux
+                AnimatedSection(visible, 200) {
+                    DashboardChartsRow1(stats = stats)
+                }
 
-            // ── 5. CARTE DES DÉPARTEMENTS DU CONGO
-            AnimatedSection(visible, 300) {
-                DepartmentMapSection(stats = stats)
-            }
+                // ── 5. CARTE DES DÉPARTEMENTS DU CONGO
+                AnimatedSection(visible, 300) {
+                    DepartmentMapSection(stats = stats)
+                }
 
-            // ── 6. GRAPHIQUES : Performance financière | Répartition des plans
-            AnimatedSection(visible, 400) {
-                DashboardChartsRow2(stats = stats)
-            }
+                // ── 6. GRAPHIQUES : Performance financière | plans
+                AnimatedSection(visible, 400) {
+                    DashboardChartsRow2(stats = stats)
+                }
 
-            // ── 7. KPIs SECONDAIRES (Utilisateurs, Factures, Modules, Plans)
-            AnimatedSection(visible, 500) {
-                DashboardSecondaryKpiRow(
-                    stats = stats,
+                // ── 7. KPIs SECONDAIRES
+                AnimatedSection(visible, 500) {
+                    DashboardSecondaryKpiRow(
+                        stats = stats,
+                        onNavigateModules = onNavigateModules,
+                        onNavigatePlans = onNavigatePlans
+                    )
+                }
+
+                // ── 8. GRAPHIQUE : Statut des abonnements
+                AnimatedSection(visible, 600) {
+                    DashboardChartsRow3(stats = stats)
+                }
+
+                // ── 9. ALERTES (factures en retard)
+                if (stats.invoicesOverdue > 0) {
+                    AlertsSection(stats.invoicesOverdue, onNavigateNotifications)
+                }
+
+                // ── 10. ACTIVITÉ RÉCENTE
+                AnimatedSection(visible, 700) {
+                    RecentActivityRow(stats = stats, onNavigateGroupes = onNavigateGroupes, onNavigateInvoices = onNavigateInvoices)
+                }
+
+                // ── 11. ACTIONS RAPIDES
+                QuickActionsRow(
+                    onNavigateGroupes = onNavigateGroupes,
+                    onNavigatePlans = onNavigatePlans,
                     onNavigateModules = onNavigateModules,
-                    onNavigatePlans = onNavigatePlans
+                    onNavigateAnnouncements = onNavigateAnnouncements
                 )
             }
+        }
+    }
+}
 
-            // ── 8. GRAPHIQUE : Statut des abonnements
-            AnimatedSection(visible, 600) {
-                DashboardChartsRow3(stats = stats)
+// ── Skeleton du dashboard complet ───────────────────────────────────────────
+
+@Composable
+private fun DashboardSkeleton() {
+    // Ligne KPI principale : 4 cartes
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        repeat(4) {
+            SkeletonKpiCard(Modifier.weight(1f))
+        }
+    }
+
+    // Vue d'ensemble nationale : titre + 4 mini-cartes
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ShimmerBox(Modifier.width(220.dp).height(20.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+            repeat(4) {
+                ShimmerBox(Modifier.weight(1f).height(80.dp))
             }
+        }
+    }
 
-            // ── 9. ALERTES (factures en retard)
-            if (stats.invoicesOverdue > 0) {
-                AlertsSection(stats.invoicesOverdue, onNavigateNotifications)
+    // Charts row 1 : 2 graphiques côte à côte
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        ShimmerBox(Modifier.weight(1.4f).height(260.dp))
+        ShimmerBox(Modifier.weight(1f).height(260.dp))
+    }
+
+    // Carte des départements
+    ShimmerBox(Modifier.fillMaxWidth().height(320.dp))
+
+    // Charts row 2
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        ShimmerBox(Modifier.weight(1f).height(240.dp))
+        ShimmerBox(Modifier.weight(1f).height(240.dp))
+    }
+
+    // KPIs secondaires : 4 cartes
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        repeat(4) {
+            SkeletonKpiCard(Modifier.weight(1f))
+        }
+    }
+
+    // Charts row 3
+    ShimmerBox(Modifier.fillMaxWidth().height(200.dp))
+
+    // Activité récente : 2 cartes avec lignes
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+        SkeletonActivityCard(Modifier.weight(1f))
+        SkeletonActivityCard(Modifier.weight(1f))
+    }
+
+    // Actions rapides
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ShimmerBox(Modifier.width(140.dp).height(18.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+            repeat(4) {
+                ShimmerBox(Modifier.weight(1f).height(60.dp))
             }
+        }
+    }
+}
 
-            // ── 10. ACTIVITÉ RÉCENTE
-            AnimatedSection(visible, 700) {
-                RecentActivityRow(stats = stats, onNavigateGroupes = onNavigateGroupes, onNavigateInvoices = onNavigateInvoices)
+@Composable
+private fun SkeletonKpiCard(modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ShimmerBox(Modifier.size(44.dp))
+            ShimmerBox(Modifier.width(90.dp).height(12.dp))
+            ShimmerBox(Modifier.width(60.dp).height(24.dp))
+            ShimmerBox(Modifier.width(110.dp).height(11.dp))
+        }
+    }
+}
+
+@Composable
+private fun SkeletonActivityCard(modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ShimmerBox(Modifier.width(160.dp).height(14.dp))
+                ShimmerBox(Modifier.width(50.dp).height(12.dp))
             }
-
-            // ── 11. ACTIONS RAPIDES
-            QuickActionsRow(
-                onNavigateGroupes = onNavigateGroupes,
-                onNavigatePlans = onNavigatePlans,
-                onNavigateModules = onNavigateModules,
-                onNavigateAnnouncements = onNavigateAnnouncements
-            )
-
-            // ── 12. FOOTER
-            SystemFooter()
+            repeat(3) {
+                ShimmerBox(Modifier.fillMaxWidth().height(52.dp))
+            }
         }
     }
 }

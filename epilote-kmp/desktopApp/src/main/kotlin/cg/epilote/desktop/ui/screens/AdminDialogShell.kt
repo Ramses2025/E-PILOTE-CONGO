@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogWindow
+import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberDialogState
 import cg.epilote.desktop.ui.theme.EpiloteTextMuted
 import cg.epilote.desktop.ui.theme.cursorHand
@@ -50,7 +51,7 @@ internal fun AdminDialogWindow(
     content: @Composable ColumnScope.() -> Unit,
     actions: @Composable RowScope.() -> Unit
 ) {
-    val dialogState = rememberDialogState(size = size)
+    val dialogState = rememberDialogState(size = size, position = WindowPosition(Alignment.Center))
 
     DialogWindow(
         onCloseRequest = onDismiss,
@@ -95,7 +96,7 @@ internal fun AdminDialogWindow(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 24.dp, vertical = 16.dp),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                         verticalAlignment = Alignment.CenterVertically,
                         content = actions
                     )

@@ -318,53 +318,11 @@ fun LoginScreen(
 
                     Spacer(Modifier.height(8.dp))
 
-                    // ── Error banner ─────────────────────────────
-                    AnimatedVisibility(
+                    LoginErrorBanner(
                         visible = uiState is LoginUiState.Error,
-                        enter = fadeIn(animationSpec = tween(300)),
-                        exit  = fadeOut(animationSpec = tween(200))
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(3.dp),
-                            color = Color(0xFFFEE2E2),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFDC2626), modifier = Modifier.size(16.dp))
-                                Text(
-                                    (uiState as? LoginUiState.Error)?.message ?: "",
-                                    color = Color(0xFFDC2626), fontSize = 12.sp
-                                )
-                            }
-                        }
-                    }
-                    AnimatedVisibility(
-                        visible = uiState is LoginUiState.NoNetwork,
-                        enter = fadeIn(animationSpec = tween(300)),
-                        exit  = fadeOut(animationSpec = tween(200))
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(3.dp),
-                            color = Color(0xFFFFF3CD),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(Icons.Default.WifiOff, null, tint = Color(0xFF856404), modifier = Modifier.size(16.dp))
-                                Text(
-                                    "Connexion réseau requise",
-                                    color = Color(0xFF856404), fontSize = 12.sp
-                                )
-                            }
-                        }
-                    }
+                        message = (uiState as? LoginUiState.Error)?.message ?: ""
+                    )
+                    LoginNoNetworkBanner(visible = uiState is LoginUiState.NoNetwork)
 
                     // ── Login button ────────────────────────────
                     Button(

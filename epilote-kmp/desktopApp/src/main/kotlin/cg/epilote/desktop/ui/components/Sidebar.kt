@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cg.epilote.desktop.data.CategorieWithModulesDto
 import cg.epilote.desktop.ui.theme.*
 import cg.epilote.desktop.ui.theme.cursorHand
 import cg.epilote.shared.domain.model.UserSession
@@ -40,6 +41,7 @@ enum class DesktopScreen(
 ) {
     // ── 1. Pilotage ─────────────────────────────────────────────
     ADMIN_DASHBOARD      ("Tableau de bord",     Icons.Default.Dashboard,          null, SidebarSection.SA_PILOTAGE,       "SUPER_ADMIN"),
+    ADMIN_ALERTS         ("Alertes & Seuils",    Icons.Default.Warning,            null, SidebarSection.SA_PILOTAGE,       "SUPER_ADMIN"),
 
     // ── 2. Organisation ─────────────────────────────────────────
     ADMIN_GROUPES        ("Groupes scolaires",   Icons.Default.Business,           null, SidebarSection.SA_ORGANISATION,   "SUPER_ADMIN"),
@@ -53,6 +55,7 @@ enum class DesktopScreen(
     ADMIN_PLANS          ("Plans & Tarifs",      Icons.Default.CreditCard,         null, SidebarSection.SA_MONETISATION,   "SUPER_ADMIN"),
     ADMIN_SUBSCRIPTIONS  ("Abonnements",         Icons.Default.Subscriptions,      null, SidebarSection.SA_MONETISATION,   "SUPER_ADMIN"),
     ADMIN_INVOICES       ("Factures",            Icons.Default.Receipt,            null, SidebarSection.SA_MONETISATION,   "SUPER_ADMIN"),
+    ADMIN_PAYMENTS       ("Paiements",           Icons.Default.Payments,           null, SidebarSection.SA_MONETISATION,   "SUPER_ADMIN"),
 
     // ── 5. Communication ────────────────────────────────────────
     ADMIN_NOTIFICATIONS  ("Notifications",       Icons.Default.Notifications,      null, SidebarSection.SA_COMMUNICATION,  "SUPER_ADMIN"),
@@ -68,11 +71,17 @@ enum class DesktopScreen(
     // ── 8. Paramètres plateforme ────────────────────────────────
     ADMIN_PLATFORM_SETTINGS ("Paramètres",       Icons.Default.Settings,           null, SidebarSection.SA_PARAMETRES,     "SUPER_ADMIN"),
 
+    // ── Fiche groupe (navigation drill-down, non visible en sidebar) ────
+    ADMIN_GROUPE_DETAIL  ("Fiche Groupe",        Icons.Default.Business,           null, SidebarSection.SA_ORGANISATION,   "SUPER_ADMIN", false),
+
     // ── Admin Groupe : Gestion de son tenant ────────────────────
-    GROUPE_DASHBOARD     ("Dashboard Groupe",    Icons.Default.Dashboard,          null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
-    GROUPE_ECOLES        ("Écoles",              Icons.Default.School,             null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
-    GROUPE_UTILISATEURS  ("Utilisateurs",        Icons.Default.People,             null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
-    GROUPE_PROFILS       ("Profils d'accès",     Icons.Default.ManageAccounts,     null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
+    GROUPE_DASHBOARD         ("Tableau de bord",      Icons.Default.Dashboard,          null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
+    GROUPE_ECOLES            ("Mes écoles",           Icons.Default.School,             null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
+    GROUPE_UTILISATEURS      ("Utilisateurs",         Icons.Default.People,             null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
+    GROUPE_PROFILS           ("Profils d'accès",      Icons.Default.ManageAccounts,     null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
+    GROUPE_ANNEES_SCOLAIRES  ("Années scolaires",     Icons.Default.CalendarMonth,      null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
+    GROUPE_MODULES_PAR_ECOLE ("Modules par école",    Icons.Default.ViewModule,         null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
+    GROUPE_PARAMETRES        ("Paramètres",           Icons.Default.Settings,           null, SidebarSection.GESTION_GROUPE,    "ADMIN_GROUPE"),
 
     // ── Pédagogie (module-based, visible by ADMIN_GROUPE + USER) ───
     DASHBOARD    ("Tableau de bord",  Icons.Default.Dashboard,      null,                 SidebarSection.PRINCIPAL),
@@ -115,7 +124,9 @@ fun Sidebar(
     currentScreen: DesktopScreen,
     onScreenSelected: (DesktopScreen) -> Unit,
     isExpanded: Boolean = true,
-    onToggleExpanded: () -> Unit = {}
+    onToggleExpanded: () -> Unit = {},
+    dynamicCategories: List<CategorieWithModulesDto> = emptyList(),
+    onLogout: () -> Unit = {}
 ) {
     val sidebarWidth = if (isExpanded) 220.dp else 64.dp
 
@@ -124,6 +135,12 @@ fun Sidebar(
         // SUPER_ADMIN only sees ADMIN section
         if (session.role == "SUPER_ADMIN") {
             return@filter screen.requiredRole == "SUPER_ADMIN"
+        }
+        // ADMIN_GROUPE: seuls les écrans de gestion sont en nav principale.
+        // Les écrans module (moduleSlug != null) s'affichent EXCLUSIVEMENT dans la section MODULES.
+        if (session.role == "ADMIN_GROUPE") {
+            if (screen.requiredRole == "ADMIN_GROUPE") return@filter true
+            return@filter false
         }
         val roleOk = screen.requiredRole == null || session.role == screen.requiredRole
         val moduleOk = screen.moduleSlug == null || session.hasModule(screen.moduleSlug)
@@ -222,97 +239,119 @@ fun Sidebar(
                 }
                 Spacer(Modifier.height(4.dp))
             }
-        }
 
-        // ── Footer version ──
-        Column(
-            modifier = Modifier.padding(horizontal = if (isExpanded) 16.dp else 4.dp, vertical = 8.dp),
-            horizontalAlignment = if (isExpanded) Alignment.Start else Alignment.CenterHorizontally
-        ) {
-            HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
-            Spacer(Modifier.height(8.dp))
-            if (isExpanded) {
-                Text("v1.0.0", color = EpiloteTextMuted, fontSize = 10.sp)
-            } else {
-                Text("v1", color = EpiloteTextMuted, fontSize = 9.sp)
+            if (session.role == "ADMIN_GROUPE") {
+                Spacer(Modifier.height(4.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
+
+                if (dynamicCategories.isEmpty()) {
+                    if (isExpanded) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "MODULES",
+                            color = EpiloteTextMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                Icons.Default.Extension,
+                                contentDescription = null,
+                                tint = EpiloteTextMuted.copy(alpha = 0.4f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "Aucun module disponible\npour votre plan",
+                                color = EpiloteTextMuted.copy(alpha = 0.6f),
+                                fontSize = 10.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    val allModuleCodes = dynamicCategories
+                        .flatMap { cat -> cat.modules.map { it.code } }.toSet()
+                    val moduleScreens = DesktopScreen.entries.filter { screen ->
+                        screen.moduleSlug != null && screen.moduleSlug in allModuleCodes
+                    }
+
+                    if (isExpanded) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "MODULES",
+                            color = EpiloteTextMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                        dynamicCategories.forEach { cat ->
+                            val catCodes = cat.modules.map { it.code }.toSet()
+                            val catScreens = moduleScreens.filter { it.moduleSlug in catCodes }
+                            if (catScreens.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        cat.nom.uppercase(),
+                                        color = EpiloteTextMuted.copy(alpha = 0.65f),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = Color.White.copy(alpha = 0.12f)
+                                    ) {
+                                        Text(
+                                            "${catScreens.size}",
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                            fontSize = 9.sp,
+                                            color = EpiloteTextMuted
+                                        )
+                                    }
+                                }
+                                catScreens.forEach { screen ->
+                                    SidebarItem(
+                                        screen   = screen,
+                                        isSelected = currentScreen == screen,
+                                        isExpanded = true,
+                                        onClick  = { onScreenSelected(screen) }
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        // Sidebar repliée : icônes de navigation seulement
+                        Spacer(Modifier.height(4.dp))
+                        moduleScreens.forEach { screen ->
+                            SidebarItem(
+                                screen   = screen,
+                                isSelected = currentScreen == screen,
+                                isExpanded = false,
+                                onClick  = { onScreenSelected(screen) }
+                            )
+                        }
+                    }
+                }
             }
         }
+
+        // ── Footer : Réduire + Déconnexion + version ──
+        SidebarFooter(
+            isExpanded = isExpanded,
+            onToggleExpanded = onToggleExpanded,
+            onLogout = onLogout
+        )
     }
 }
 
-@Composable
-private fun SidebarItem(
-    screen: DesktopScreen,
-    isSelected: Boolean,
-    isExpanded: Boolean = true,
-    onClick: () -> Unit
-) {
-    if (isExpanded) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 2.dp)
-                .background(
-                    if (isSelected) EpiloteSidebarSelected else Color.Transparent,
-                    RoundedCornerShape(8.dp)
-                )
-                .pointerHoverIcon(PointerIcon.Hand)
-                .clickable { onClick() }
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            if (isSelected) {
-                Box(
-                    modifier = Modifier
-                        .width(3.dp)
-                        .height(16.dp)
-                        .background(EpiloteGreen, RoundedCornerShape(2.dp))
-                )
-            } else {
-                Spacer(Modifier.width(3.dp))
-            }
-            Icon(
-                screen.icon,
-                contentDescription = screen.label,
-                tint = if (isSelected) EpiloteGreen else EpiloteTextMuted,
-                modifier = Modifier.size(18.dp)
-            )
-            Text(
-                screen.label,
-                color = if (isSelected) Color.White else EpiloteTextMuted,
-                fontSize = 13.sp,
-                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    } else {
-        // Collapsed: icon only, centered
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 2.dp)
-                .pointerHoverIcon(PointerIcon.Hand)
-                .clickable { onClick() },
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(
-                        if (isSelected) EpiloteSidebarSelected else Color.Transparent,
-                        RoundedCornerShape(8.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    screen.icon,
-                    contentDescription = screen.label,
-                    tint = if (isSelected) EpiloteGreen else EpiloteTextMuted,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-    }
-}

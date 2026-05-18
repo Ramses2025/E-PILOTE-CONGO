@@ -36,7 +36,7 @@ class CouchbaseConfig {
     @Bean
     fun couchbaseBucket(cluster: Cluster) = runBlocking {
         cluster.bucket(bucketName).apply {
-            waitUntilReady(30.seconds)
+            waitUntilReady(90.seconds)
         }
     }
 }

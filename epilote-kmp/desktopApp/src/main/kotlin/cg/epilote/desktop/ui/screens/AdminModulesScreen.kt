@@ -15,9 +15,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import cg.epilote.desktop.ui.theme.PulsingLoadingBar
+import cg.epilote.desktop.ui.theme.ShimmerBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -157,8 +158,9 @@ fun AdminModulesScreen(
         }
 
         if (isLoading) {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = EpiloteGreen)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                PulsingLoadingBar(Modifier.fillMaxWidth())
+                repeat(6) { ShimmerBox(Modifier.fillMaxWidth().height(64.dp)) }
             }
         }
 

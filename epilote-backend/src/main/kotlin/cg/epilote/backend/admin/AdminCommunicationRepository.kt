@@ -184,6 +184,107 @@ class AdminCommunicationRepository(
         }
     }
 
+    suspend fun createSubscriptionRequest(groupeId: String, groupeNom: String, requestType: String, requestMessage: String?, createdBy: String): Boolean {
+        val allowedTypes = setOf("RENEWAL_REQUEST", "PLAN_CHANGE_REQUEST")
+        val normalizedType = requestType.trim().uppercase()
+        if (normalizedType !in allowedTypes) return false
+
+        val typeLabel = if (normalizedType == "RENEWAL_REQUEST") "Renouvellement d'abonnement" else "Changement de plan"
+        val sujet = "Demande de $typeLabel — $groupeNom"
+        val contenu = buildString {
+            append("Groupe : $groupeNom (ID: $groupeId)\n")
+            append("Type de demande : $typeLabel\n")
+            if (!requestMessage.isNullOrBlank()) {
+                append("\nMessage de l'administrateur :\n${requestMessage.trim()}")
+            }
+        }
+        val currentTime = now()
+        val id = newId("sub_req")
+        val doc = mapOf(
+            "type" to MESSAGE_TYPE,
+            "sujet" to sujet,
+            "contenu" to contenu,
+            "targetType" to "all_admins",
+            "groupId" to groupeId,
+            "adminId" to null,
+            "threadKey" to "group::$groupeId",
+            "status" to "sent",
+            "readBy" to emptyList<String>(),
+            "requestType" to normalizedType,
+            "createdBy" to createdBy,
+            "createdAt" to currentTime,
+            "updatedAt" to currentTime
+        )
+        val docWithNom = doc.toMutableMap()
+        docWithNom["groupeNom"] = groupeNom
+        messagesCol.upsert(id, docWithNom)
+        return true
+    }
+
+    suspend fun listSubscriptionRequests(statusFilter: String? = null, limit: Int = 200, offset: Int = 0): List<SubscriptionRequestInfo> {
+        val safeLimit = limit.coerceIn(1, 500)
+        val safeOffset = offset.coerceAtLeast(0)
+        val stmt = buildString {
+            append("SELECT META(m).id AS id, m.* FROM `$MESSAGES_COLLECTION` m ")
+            append("WHERE m.`type` = \$docType ")
+            append("AND m.requestType IN [\"RENEWAL_REQUEST\", \"PLAN_CHANGE_REQUEST\"] ")
+            if (statusFilter != null) append("AND m.status = \$status ")
+            append("ORDER BY m.createdAt DESC LIMIT \$lim OFFSET \$off")
+        }
+        val params = if (statusFilter != null)
+            QueryParameters.named("docType" to MESSAGE_TYPE, "status" to statusFilter, "lim" to safeLimit, "off" to safeOffset)
+        else
+            QueryParameters.named("docType" to MESSAGE_TYPE, "lim" to safeLimit, "off" to safeOffset)
+        return runCatching {
+            scope.query(stmt, parameters = params).execute().rows.mapNotNull { row ->
+                val d = row.contentAs<Map<String, Any?>>()
+                val id = d["id"] as? String ?: return@mapNotNull null
+                val rType = d["requestType"] as? String ?: return@mapNotNull null
+                val typeLabel = if (rType == "RENEWAL_REQUEST") "Renouvellement d'abonnement" else "Changement de plan"
+                val rawNom = d["groupeNom"] as? String
+                    ?: (d["sujet"] as? String)?.substringAfter("— ")?.trim() ?: ""
+                SubscriptionRequestInfo(
+                    id            = id,
+                    groupeId      = d["groupId"] as? String ?: "",
+                    groupeNom     = rawNom,
+                    requestType   = rType,
+                    typeLabel     = typeLabel,
+                    message       = d["contenu"] as? String,
+                    status        = d["status"] as? String ?: "sent",
+                    createdBy     = d["createdBy"] as? String ?: "",
+                    createdAt     = (d["createdAt"] as? Number)?.toLong() ?: 0L,
+                    resolvedBy    = d["resolvedBy"] as? String,
+                    resolvedAt    = (d["resolvedAt"] as? Number)?.toLong(),
+                    resolutionNotes = d["resolutionNotes"] as? String
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    suspend fun resolveSubscriptionRequest(id: String, action: String, resolvedBy: String, notes: String?): Boolean {
+        if (action !in setOf("approved", "rejected")) return false
+        repeat(3) {
+            val getResult = runCatching { messagesCol.get(id) }.getOrNull() ?: return false
+            val doc = getResult.contentAs<MutableMap<String, Any?>>()
+            if (doc["type"] != MESSAGE_TYPE) return false
+            if (doc["requestType"] !in listOf("RENEWAL_REQUEST", "PLAN_CHANGE_REQUEST")) return false
+            if (doc["status"] != "sent") return false
+            val currentTime = now()
+            doc["status"] = action
+            doc["resolvedBy"] = resolvedBy
+            doc["resolvedAt"] = currentTime
+            if (!notes.isNullOrBlank()) doc["resolutionNotes"] = notes.trim()
+            doc["updatedAt"] = currentTime
+            return try {
+                messagesCol.replace(id, doc, cas = getResult.cas)
+                true
+            } catch (_: CasMismatchException) {
+                false.also { return@repeat }
+            }
+        }
+        return false
+    }
+
     suspend fun markMessageAsRead(messageId: String, userId: String): AdminMessageResponse? {
         repeat(3) {
             val getResult = runCatching {

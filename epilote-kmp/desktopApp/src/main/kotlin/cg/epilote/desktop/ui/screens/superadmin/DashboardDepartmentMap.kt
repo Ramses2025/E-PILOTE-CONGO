@@ -93,8 +93,7 @@ fun DepartmentMapSection(
                 }
             }
 
-            // Barre de progression
-            ProgressBar(
+            DepartmentProgressBar(
                 deptsWithGroupes = deptsWithGroupes,
                 totalDepts = totalDepts
             )
@@ -116,8 +115,11 @@ fun DepartmentMapSection(
                 // Panneau détail à droite
                 DepartmentDetailPanel(
                     selectedDepartment = selectedDepartment,
+                    provinceStats = stats.groupesByProvince,
                     totalDepts = totalDepts,
                     deptsWithGroupes = deptsWithGroupes,
+                    totalGroupes = totalGroupes,
+                    totalEcoles = totalEcoles,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -215,109 +217,3 @@ private fun DepartmentChip(
     }
 }
 
-// ── Panneau détail (droite) ─────────────────────────────────────────────────
-
-@Composable
-private fun DepartmentDetailPanel(
-    selectedDepartment: DepartmentInfo?,
-    totalDepts: Int,
-    deptsWithGroupes: Int,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
-        elevation = CardDefaults.cardElevation(0.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            if (selectedDepartment == null) {
-                Spacer(Modifier.height(12.dp))
-                Icon(
-                    Icons.Default.LocationOn,
-                    contentDescription = null,
-                    tint = Color(0xFFCBD5E1),
-                    modifier = Modifier.size(32.dp)
-                )
-                Text(
-                    "Survolez un département",
-                    fontSize = 12.sp,
-                    color = Color(0xFF94A3B8),
-                    textAlign = TextAlign.Center
-                )
-            } else {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = selectedDepartment.color.copy(alpha = 0.15f)
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            selectedDepartment.nom,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0F172A)
-                        )
-                        Text(
-                            "Chef-lieu : ${selectedDepartment.chefLieu}",
-                            fontSize = 11.sp,
-                            color = Color(0xFF64748B)
-                        )
-                    }
-                }
-            }
-
-            HorizontalDivider(color = Color(0xFFE2E8F0))
-
-            // Statistiques globales
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    "$totalDepts départements",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF3B82F6)
-                )
-                Text(
-                    "$deptsWithGroupes avec des groupes scolaires",
-                    fontSize = 11.sp,
-                    color = Color(0xFF64748B)
-                )
-            }
-        }
-    }
-}
-
-// ── Barre de progression ────────────────────────────────────────────────────
-
-@Composable
-private fun ProgressBar(
-    deptsWithGroupes: Int,
-    totalDepts: Int
-) {
-    val fraction = if (totalDepts > 0) (deptsWithGroupes.toFloat() / totalDepts).coerceIn(0f, 1f) else 0f
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(6.dp)
-            .background(Color(0xFFE2E8F0), RoundedCornerShape(3.dp))
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(fraction)
-                .height(6.dp)
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(Color(0xFF10B981), Color(0xFFF59E0B), Color(0xFFEF4444), Color(0xFFEC4899))
-                    ),
-                    RoundedCornerShape(3.dp)
-                )
-        )
-    }
-}

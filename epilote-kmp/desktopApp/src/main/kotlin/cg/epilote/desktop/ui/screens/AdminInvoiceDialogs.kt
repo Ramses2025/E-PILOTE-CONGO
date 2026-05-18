@@ -73,6 +73,7 @@ internal fun InvoiceDetailDialog(
     invoice: InvoiceDto,
     onDismiss: () -> Unit,
     onStatusChange: (String) -> Unit,
+    onDelete: (() -> Unit)? = null,
     onExportPdf: () -> Unit,
     onOpenPdf: () -> Unit,
     onSharePdf: () -> Unit,
@@ -84,11 +85,16 @@ internal fun InvoiceDetailDialog(
     val statusColor = invoiceStatusColor(invoice.statut)
     val accentColor = if (invoice.planId.isNotBlank()) planColorById(invoice.planId) else Color(0xFF2563EB)
     val availableActions = remember(invoice.statut) {
-        buildList {
-            if (invoice.statut != "sent") add("sent")
-            if (invoice.statut != "paid") add("paid")
-            if (invoice.statut != "overdue") add("overdue")
-            if (invoice.statut != "cancelled") add("cancelled")
+        // Une facture payée ou annulée est verrouillée — aucune action manuelle possible.
+        // Le passage "paid" se fait UNIQUEMENT via recordPayment (reçu + activation abonnement).
+        if (invoice.statut == "paid" || invoice.statut == "cancelled") {
+            emptyList()
+        } else {
+            buildList {
+                if (invoice.statut != "sent") add("sent")
+                if (invoice.statut != "overdue") add("overdue")
+                add("cancelled")
+            }
         }
     }
 
@@ -96,7 +102,7 @@ internal fun InvoiceDetailDialog(
         title = invoice.groupeNom,
         subtitle = invoice.reference.ifBlank { invoice.id },
         onDismiss = onDismiss,
-        size = DpSize(680.dp, 560.dp),
+        size = DpSize(740.dp, 580.dp),
         content = {
             Column(modifier = Modifier.verticalScroll(scrollState), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -119,18 +125,36 @@ internal fun InvoiceDetailDialog(
                 documentFeedback?.let { feedback ->
                     AdminFeedbackBanner(feedback = feedback, onDismiss = onDismissDocumentFeedback)
                 }
-                Text("Document officiel", fontSize = 12.sp, color = EpiloteTextMuted)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Document officiel", fontSize = 12.sp, color = EpiloteTextMuted)
+                    if (isDocumentProcessing) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = androidx.compose.ui.graphics.Color(0xFF2563EB))
+                        Text("Préparation…", fontSize = 11.sp, color = EpiloteTextMuted)
+                    }
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onOpenPdf, enabled = !isDocumentProcessing, modifier = Modifier.cursorHand(), shape = RoundedCornerShape(10.dp)) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null, modifier = Modifier.size(16.dp))
-                        Text("Prévisualiser PDF", modifier = Modifier.padding(start = 6.dp))
+                        if (isDocumentProcessing) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, null, modifier = Modifier.size(16.dp))
+                        }
+                        Text("Prévisualiser", modifier = Modifier.padding(start = 6.dp))
                     }
                     OutlinedButton(onClick = onExportPdf, enabled = !isDocumentProcessing, modifier = Modifier.cursorHand(), shape = RoundedCornerShape(10.dp)) {
-                        Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
+                        if (isDocumentProcessing) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
+                        }
                         Text("Exporter PDF", modifier = Modifier.padding(start = 6.dp))
                     }
                     OutlinedButton(onClick = onSharePdf, enabled = !isDocumentProcessing, modifier = Modifier.cursorHand(), shape = RoundedCornerShape(10.dp)) {
-                        Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp))
+                        if (isDocumentProcessing) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp))
+                        }
                         Text("Partager", modifier = Modifier.padding(start = 6.dp))
                     }
                 }
@@ -143,6 +167,11 @@ internal fun InvoiceDetailDialog(
             }
         },
         actions = {
+            if (onDelete != null) {
+                TextButton(onClick = onDelete, modifier = Modifier.cursorHand()) {
+                    Text("Supprimer", color = Color(0xFFB3261E))
+                }
+            }
             availableActions.forEach { action ->
                 TextButton(onClick = { onStatusChange(action) }, modifier = Modifier.cursorHand()) {
                     Text(invoiceStatusActionTitle(action), color = invoiceStatusActionColor(action))
