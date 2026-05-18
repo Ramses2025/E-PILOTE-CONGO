@@ -53,7 +53,7 @@ class AdminDataRepository(
     private val _adminUsers = MutableStateFlow<List<AdminUserDto>>(emptyList())
     val adminUsers: StateFlow<List<AdminUserDto>> = _adminUsers.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(false)
+    private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _rawSubscriptions = MutableStateFlow<List<SubscriptionApiDto>>(emptyList())

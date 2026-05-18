@@ -3,12 +3,17 @@ package cg.epilote.desktop.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import cg.epilote.desktop.ui.theme.PulsingLoadingBar
+import cg.epilote.desktop.ui.theme.ShimmerBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -107,8 +112,16 @@ fun AdminPlansScreen(
         )
 
         if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = EpiloteGreen)
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                PulsingLoadingBar(Modifier.fillMaxWidth())
+                repeat(2) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        repeat(3) { ShimmerBox(Modifier.weight(1f).height(160.dp)) }
+                    }
+                }
             }
         } else if (filteredPlans.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
